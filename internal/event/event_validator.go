@@ -44,6 +44,8 @@ func ValidateEvent(event *Event) error {
 		return validateUserSettingsChangedData(event.Data)
 	case EventTypeMemberDetailsChanged:
 		return validateMemberDetailsChangedData(event.Data)
+	case EventTypeApplicationCreated:
+		return validateApplicationCreatedData(event.Data)
 	default:
 		return fmt.Errorf("%w: unknown event type: %s", ErrValidation, event.Type)
 	}
@@ -138,6 +140,19 @@ func validateMemberDetailsChangedData(data map[string]interface{}) error {
 	}
 	if _, ok := data["memberPublicKey"].(string); !ok || data["memberPublicKey"] == "" {
 		return fmt.Errorf("%w: memberPublicKey is required", ErrValidation)
+	}
+	return nil
+}
+
+func validateApplicationCreatedData(data map[string]interface{}) error {
+	if _, ok := data["userPublicKey"].(string); !ok || data["userPublicKey"] == "" {
+		return fmt.Errorf("%w: userPublicKey is required", ErrValidation)
+	}
+	if _, ok := data["applicationId"].(string); !ok || data["applicationId"] == "" {
+		return fmt.Errorf("%w: applicationId is required", ErrValidation)
+	}
+	if _, ok := data["applicationName"].(string); !ok || data["applicationName"] == "" {
+		return fmt.Errorf("%w: applicationName is required", ErrValidation)
 	}
 	return nil
 }

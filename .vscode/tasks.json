@@ -1,0 +1,15 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "ensure-postgres",
+            "type": "shell",
+            "command": "docker compose up -d postgres && docker compose exec postgres pg_isready -U test -d prappser_test || (echo 'Waiting for PostgreSQL...' && sleep 3 && docker compose exec postgres pg_isready -U test -d prappser_test)",
+            "presentation": {
+                "reveal": "silent",
+                "close": true
+            },
+            "problemMatcher": []
+        }
+    ]
+}

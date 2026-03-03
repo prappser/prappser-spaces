@@ -18,11 +18,12 @@ const (
 	EventTypeApplicationAfterEditModeChanged EventType = "application_after_edit_mode_changed"
 	EventTypeUserSettingsChanged            EventType = "user_settings_changed"
 	EventTypeMemberDetailsChanged           EventType = "member_details_changed"
+	EventTypeApplicationCreated             EventType = "application_created"
 )
 
 // IsUserScoped returns true for event types that are user-scoped (no applicationId)
 func IsUserScoped(eventType EventType) bool {
-	return eventType == EventTypeUserSettingsChanged
+	return eventType == EventTypeUserSettingsChanged || eventType == EventTypeApplicationCreated
 }
 
 // Event represents a system event for application lifecycle changes
@@ -122,6 +123,14 @@ type UserSettingsChangedData struct {
 	Version         int    `json:"version"`
 	UserPublicKey   string `json:"userPublicKey"`
 	AvatarStorageID string `json:"avatarStorageId,omitempty"`
+}
+
+// ApplicationCreatedData represents the data for an application_created event
+type ApplicationCreatedData struct {
+	Version         int    `json:"version"`
+	UserPublicKey   string `json:"userPublicKey"`
+	ApplicationID   string `json:"applicationId"`
+	ApplicationName string `json:"applicationName"`
 }
 
 // MemberDetailsChangedData represents the data for a member_details_changed event (future use)

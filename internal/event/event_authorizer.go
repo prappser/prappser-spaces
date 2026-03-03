@@ -108,6 +108,11 @@ func AuthorizeUserScopedEvent(event *Event, submitter *user.User) error {
 		if !ok || userPK != submitter.PublicKey {
 			return fmt.Errorf("%w: can only update own user settings", ErrUnauthorized)
 		}
+	case EventTypeApplicationCreated:
+		userPK, ok := event.Data["userPublicKey"].(string)
+		if !ok || userPK != submitter.PublicKey {
+			return fmt.Errorf("%w: can only create application events for own user", ErrUnauthorized)
+		}
 	default:
 		return fmt.Errorf("%w: unknown user-scoped event type: %s", ErrUnauthorized, event.Type)
 	}

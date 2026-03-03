@@ -155,11 +155,6 @@ func (h *Hub) broadcastToApp(msg *BroadcastMessage) {
 	}
 
 	for _, client := range clients {
-		// Don't send event to the client who created it
-		if client.user.PublicKey == msg.Event.CreatorPublicKey {
-			continue
-		}
-
 		select {
 		case client.send <- eventMsg:
 		default:
@@ -174,7 +169,7 @@ func (h *Hub) broadcastToApp(msg *BroadcastMessage) {
 	log.Debug().
 		Str("applicationId", msg.ApplicationID).
 		Str("eventId", msg.Event.ID).
-		Int("recipients", len(clients)-1). // -1 for creator
+		Int("recipients", len(clients)).
 		Msg("[WS] Event broadcast complete")
 }
 
@@ -194,11 +189,6 @@ func (h *Hub) broadcastToUser(msg *UserBroadcastMessage) {
 	}
 
 	for _, client := range clients {
-		// Don't send to the sender
-		if client.user.PublicKey == msg.Event.CreatorPublicKey {
-			continue
-		}
-
 		select {
 		case client.send <- eventMsg:
 		default:
@@ -215,7 +205,7 @@ func (h *Hub) broadcastToUser(msg *UserBroadcastMessage) {
 	log.Debug().
 		Str("userPublicKey", msg.UserPublicKey[:pkLen]+"...").
 		Str("eventId", msg.Event.ID).
-		Int("recipients", len(clients)-1).
+		Int("recipients", len(clients)).
 		Msg("[WS] User event broadcast complete")
 }
 

@@ -387,6 +387,10 @@ func (s *EventService) executeEvent(ctx context.Context, event *Event) error {
 		// Future: update member record
 		log.Debug().Str("eventId", event.ID).Msg("[EVENT] Handler: member_details_changed (no-op)")
 		return nil
+	case "application_created":
+		// No server-side state change: application was already registered by the creator device
+		log.Debug().Str("eventId", event.ID).Msg("[EVENT] Handler: application_created (no-op)")
+		return nil
 	default:
 		// Unknown event types are not executed (forward compatibility)
 		log.Debug().
