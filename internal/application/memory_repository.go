@@ -3,6 +3,7 @@ package application
 import (
 	"fmt"
 	"sort"
+	"time"
 )
 
 type MemoryRepository struct {
@@ -29,6 +30,10 @@ func (r *MemoryRepository) CreateApplication(app *Application) error {
 func (r *MemoryRepository) GetApplicationByID(id string) (*Application, error) {
 	app, exists := r.applications[id]
 	if !exists {
+		return nil, fmt.Errorf("application not found")
+	}
+
+	if app.DeletedAt != nil {
 		return nil, fmt.Errorf("application not found")
 	}
 
@@ -92,46 +97,14 @@ func (r *MemoryRepository) UpdateApplicationTimestamp(id string) error {
 }
 
 func (r *MemoryRepository) DeleteApplication(id string) error {
-	_, exists := r.applications[id]
+	app, exists := r.applications[id]
 	if !exists {
 		return fmt.Errorf("application not found")
 	}
 
-	// Delete the application
-	delete(r.applications, id)
-
-	// Delete associated component groups
-	var groupsToDelete []string
-	for groupID, group := range r.componentGroups {
-		if group.ApplicationID == id {
-			groupsToDelete = append(groupsToDelete, groupID)
-		}
-	}
-	for _, groupID := range groupsToDelete {
-		delete(r.componentGroups, groupID)
-	}
-
-	// Delete associated components
-	var componentsToDelete []string
-	for compID, comp := range r.components {
-		if comp.ApplicationID == id {
-			componentsToDelete = append(componentsToDelete, compID)
-		}
-	}
-	for _, compID := range componentsToDelete {
-		delete(r.components, compID)
-	}
-
-	// Delete associated members
-	var membersToDelete []string
-	for memberID, member := range r.members {
-		if member.ApplicationID == id {
-			membersToDelete = append(membersToDelete, memberID)
-		}
-	}
-	for _, memberID := range membersToDelete {
-		delete(r.members, memberID)
-	}
+	// Soft-delete: keep all associations alive so events can still be delivered
+	now := time.Now().Unix()
+	app.DeletedAt = &now
 
 	return nil
 }
@@ -340,12 +313,15 @@ func (r *MemoryRepository) GetApplicationsByMemberPublicKey(publicKey string) ([
 		}
 	}
 
-	// Get full application details for each
+	// Get full application details for each, skipping soft-deleted apps
 	var result []*Application
 	for appID := range appIDSet {
 		app, err := r.GetApplicationByID(appID)
 		if err != nil {
 			continue // Skip if app not found
+		}
+		if app.DeletedAt != nil {
+			continue // Skip soft-deleted apps
 		}
 		result = append(result, app)
 	}

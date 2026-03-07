@@ -123,9 +123,7 @@ func (s *EventService) AcceptEvent(ctx context.Context, event *Event, submitter 
 		Msg("[EVENT] Accepted successfully")
 
 	// Broadcast to WebSocket clients
-	if s.broadcaster != nil {
-		s.broadcaster.BroadcastToApplication(event.ApplicationID, event)
-	}
+	s.broadcastEvent(event)
 
 	return event, nil
 }
@@ -269,9 +267,7 @@ func (s *EventService) ProduceEvent(ctx context.Context, event *Event) (*Event, 
 		Msg("[EVENT] Server-produced event accepted successfully")
 
 	// Broadcast to WebSocket clients
-	if s.broadcaster != nil {
-		s.broadcaster.BroadcastToApplication(event.ApplicationID, event)
-	}
+	s.broadcastEvent(event)
 
 	return event, nil
 }
@@ -323,6 +319,27 @@ func (s *EventService) produceUserScopedEvent(ctx context.Context, event *Event)
 	return event, nil
 }
 
+// broadcastEvent sends an event to all relevant WebSocket clients.
+// For application_deleted events, it additionally broadcasts to each member's user channel
+// so all devices receive the deletion regardless of which app they have focused.
+func (s *EventService) broadcastEvent(event *Event) {
+	if s.broadcaster == nil {
+		return
+	}
+	s.broadcaster.BroadcastToApplication(event.ApplicationID, event)
+
+	if event.Type == EventTypeApplicationDeleted {
+		members, err := s.appRepo.GetMembersByApplicationID(event.ApplicationID)
+		if err != nil {
+			log.Warn().Err(err).Str("applicationId", event.ApplicationID).Msg("[EVENT] Failed to get members for deletion broadcast")
+		} else {
+			for _, member := range members {
+				s.broadcaster.BroadcastToUser(member.PublicKey, event)
+			}
+		}
+	}
+}
+
 // GetEventsSince retrieves events since a given event ID for the authenticated user's applications
 func (s *EventService) GetEventsSince(userPublicKey string, sinceEventID string, limit int) (*EventsResponse, error) {
 	events, hasMore, err := s.repo.GetSince(userPublicKey, sinceEventID, limit)
@@ -367,7 +384,7 @@ func (s *EventService) executeEvent(ctx context.Context, event *Event) error {
 	case "member_removed":
 		log.Debug().Str("eventId", event.ID).Msg("[EVENT] Handler: member_removed")
 		return s.executeMemberRemoved(ctx, event)
-	case "application_deleted":
+	case EventTypeApplicationDeleted:
 		log.Debug().Str("eventId", event.ID).Msg("[EVENT] Handler: application_deleted")
 		return s.executeApplicationDeleted(ctx, event)
 	case "member_role_changed":

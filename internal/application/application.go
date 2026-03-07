@@ -12,6 +12,7 @@ type Application struct {
 	ServerPublicKey *string          `json:"serverPublicKey,omitempty"`
 	CreatedAt       int64            `json:"createdAt"`
 	UpdatedAt       int64            `json:"updatedAt"`
+	DeletedAt       *int64           `json:"deletedAt,omitempty"`
 	ComponentGroups []ComponentGroup `json:"componentGroups"`
 	Members         []Member         `json:"members"`
 }

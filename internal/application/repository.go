@@ -25,7 +25,7 @@ func (r *Repository) CreateApplication(app *Application) error {
 
 func (r *Repository) GetApplicationByID(id string) (*Application, error) {
 	query := `SELECT id, name, icon, server_public_key, created_at, updated_at
-			  FROM applications WHERE id = $1`
+			  FROM applications WHERE id = $1 AND deleted_at IS NULL`
 
 	app := &Application{}
 	err := r.db.QueryRow(query, id).Scan(
@@ -98,9 +98,9 @@ func (r *Repository) UpdateApplicationTimestamp(id string) error {
 }
 
 func (r *Repository) DeleteApplication(id string) error {
-	query := `DELETE FROM applications WHERE id = $1`
+	query := `UPDATE applications SET deleted_at = $1 WHERE id = $2`
 
-	result, err := r.db.Exec(query, id)
+	result, err := r.db.Exec(query, time.Now().Unix(), id)
 	if err != nil {
 		return err
 	}
@@ -552,7 +552,7 @@ func (r *Repository) GetApplicationsByMemberPublicKey(publicKey string) ([]*Appl
 	query := `SELECT DISTINCT a.id, a.name, a.icon, a.server_public_key, a.created_at, a.updated_at
 			  FROM applications a
 			  INNER JOIN members m ON a.id = m.application_id
-			  WHERE m.public_key = $1
+			  WHERE m.public_key = $1 AND a.deleted_at IS NULL
 			  ORDER BY a.created_at DESC`
 
 	rows, err := r.db.Query(query, publicKey)

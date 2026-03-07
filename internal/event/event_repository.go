@@ -192,17 +192,18 @@ func (r *EventRepository) GetSince(userPublicKey string, sinceEventID string, li
 					         e.type, e.creator_public_key, e.version, e.data
 					  FROM events e
 					  INNER JOIN members m ON e.application_id = m.application_id
-					  WHERE m.public_key = $1)
+					  WHERE m.public_key = $1
+					    AND e.created_at > $2)
 					 UNION ALL
 					 (SELECT e.id, e.created_at, e.application_id, e.sequence_number,
 					         e.type, e.creator_public_key, e.version, e.data
 					  FROM events e
-					  WHERE e.application_id IS NULL AND e.creator_public_key = $2
-					    AND (e.created_at > $3 OR (e.created_at = $4 AND e.id > $5)))
+					  WHERE e.application_id IS NULL AND e.creator_public_key = $3
+					    AND (e.created_at > $4 OR (e.created_at = $5 AND e.id > $6)))
 					 ORDER BY created_at ASC
-					 LIMIT $6`
+					 LIMIT $7`
 			args = []interface{}{
-				userPublicKey,
+				userPublicKey, sinceCreatedAt,
 				userPublicKey, sinceCreatedAt, sinceCreatedAt, sinceEventID,
 				limit + 1,
 			}
