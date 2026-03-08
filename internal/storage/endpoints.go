@@ -3,11 +3,11 @@ package storage
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"io"
 	"strconv"
 	"strings"
 
+	"github.com/goccy/go-json"
 	"github.com/google/uuid"
 	"github.com/prappser/prappser_server/internal/application"
 	"github.com/prappser/prappser_server/internal/event"
@@ -25,13 +25,15 @@ type Endpoints struct {
 	service      *Service
 	appRepo      *application.Repository
 	eventService EventService
+	userRepo     user.UserRepository
 }
 
-func NewEndpoints(service *Service, appRepo *application.Repository, eventService EventService) *Endpoints {
+func NewEndpoints(service *Service, appRepo *application.Repository, eventService EventService, userRepo user.UserRepository) *Endpoints {
 	return &Endpoints{
 		service:      service,
 		appRepo:      appRepo,
 		eventService: eventService,
+		userRepo:     userRepo,
 	}
 }
 
@@ -93,7 +95,7 @@ func (e *Endpoints) Upload(ctx *fasthttp.RequestCtx) {
 		req.ContentType = detectContentType(fileHeader.Filename)
 	}
 
-	stored, err := e.service.Upload(ctx, appID, publicKey, req, file)
+	stored, err := e.service.Upload(ctx, &appID, publicKey, req, file)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to upload file")
 		ctx.Error(err.Error(), fasthttp.StatusBadRequest)
@@ -125,6 +127,92 @@ func (e *Endpoints) Upload(ctx *fasthttp.RequestCtx) {
 	ctx.SetBody(response)
 }
 
+func (e *Endpoints) UploadUserAvatar(ctx *fasthttp.RequestCtx) {
+	authenticatedUser, ok := ctx.UserValue("user").(*user.User)
+	if !ok || authenticatedUser == nil {
+		ctx.Error("Unauthorized", fasthttp.StatusUnauthorized)
+		return
+	}
+	publicKey := authenticatedUser.PublicKey
+
+	contentType := string(ctx.Request.Header.ContentType())
+	if !strings.HasPrefix(contentType, "multipart/form-data") {
+		ctx.Error("Content-Type must be multipart/form-data", fasthttp.StatusBadRequest)
+		return
+	}
+
+	form, err := ctx.MultipartForm()
+	if err != nil {
+		ctx.Error("Failed to parse multipart form", fasthttp.StatusBadRequest)
+		return
+	}
+
+	files := form.File["file"]
+	if len(files) == 0 {
+		ctx.Error("No file uploaded", fasthttp.StatusBadRequest)
+		return
+	}
+
+	fileHeader := files[0]
+	file, err := fileHeader.Open()
+	if err != nil {
+		ctx.Error("Failed to open uploaded file", fasthttp.StatusInternalServerError)
+		return
+	}
+	defer file.Close()
+
+	storageID := ""
+	if ids := form.Value["id"]; len(ids) > 0 {
+		storageID = ids[0]
+	}
+	if storageID == "" {
+		ctx.Error("Storage ID is required", fasthttp.StatusBadRequest)
+		return
+	}
+
+	checksum := ""
+	if checksums := form.Value["checksum"]; len(checksums) > 0 {
+		checksum = checksums[0]
+	}
+
+	req := &UploadRequest{
+		ID:          storageID,
+		Filename:    fileHeader.Filename,
+		ContentType: fileHeader.Header.Get("Content-Type"),
+		SizeBytes:   fileHeader.Size,
+		Checksum:    checksum,
+	}
+
+	if req.ContentType == "" || req.ContentType == "application/octet-stream" {
+		req.ContentType = detectContentType(fileHeader.Filename)
+	}
+
+	stored, err := e.service.Upload(ctx, nil, publicKey, req, file)
+	if err != nil {
+		log.Error().Err(err).Msg("[STORAGE] Failed to upload avatar")
+		ctx.Error("Failed to upload avatar", fasthttp.StatusInternalServerError)
+		return
+	}
+
+	if err := e.userRepo.UpdateAvatarStorageID(publicKey, &stored.ID); err != nil {
+		log.Error().Err(err).Str("storageId", stored.ID).Msg("[STORAGE] Failed to update avatar storage id")
+		ctx.Error("Failed to update avatar", fasthttp.StatusInternalServerError)
+		return
+	}
+
+	// Delete previous avatar after successful upload and DB update (best-effort)
+	if authenticatedUser.AvatarStorageID != nil {
+		if delErr := e.service.Delete(ctx, *authenticatedUser.AvatarStorageID, publicKey); delErr != nil {
+			log.Warn().Err(delErr).Str("storageId", *authenticatedUser.AvatarStorageID).Msg("[STORAGE] Failed to delete previous avatar")
+		}
+	}
+
+	response, _ := json.Marshal(stored)
+	ctx.SetContentType("application/json")
+	ctx.SetStatusCode(fasthttp.StatusCreated)
+	ctx.SetBody(response)
+}
+
 func (e *Endpoints) InitChunkedUpload(ctx *fasthttp.RequestCtx) {
 	appID, publicKey, ok := e.checkAuthorization(ctx)
 	if !ok {
@@ -137,7 +225,7 @@ func (e *Endpoints) InitChunkedUpload(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	response, err := e.service.InitChunkedUpload(ctx, appID, publicKey, &req)
+	response, err := e.service.InitChunkedUpload(ctx, &appID, publicKey, &req)
 	if err != nil {
 		ctx.Error(err.Error(), fasthttp.StatusBadRequest)
 		return
@@ -226,23 +314,25 @@ func (e *Endpoints) CompleteChunkedUpload(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	evt := &event.Event{
-		ID:               newEventID(),
-		Type:             event.EventTypeApplicationFileCreated,
-		CreatorPublicKey: publicKey,
-		ApplicationID:    completedStorage.ApplicationID,
-		Data: map[string]interface{}{
-			"version":       1,
-			"applicationId": completedStorage.ApplicationID,
-			"fileId":        completedStorage.ID,
-			"filename":      completedStorage.Filename,
-			"contentType":   completedStorage.ContentType,
-			"sizeBytes":     completedStorage.SizeBytes,
-			"remoteUrl":     completedStorage.URL,
-		},
-	}
-	if _, err := e.eventService.ProduceEvent(ctx, evt); err != nil {
-		log.Error().Err(err).Str("fileId", completedStorage.ID).Msg("[STORAGE] Failed to produce application_file_created event")
+	if completedStorage.ApplicationID != nil {
+		evt := &event.Event{
+			ID:               newEventID(),
+			Type:             event.EventTypeApplicationFileCreated,
+			CreatorPublicKey: publicKey,
+			ApplicationID:    *completedStorage.ApplicationID,
+			Data: map[string]interface{}{
+				"version":       1,
+				"applicationId": *completedStorage.ApplicationID,
+				"fileId":        completedStorage.ID,
+				"filename":      completedStorage.Filename,
+				"contentType":   completedStorage.ContentType,
+				"sizeBytes":     completedStorage.SizeBytes,
+				"remoteUrl":     completedStorage.URL,
+			},
+		}
+		if _, err := e.eventService.ProduceEvent(ctx, evt); err != nil {
+			log.Error().Err(err).Str("fileId", completedStorage.ID).Msg("[STORAGE] Failed to produce application_file_created event")
+		}
 	}
 
 	response, _ := json.Marshal(completedStorage)
@@ -330,19 +420,21 @@ func (e *Endpoints) DeleteFile(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	evt := &event.Event{
-		ID:               newEventID(),
-		Type:             event.EventTypeApplicationFileDeleted,
-		CreatorPublicKey: publicKey,
-		ApplicationID:    appID,
-		Data: map[string]interface{}{
-			"version":       1,
-			"applicationId": appID,
-			"fileId":        storageID,
-		},
-	}
-	if _, err := e.eventService.ProduceEvent(ctx, evt); err != nil {
-		log.Error().Err(err).Str("fileId", storageID).Msg("[STORAGE] Failed to produce application_file_deleted event")
+	if appID != nil {
+		evt := &event.Event{
+			ID:               newEventID(),
+			Type:             event.EventTypeApplicationFileDeleted,
+			CreatorPublicKey: publicKey,
+			ApplicationID:    *appID,
+			Data: map[string]interface{}{
+				"version":       1,
+				"applicationId": *appID,
+				"fileId":        storageID,
+			},
+		}
+		if _, err := e.eventService.ProduceEvent(ctx, evt); err != nil {
+			log.Error().Err(err).Str("fileId", storageID).Msg("[STORAGE] Failed to produce application_file_deleted event")
+		}
 	}
 
 	ctx.SetStatusCode(fasthttp.StatusNoContent)
@@ -395,14 +487,20 @@ func (e *Endpoints) getStorageAndCheckAccess(ctx *fasthttp.RequestCtx) (stored *
 		return nil, "", false
 	}
 
-	isMember, err := e.appRepo.IsMember(stored.ApplicationID, publicKey)
-	if err != nil {
-		ctx.Error("Failed to verify membership", fasthttp.StatusInternalServerError)
-		return nil, "", false
-	}
-	if !isMember {
-		ctx.Error("Not a member of this application", fasthttp.StatusForbidden)
-		return nil, "", false
+	// User-scoped files (applicationID == nil, e.g. avatars) are intentionally accessible to any
+	// authenticated user. Avatars must be visible to other platform users (e.g. in member lists).
+	// The UUID storage ID acts as a capability token — only users who received the ID via the
+	// profile endpoint can request the file, so UUID-based access is sufficient security here.
+	if stored.ApplicationID != nil {
+		isMember, err := e.appRepo.IsMember(*stored.ApplicationID, publicKey)
+		if err != nil {
+			ctx.Error("Failed to verify membership", fasthttp.StatusInternalServerError)
+			return nil, "", false
+		}
+		if !isMember {
+			ctx.Error("Not a member of this application", fasthttp.StatusForbidden)
+			return nil, "", false
+		}
 	}
 
 	return stored, publicKey, true

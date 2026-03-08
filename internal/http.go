@@ -38,6 +38,20 @@ func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, status
 			userEndpoints.GetChallenge(ctx)
 		case path == "/users/auth":
 			userEndpoints.UserAuth(ctx)
+		case path == "/users/me":
+			method := string(ctx.Method())
+			if method == "GET" {
+				authMiddleware.RequireAuth(userEndpoints.GetProfile)(ctx)
+			} else {
+				ctx.Error("Method Not Allowed", fasthttp.StatusMethodNotAllowed)
+			}
+		case path == "/users/me/avatar":
+			method := string(ctx.Method())
+			if method == "POST" {
+				authMiddleware.RequireAuth(storageEndpoints.UploadUserAvatar)(ctx)
+			} else {
+				ctx.Error("Method Not Allowed", fasthttp.StatusMethodNotAllowed)
+			}
 		case path == "/health":
 			healthEndpoints.Health(ctx)
 		case path == "/status":

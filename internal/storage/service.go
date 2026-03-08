@@ -51,7 +51,7 @@ func NewService(repo *Repository, backend StorageBackend, maxFileSize int64) *Se
 	}
 }
 
-func (s *Service) Upload(ctx context.Context, appID, uploaderPublicKey string, req *UploadRequest, data io.Reader) (*Storage, error) {
+func (s *Service) Upload(ctx context.Context, appID *string, uploaderPublicKey string, req *UploadRequest, data io.Reader) (*Storage, error) {
 	if !allowedContentTypes[req.ContentType] {
 		return nil, fmt.Errorf("unsupported content type: %s", req.ContentType)
 	}
@@ -227,7 +227,7 @@ func (s *Service) CleanupApplicationStorage(ctx context.Context, appID string) e
 	return nil
 }
 
-func (s *Service) InitChunkedUpload(ctx context.Context, appID, uploaderPublicKey string, req *ChunkedUploadInitRequest) (*ChunkedUploadInitResponse, error) {
+func (s *Service) InitChunkedUpload(ctx context.Context, appID *string, uploaderPublicKey string, req *ChunkedUploadInitRequest) (*ChunkedUploadInitResponse, error) {
 	if !allowedContentTypes[req.ContentType] {
 		return nil, fmt.Errorf("unsupported content type: %s", req.ContentType)
 	}
@@ -377,14 +377,18 @@ func (s *Service) CompleteChunkedUpload(ctx context.Context, storageID string) (
 	return stored, nil
 }
 
-func buildStoragePath(appID, storageID, filename, contentType string, now time.Time) string {
+func buildStoragePath(appID *string, storageID, filename, contentType string, now time.Time) string {
 	year := now.Format("2006")
 	month := now.Format("01")
 	ext := filepath.Ext(filename)
 	if ext == "" {
 		ext = extensionFromContentType(contentType)
 	}
-	return fmt.Sprintf("%s/%s/%s/%s%s", appID, year, month, storageID, ext)
+	prefix := "_user"
+	if appID != nil {
+		prefix = *appID
+	}
+	return fmt.Sprintf("%s/%s/%s/%s%s", prefix, year, month, storageID, ext)
 }
 
 func (s *Service) processImage(ctx context.Context, stored *Storage, data []byte) {

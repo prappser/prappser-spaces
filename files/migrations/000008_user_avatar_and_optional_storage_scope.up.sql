@@ -1,0 +1,2 @@
+ALTER TABLE storage ALTER COLUMN application_id DROP NOT NULL;
+ALTER TABLE users ADD COLUMN avatar_storage_id TEXT REFERENCES storage(id) ON DELETE SET NULL;

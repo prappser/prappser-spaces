@@ -1,9 +1,9 @@
 package storage
 
 type Storage struct {
-	ID                string `json:"id"`
-	ApplicationID     string `json:"applicationId"`
-	UploaderPublicKey string `json:"uploaderPublicKey"`
+	ID                string  `json:"id"`
+	ApplicationID     *string `json:"applicationId,omitempty"`
+	UploaderPublicKey string  `json:"uploaderPublicKey"`
 	Filename          string `json:"filename"`
 	ContentType       string `json:"contentType"`
 	SizeBytes         int64  `json:"sizeBytes"`

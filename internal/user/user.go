@@ -23,10 +23,11 @@ const (
 )
 
 type User struct {
-	PublicKey string `json:"publicKey"`
-	Username  string `json:"username"`
-	Role      string `json:"role"`
-	CreatedAt int64  `json:"createdAt"`
+	PublicKey       string  `json:"publicKey"`
+	Username        string  `json:"username"`
+	Role            string  `json:"role"`
+	CreatedAt       int64   `json:"createdAt"`
+	AvatarStorageID *string `json:"avatarStorageId,omitempty"`
 }
 
 type UserRepository interface {
@@ -34,6 +35,7 @@ type UserRepository interface {
 	GetUserByPublicKey(publicKey string) (*User, error)
 	GetUserByUsername(username string) (*User, error)
 	UpdateUserRole(publicKey string, role string) error
+	UpdateAvatarStorageID(publicKey string, avatarStorageID *string) error
 }
 
 type UserEndpoints struct {
@@ -429,6 +431,20 @@ func generateChallenge() (string, error) {
 	return base64.URLEncoding.EncodeToString(bytes), nil
 }
 
+
+// GetProfile returns the authenticated user's profile
+func (ue UserEndpoints) GetProfile(ctx *fasthttp.RequestCtx) {
+	authenticatedUser, ok := ctx.UserValue("user").(*User)
+	if !ok || authenticatedUser == nil {
+		log.Error().Msg("[PROFILE] Unauthorized")
+		ctx.Error("Unauthorized", fasthttp.StatusUnauthorized)
+		return
+	}
+
+	ctx.SetStatusCode(fasthttp.StatusOK)
+	ctx.SetContentType("application/json")
+	json.NewEncoder(ctx).Encode(authenticatedUser)
+}
 
 // GetServerPublicKey returns the server's Ed25519 public key for JWT verification
 func (ue UserEndpoints) GetServerPublicKey(ctx *fasthttp.RequestCtx) {

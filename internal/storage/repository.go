@@ -41,12 +41,13 @@ func (r *Repository) GetByID(id string) (*Storage, error) {
 			  FROM storage WHERE id = $1`
 
 	s := &Storage{}
+	var applicationID sql.NullString
 	var thumbnailPath sql.NullString
 	var width, height, durationMs sql.NullInt64
 
 	err := r.db.QueryRow(query, id).Scan(
 		&s.ID,
-		&s.ApplicationID,
+		&applicationID,
 		&s.UploaderPublicKey,
 		&s.Filename,
 		&s.ContentType,
@@ -68,6 +69,9 @@ func (r *Repository) GetByID(id string) (*Storage, error) {
 		return nil, err
 	}
 
+	if applicationID.Valid {
+		s.ApplicationID = &applicationID.String
+	}
 	populateNullableFields(s, thumbnailPath, width, height, durationMs)
 	return s, nil
 }
@@ -103,12 +107,13 @@ func (r *Repository) GetByApplicationID(appID string) ([]*Storage, error) {
 	var storageList []*Storage
 	for rows.Next() {
 		s := &Storage{}
+		var applicationID sql.NullString
 		var thumbnailPath sql.NullString
 		var width, height, durationMs sql.NullInt64
 
 		err := rows.Scan(
 			&s.ID,
-			&s.ApplicationID,
+			&applicationID,
 			&s.UploaderPublicKey,
 			&s.Filename,
 			&s.ContentType,
@@ -126,6 +131,9 @@ func (r *Repository) GetByApplicationID(appID string) ([]*Storage, error) {
 			return nil, err
 		}
 
+		if applicationID.Valid {
+			s.ApplicationID = &applicationID.String
+		}
 		populateNullableFields(s, thumbnailPath, width, height, durationMs)
 		storageList = append(storageList, s)
 	}
