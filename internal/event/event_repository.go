@@ -165,24 +165,28 @@ func (r *EventRepository) GetSince(userPublicKey string, sinceEventID string, li
 					  INNER JOIN members m ON e.application_id = m.application_id
 					  WHERE m.public_key = $1
 					    AND (
-					      e.application_id != $2
-					      OR (e.application_id = $3 AND (
-					        e.sequence_number > $4
-					        OR (e.sequence_number = $5 AND e.created_at > $6)
-					        OR (e.sequence_number = $7 AND e.created_at = $8 AND e.id > $9)
+					      (e.application_id = $2 AND (
+					        e.sequence_number > $3
+					        OR (e.sequence_number = $4 AND e.created_at > $5)
+					        OR (e.sequence_number = $6 AND e.created_at = $7 AND e.id > $8)
+					      ))
+					      OR (e.application_id != $9 AND (
+					        e.created_at > $10
+					        OR (e.created_at = $11 AND e.id > $12)
 					      ))
 					    ))
 					 UNION ALL
 					 (SELECT e.id, e.created_at, e.application_id, e.sequence_number,
 					         e.type, e.creator_public_key, e.version, e.data
 					  FROM events e
-					  WHERE e.application_id IS NULL AND e.creator_public_key = $10
-					    AND (e.created_at > $11 OR (e.created_at = $12 AND e.id > $13)))
+					  WHERE e.application_id IS NULL AND e.creator_public_key = $13
+					    AND (e.created_at > $14 OR (e.created_at = $15 AND e.id > $16)))
 					 ORDER BY created_at ASC
-					 LIMIT $14`
+					 LIMIT $17`
 			args = []interface{}{
 				userPublicKey,
-				sinceAppID.String, sinceAppID.String, sinceSequence, sinceSequence, sinceCreatedAt, sinceSequence, sinceCreatedAt, sinceEventID,
+				sinceAppID.String, sinceSequence, sinceSequence, sinceCreatedAt, sinceSequence, sinceCreatedAt, sinceEventID,
+				sinceAppID.String, sinceCreatedAt, sinceCreatedAt, sinceEventID,
 				userPublicKey, sinceCreatedAt, sinceCreatedAt, sinceEventID,
 				limit + 1,
 			}

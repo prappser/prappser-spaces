@@ -140,7 +140,7 @@ func main() {
 		return
 	}
 
-	storageService := storage.NewService(storageRepo, storageBackend, config.Storage.MaxFileSize)
+	storageService := storage.NewService(storageRepo, storageBackend, config.Storage.MaxFileSize, config.ExternalURL)
 	storageEndpoints := storage.NewEndpoints(storageService, appRepository, eventService, userRepository)
 	log.Info().Str("storageType", config.Storage.StorageType).Msg("Storage service initialized")
 

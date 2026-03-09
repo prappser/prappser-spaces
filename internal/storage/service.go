@@ -38,9 +38,10 @@ type Service struct {
 	repo        *Repository
 	backend     StorageBackend
 	maxFileSize int64
+	externalURL string
 }
 
-func NewService(repo *Repository, backend StorageBackend, maxFileSize int64) *Service {
+func NewService(repo *Repository, backend StorageBackend, maxFileSize int64, externalURL string) *Service {
 	if maxFileSize <= 0 {
 		maxFileSize = 500 * 1024 * 1024
 	}
@@ -48,7 +49,12 @@ func NewService(repo *Repository, backend StorageBackend, maxFileSize int64) *Se
 		repo:        repo,
 		backend:     backend,
 		maxFileSize: maxFileSize,
+		externalURL: externalURL,
 	}
+}
+
+func (s *Service) ExternalURL() string {
+	return s.externalURL
 }
 
 func (s *Service) Upload(ctx context.Context, appID *string, uploaderPublicKey string, req *UploadRequest, data io.Reader) (*Storage, error) {

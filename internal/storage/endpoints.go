@@ -3,6 +3,7 @@ package storage
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"strconv"
 	"strings"
@@ -114,7 +115,7 @@ func (e *Endpoints) Upload(ctx *fasthttp.RequestCtx) {
 			"filename":      stored.Filename,
 			"contentType":   stored.ContentType,
 			"sizeBytes":     stored.SizeBytes,
-			"remoteUrl":     stored.URL,
+			"remoteUrl":     fmt.Sprintf("%s/storage/%s", e.service.ExternalURL(), stored.ID),
 		},
 	}
 	if _, err := e.eventService.ProduceEvent(ctx, evt); err != nil {
@@ -327,7 +328,7 @@ func (e *Endpoints) CompleteChunkedUpload(ctx *fasthttp.RequestCtx) {
 				"filename":      completedStorage.Filename,
 				"contentType":   completedStorage.ContentType,
 				"sizeBytes":     completedStorage.SizeBytes,
-				"remoteUrl":     completedStorage.URL,
+				"remoteUrl":     fmt.Sprintf("%s/storage/%s", e.service.ExternalURL(), completedStorage.ID),
 			},
 		}
 		if _, err := e.eventService.ProduceEvent(ctx, evt); err != nil {
