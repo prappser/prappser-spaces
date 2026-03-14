@@ -39,9 +39,26 @@ func NewEndpoints(service *Service, appRepo *application.Repository, eventServic
 }
 
 func (e *Endpoints) Upload(ctx *fasthttp.RequestCtx) {
-	appID, publicKey, ok := e.checkAuthorization(ctx)
-	if !ok {
-		return
+	appIDStr := string(ctx.QueryArgs().Peek("applicationId"))
+
+	var appID *string
+	var publicKey string
+
+	if appIDStr != "" {
+		aid, pk, ok := e.checkAuthorization(ctx)
+		if !ok {
+			return
+		}
+		appID = &aid
+		publicKey = pk
+	} else {
+		authenticatedUser, ok := ctx.UserValue("user").(*user.User)
+		if !ok || authenticatedUser == nil {
+			log.Error().Msg("[STORAGE] Unauthorized upload attempt")
+			ctx.Error("Unauthorized", fasthttp.StatusUnauthorized)
+			return
+		}
+		publicKey = authenticatedUser.PublicKey
 	}
 
 	contentType := string(ctx.Request.Header.ContentType())
@@ -96,30 +113,32 @@ func (e *Endpoints) Upload(ctx *fasthttp.RequestCtx) {
 		req.ContentType = detectContentType(fileHeader.Filename)
 	}
 
-	stored, err := e.service.Upload(ctx, &appID, publicKey, req, file)
+	stored, err := e.service.Upload(ctx, appID, publicKey, req, file)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to upload file")
 		ctx.Error(err.Error(), fasthttp.StatusBadRequest)
 		return
 	}
 
-	evt := &event.Event{
-		ID:               newEventID(),
-		Type:             event.EventTypeApplicationFileCreated,
-		CreatorPublicKey: publicKey,
-		ApplicationID:    appID,
-		Data: map[string]interface{}{
-			"version":       1,
-			"applicationId": appID,
-			"fileId":        stored.ID,
-			"filename":      stored.Filename,
-			"contentType":   stored.ContentType,
-			"sizeBytes":     stored.SizeBytes,
-			"remoteUrl":     fmt.Sprintf("%s/storage/%s", e.service.ExternalURL(), stored.ID),
-		},
-	}
-	if _, err := e.eventService.ProduceEvent(ctx, evt); err != nil {
-		log.Error().Err(err).Str("fileId", stored.ID).Msg("[STORAGE] Failed to produce application_file_created event")
+	if appID != nil {
+		evt := &event.Event{
+			ID:               newEventID(),
+			Type:             event.EventTypeApplicationFileCreated,
+			CreatorPublicKey: publicKey,
+			ApplicationID:    *appID,
+			Data: map[string]interface{}{
+				"version":       1,
+				"applicationId": *appID,
+				"fileId":        stored.ID,
+				"filename":      stored.Filename,
+				"contentType":   stored.ContentType,
+				"sizeBytes":     stored.SizeBytes,
+				"remoteUrl":     fmt.Sprintf("%s/storage/%s", e.service.ExternalURL(), stored.ID),
+			},
+		}
+		if _, err := e.eventService.ProduceEvent(ctx, evt); err != nil {
+			log.Error().Err(err).Str("fileId", stored.ID).Msg("[STORAGE] Failed to produce application_file_created event")
+		}
 	}
 
 	response, _ := json.Marshal(stored)
