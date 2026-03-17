@@ -359,6 +359,25 @@ func (r *MemoryRepository) GetApplicationsByMemberPublicKey(publicKey string) ([
 	return result, nil
 }
 
+// GetAppVersionsByMemberPublicKey returns a lightweight map of app ID → version info
+// for all non-deleted apps the user is a member of.
+func (r *MemoryRepository) GetAppVersionsByMemberPublicKey(publicKey string) (map[string]AppVersionInfo, error) {
+	result := make(map[string]AppVersionInfo)
+	for _, member := range r.members {
+		if member.PublicKey != publicKey {
+			continue
+		}
+		app, exists := r.applications[member.ApplicationID]
+		if !exists || app.DeletedAt != nil {
+			continue
+		}
+		result[app.ID] = AppVersionInfo{
+			LastSequence: app.LastSequence,
+		}
+	}
+	return result, nil
+}
+
 // IsMember checks if a user is a member of an application
 func (r *MemoryRepository) IsMember(appID, publicKey string) (bool, error) {
 	for _, member := range r.members {
@@ -367,6 +386,17 @@ func (r *MemoryRepository) IsMember(appID, publicKey string) (bool, error) {
 		}
 	}
 	return false, nil
+}
+
+func (r *MemoryRepository) UpdateLastSequence(appID string, sequence int64) error {
+	app, exists := r.applications[appID]
+	if !exists || app.DeletedAt != nil {
+		return fmt.Errorf("application not found or deleted: %s", appID)
+	}
+	app.LastSequence = &sequence
+	app.UpdateTimestamp()
+	r.applications[appID] = app
+	return nil
 }
 
 // GetMemberCount returns the number of members in an application

@@ -15,6 +15,7 @@ type Application struct {
 	DeletedAt       *int64           `json:"deletedAt,omitempty"`
 	ComponentGroups []ComponentGroup `json:"componentGroups"`
 	Members         []Member         `json:"members"`
+	LastSequence    *int64           `json:"lastSequence,omitempty"`
 }
 
 type ComponentGroup struct {
@@ -40,7 +41,6 @@ type ApplicationState struct {
 	UpdatedAt int64  `json:"updatedAt"`
 }
 
-
 type MemberRole string
 
 const (
@@ -57,6 +57,12 @@ type Member struct {
 	Role            MemberRole `json:"role"`
 	PublicKey       string     `json:"publicKey"`
 	AvatarStorageID *string    `json:"avatarStorageId,omitempty"`
+}
+
+// AppVersionInfo holds version tracking data for an application.
+// Used by the lightweight poll query to avoid N+1 full-app loads.
+type AppVersionInfo struct {
+	LastSequence *int64
 }
 
 func (a *Application) UpdateTimestamp() {

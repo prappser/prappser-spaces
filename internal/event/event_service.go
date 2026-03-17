@@ -114,6 +114,7 @@ func (s *EventService) AcceptEvent(ctx context.Context, event *Event, submitter 
 			Str("eventId", event.ID).
 			Str("type", string(event.Type)).
 			Msg("[EVENT] Execution complete")
+		s.updateAppVersion(event)
 	}
 
 	log.Info().
@@ -258,6 +259,7 @@ func (s *EventService) ProduceEvent(ctx context.Context, event *Event) (*Event, 
 			Str("type", string(event.Type)).
 			Str("applicationId", event.ApplicationID).
 			Msg("[EVENT] Execution complete")
+		s.updateAppVersion(event)
 	}
 
 	log.Info().
@@ -349,15 +351,64 @@ func (s *EventService) GetEventsSince(userPublicKey string, sinceEventID string,
 			return &EventsResponse{
 				FullResyncRequired: true,
 				Reason:             "Events expired or gap detected",
+				AppVersions:        s.loadAppVersions(userPublicKey),
 			}, nil
 		}
 		return nil, fmt.Errorf("failed to get events: %w", err)
 	}
 
+	// Only include app versions when the client is caught up (no more pages).
+	// This avoids a DB query on every poll tick while the client is still paging through events.
+	var appVersions map[string]AppVersion
+	if !hasMore {
+		appVersions = s.loadAppVersions(userPublicKey)
+	}
+
 	return &EventsResponse{
-		Events:  events,
-		HasMore: hasMore,
+		Events:      events,
+		HasMore:     hasMore,
+		AppVersions: appVersions,
 	}, nil
+}
+
+// loadAppVersions fetches the last sequence number for all apps the user is a member of.
+// Uses a lightweight query (id, last_sequence only) to avoid N+1 full-app loads.
+func (s *EventService) loadAppVersions(userPublicKey string) map[string]AppVersion {
+	appVersions, err := s.appRepo.GetAppVersionsByMemberPublicKey(userPublicKey)
+	if err != nil {
+		log.Warn().Err(err).Str("userPublicKey", userPublicKey).Msg("[EVENT] Failed to load app versions for poll response")
+		return nil
+	}
+	if len(appVersions) == 0 {
+		return nil
+	}
+	result := make(map[string]AppVersion, len(appVersions))
+	for appID, info := range appVersions {
+		if info.LastSequence != nil {
+			result[appID] = AppVersion{
+				LastSequence: *info.LastSequence,
+			}
+		}
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
+// updateAppVersion persists the last processed sequence number for an app-scoped event.
+// Errors are logged but do not fail the event pipeline.
+func (s *EventService) updateAppVersion(event *Event) {
+	if event.ApplicationID == "" {
+		return
+	}
+	if err := s.appRepo.UpdateLastSequence(event.ApplicationID, event.SequenceNumber); err != nil {
+		log.Error().
+			Str("eventId", event.ID).
+			Str("applicationId", event.ApplicationID).
+			Err(err).
+			Msg("[EVENT] Failed to update app version")
+	}
 }
 
 // CleanupOldEvents deletes events older than the retention period (7 days)

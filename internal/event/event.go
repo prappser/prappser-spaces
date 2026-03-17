@@ -160,12 +160,19 @@ type MemberDetailsChangedData struct {
 	MemberPublicKey string `json:"memberPublicKey"`
 }
 
+// AppVersion holds the last known sequence number for an application.
+// Clients use this to detect local state drift and trigger a full resync if needed.
+type AppVersion struct {
+	LastSequence int64 `json:"lastSequence"`
+}
+
 // EventsResponse represents the response for GET /events endpoint
 type EventsResponse struct {
-	Events             []*Event `json:"events,omitempty"`
-	HasMore            bool     `json:"hasMore"`
-	FullResyncRequired bool     `json:"fullResyncRequired,omitempty"`
-	Reason             string   `json:"reason,omitempty"`
+	Events             []*Event              `json:"events,omitempty"`
+	HasMore            bool                  `json:"hasMore"`
+	FullResyncRequired bool                  `json:"fullResyncRequired,omitempty"`
+	Reason             string                `json:"reason,omitempty"`
+	AppVersions        map[string]AppVersion `json:"appVersions,omitempty"`
 }
 
 // NewEvent creates a new event with the given parameters

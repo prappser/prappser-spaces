@@ -29,12 +29,14 @@ func (r *Repository) CreateApplication(app *Application) error {
 }
 
 func (r *Repository) GetApplicationByID(id string) (*Application, error) {
-	query := `SELECT id, name, icon, server_public_key, created_at, updated_at
+	query := `SELECT id, name, icon, server_public_key, created_at, updated_at, last_sequence
 			  FROM applications WHERE id = $1 AND deleted_at IS NULL`
 
 	app := &Application{}
+	var lastSequence sql.NullInt64
 	err := r.db.QueryRow(query, id).Scan(
 		&app.ID, &app.Name, &app.Icon, &app.ServerPublicKey, &app.CreatedAt, &app.UpdatedAt,
+		&lastSequence,
 	)
 
 	if err == sql.ErrNoRows {
@@ -42,6 +44,10 @@ func (r *Repository) GetApplicationByID(id string) (*Application, error) {
 	}
 	if err != nil {
 		return nil, err
+	}
+
+	if lastSequence.Valid {
+		app.LastSequence = &lastSequence.Int64
 	}
 
 	// Load component groups
@@ -93,6 +99,22 @@ func (r *Repository) GetApplicationState(id string) (*ApplicationState, error) {
 	}
 
 	return state, err
+}
+
+func (r *Repository) UpdateLastSequence(appID string, sequence int64) error {
+	query := `UPDATE applications SET last_sequence = $1, updated_at = $2 WHERE id = $3 AND deleted_at IS NULL`
+	result, err := r.db.Exec(query, sequence, time.Now().Unix(), appID)
+	if err != nil {
+		return err
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsAffected == 0 {
+		return fmt.Errorf("application not found or deleted: %s", appID)
+	}
+	return nil
 }
 
 func (r *Repository) UpdateApplicationTimestamp(id string) error {
@@ -591,7 +613,7 @@ func (r *Repository) GetMemberByPublicKey(appID, publicKey string) (*Member, err
 }
 
 func (r *Repository) GetApplicationsByMemberPublicKey(publicKey string) ([]*Application, error) {
-	query := `SELECT DISTINCT a.id, a.name, a.icon, a.server_public_key, a.created_at, a.updated_at
+	query := `SELECT DISTINCT a.id, a.name, a.icon, a.server_public_key, a.created_at, a.updated_at, a.last_sequence
 			  FROM applications a
 			  INNER JOIN members m ON a.id = m.application_id
 			  WHERE m.public_key = $1 AND a.deleted_at IS NULL
@@ -606,9 +628,13 @@ func (r *Repository) GetApplicationsByMemberPublicKey(publicKey string) ([]*Appl
 	var applications []*Application
 	for rows.Next() {
 		app := &Application{}
-		err := rows.Scan(&app.ID, &app.Name, &app.Icon, &app.ServerPublicKey, &app.CreatedAt, &app.UpdatedAt)
+		var lastSequence sql.NullInt64
+		err := rows.Scan(&app.ID, &app.Name, &app.Icon, &app.ServerPublicKey, &app.CreatedAt, &app.UpdatedAt, &lastSequence)
 		if err != nil {
 			return nil, err
+		}
+		if lastSequence.Valid {
+			app.LastSequence = &lastSequence.Int64
 		}
 
 		// Load component groups for this application
@@ -650,6 +676,34 @@ func (r *Repository) GetApplicationsByMemberPublicKey(publicKey string) ([]*Appl
 	}
 
 	return applications, rows.Err()
+}
+
+func (r *Repository) GetAppVersionsByMemberPublicKey(publicKey string) (map[string]AppVersionInfo, error) {
+	query := `SELECT DISTINCT a.id, a.last_sequence
+			  FROM applications a
+			  INNER JOIN members m ON a.id = m.application_id
+			  WHERE m.public_key = $1 AND a.deleted_at IS NULL`
+
+	rows, err := r.db.Query(query, publicKey)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[string]AppVersionInfo)
+	for rows.Next() {
+		var id string
+		var lastSequence sql.NullInt64
+		if err := rows.Scan(&id, &lastSequence); err != nil {
+			return nil, err
+		}
+		info := AppVersionInfo{}
+		if lastSequence.Valid {
+			info.LastSequence = &lastSequence.Int64
+		}
+		result[id] = info
+	}
+	return result, rows.Err()
 }
 
 func (r *Repository) IsMember(appID, publicKey string) (bool, error) {

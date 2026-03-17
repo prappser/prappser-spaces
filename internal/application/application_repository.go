@@ -32,7 +32,13 @@ type ApplicationRepository interface {
 
 	// Invitation-related methods
 	GetApplicationsByMemberPublicKey(publicKey string) ([]*Application, error)
+	// GetAppVersionsByMemberPublicKey returns a lightweight map of app ID → version info
+	// for all non-deleted apps the user is a member of. Used by the poll path to avoid
+	// full N+1 application loads.
+	GetAppVersionsByMemberPublicKey(publicKey string) (map[string]AppVersionInfo, error)
 	IsMember(appID, publicKey string) (bool, error)
 	GetMemberCount(appID string) (int, error)
 	UpdateApplicationMetadata(id, name string, icon *string) error
+	// UpdateLastSequence stores the last processed sequence number for drift detection.
+	UpdateLastSequence(appID string, sequence int64) error
 }
