@@ -150,7 +150,11 @@ func main() {
 
 	serverAddr := fmt.Sprintf(":%s", config.Port)
 	log.Info().Str("addr", serverAddr).Msg("Starting HTTP server")
-	if err := fasthttp.ListenAndServe(serverAddr, requestHandler); err != nil {
+	server := &fasthttp.Server{
+		Handler:            requestHandler,
+		MaxRequestBodySize: int(config.Storage.MaxFileSize),
+	}
+	if err := server.ListenAndServe(serverAddr); err != nil {
 		log.Fatal().Err(err).Msg("Error starting HTTP server")
 	}
 }
