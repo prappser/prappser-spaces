@@ -190,12 +190,17 @@ func (ue UserEndpoints) GetChallenge(ctx *fasthttp.RequestCtx) {
 	}
 
 	publicKeyStr := string(publicKey)
-	log.Debug().Str("publicKey", publicKeyStr[:min(50, len(publicKeyStr))]+"...").Msg("[CHALLENGE] Challenge requested for user")
+	log.Debug().Str("publicKey", publicKeyStr).Int("publicKeyLen", len(publicKeyStr)).Msg("[CHALLENGE] Challenge requested for user (full key)")
 
 	// Check if user exists
 	user, err := ue.userRepository.GetUserByPublicKey(publicKeyStr)
 	if err != nil {
-		log.Error().Err(err).Str("publicKey", publicKeyStr[:min(50, len(publicKeyStr))]+"...").Msg("[CHALLENGE] User not found")
+		log.Error().Err(err).Str("publicKey", publicKeyStr[:min(50, len(publicKeyStr))]+"...").Msg("[CHALLENGE] Failed to get user")
+		ctx.Error("Internal server error", fasthttp.StatusInternalServerError)
+		return
+	}
+	if user == nil {
+		log.Error().Str("publicKey", publicKeyStr[:min(50, len(publicKeyStr))]+"...").Msg("[CHALLENGE] User not found")
 		ctx.Error("User not found", fasthttp.StatusNotFound)
 		return
 	}
@@ -266,7 +271,12 @@ func (ue UserEndpoints) UserAuth(ctx *fasthttp.RequestCtx) {
 	// Get user by public key (already verified in verifyUserAuthJWS, but need full user object)
 	user, err := ue.userRepository.GetUserByPublicKey(claims.PublicKey)
 	if err != nil {
-		log.Error().Err(err).Str("publicKey", publicKeyPrefix).Msg("[AUTH] User not found")
+		log.Error().Err(err).Str("publicKey", publicKeyPrefix).Msg("[AUTH] Failed to get user")
+		ctx.Error("Internal server error", fasthttp.StatusInternalServerError)
+		return
+	}
+	if user == nil {
+		log.Error().Str("publicKey", publicKeyPrefix).Msg("[AUTH] User not found")
 		ctx.Error("User not found", fasthttp.StatusNotFound)
 		return
 	}
@@ -351,8 +361,12 @@ func (ue UserEndpoints) verifyUserAuthJWS(signedJWT string, ttlSec int) (*userAu
 	// 1. Get the user by public key (unique identifier)
 	user, err := ue.userRepository.GetUserByPublicKey(claims.PublicKey)
 	if err != nil {
-		log.Debug().Str("publicKey", publicKeyPrefix).Msg("[VERIFY] User not found in database")
+		log.Debug().Str("publicKey", publicKeyPrefix).Msg("[VERIFY] Failed to get user from database")
 		return nil, fmt.Errorf("user not found: %w", err)
+	}
+	if user == nil {
+		log.Debug().Str("publicKey", publicKeyPrefix).Msg("[VERIFY] User not found in database")
+		return nil, fmt.Errorf("user not found")
 	}
 
 	// 2. Validate that the user has a public key

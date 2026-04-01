@@ -721,6 +721,17 @@ func (s *EventService) executeApplicationAfterEditModeChanged(ctx context.Contex
 					log.Error().Err(err).Str("entityId", entityID).Msg("[EDIT_MODE] Failed to reorder component group")
 				}
 			}
+		case "component_group_changed":
+			data, ok := change["data"].(map[string]interface{})
+			if ok {
+				name, _ := data["name"].(string)
+				indexRaw, _ := data["index"].(float64)
+				if name != "" {
+					if err := s.appRepo.UpdateComponentGroup(entityID, name, int(indexRaw)); err != nil {
+						log.Error().Err(err).Str("entityId", entityID).Msg("[EDIT_MODE] Failed to update component group")
+					}
+				}
+			}
 		default:
 			log.Warn().
 				Str("changeType", changeType).

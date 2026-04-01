@@ -77,6 +77,9 @@ func (us *UserService) ValidateJWT(tokenString string) (*User, error) {
 		if err != nil {
 			return nil, err
 		}
+		if user == nil {
+			return nil, fmt.Errorf("user not found")
+		}
 		return user, nil
 	}
 

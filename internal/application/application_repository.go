@@ -20,6 +20,7 @@ type ApplicationRepository interface {
 
 	GetComponentGroupByID(groupID string) (*ComponentGroup, error)
 	UpdateComponentGroupIndex(groupID string, index int) error
+	UpdateComponentGroup(groupID, name string, index int) error
 	DeleteComponentGroup(groupID string) error
 	
 	CreateMember(member *Member) error

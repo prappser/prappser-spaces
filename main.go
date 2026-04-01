@@ -89,6 +89,24 @@ func main() {
 	publicKey := keyService.PublicKey()
 
 	userRepository := user.NewUserRepository(db)
+
+	// Debug: log registered users at startup
+	rows, err := db.Query("SELECT public_key, username, role FROM users")
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to query users for debug log")
+	} else {
+		defer rows.Close()
+		count := 0
+		for rows.Next() {
+			var pk, uname, role string
+			if err := rows.Scan(&pk, &uname, &role); err == nil {
+				log.Info().Str("publicKey", pk[:min(50, len(pk))]+"...").Str("username", uname).Str("role", role).Msg("[DEBUG] Registered user")
+				count++
+			}
+		}
+		log.Info().Int("count", count).Msg("[DEBUG] Total registered users")
+	}
+
 	userService := user.NewUserService(userRepository, config.Users, privateKey, publicKey)
 	userEndpoints := user.NewEndpoints(userRepository, config.Users, privateKey, publicKey, userService)
 	healthEndpoints := health.NewEndpoints("1.0.0")

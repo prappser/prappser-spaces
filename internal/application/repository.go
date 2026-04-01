@@ -443,6 +443,25 @@ func (r *Repository) UpdateComponentGroupIndex(groupID string, index int) error 
 	return nil
 }
 
+func (r *Repository) UpdateComponentGroup(groupID, name string, index int) error {
+	query := `UPDATE component_groups SET name = $1, index_order = $2 WHERE id = $3`
+	result, err := r.db.Exec(query, name, index, groupID)
+	if err != nil {
+		return err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("component group not found")
+	}
+
+	return nil
+}
+
 func (r *Repository) DeleteComponentGroup(groupID string) error {
 	query := `DELETE FROM component_groups WHERE id = $1`
 	result, err := r.db.Exec(query, groupID)

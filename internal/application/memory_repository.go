@@ -235,6 +235,16 @@ func (r *MemoryRepository) UpdateComponentGroupIndex(groupID string, index int) 
 	return nil
 }
 
+func (r *MemoryRepository) UpdateComponentGroup(groupID, name string, index int) error {
+	group, exists := r.componentGroups[groupID]
+	if !exists {
+		return fmt.Errorf("component group not found")
+	}
+	group.Name = name
+	group.Index = index
+	return nil
+}
+
 func (r *MemoryRepository) DeleteComponentGroup(groupID string) error {
 	_, exists := r.componentGroups[groupID]
 	if !exists {
