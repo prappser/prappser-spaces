@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/prappser/prappser_server/internal/application"
-	"github.com/prappser/prappser_server/internal/user"
+	"github.com/prappser/prappser-space/internal/application"
+	"github.com/prappser/prappser-space/internal/user"
 	"github.com/rs/zerolog/log"
 )
 
@@ -187,13 +187,13 @@ func (s *EventService) acceptUserScopedEvent(ctx context.Context, event *Event, 
 }
 
 // ProduceEvent creates an event without authorization checks.
-// Used for server-generated events where the action was already validated by the endpoint.
+// Used for space-generated events where the action was already validated by the endpoint.
 // The event is sequenced, persisted, and executed but authorization is skipped.
 func (s *EventService) ProduceEvent(ctx context.Context, event *Event) (*Event, error) {
 	log.Debug().
 		Str("eventId", event.ID).
 		Str("type", string(event.Type)).
-		Msg("[EVENT] Server-produced event received")
+		Msg("[EVENT] Space-produced event received")
 
 	if err := ValidateEvent(event); err != nil {
 		log.Debug().
@@ -266,7 +266,7 @@ func (s *EventService) ProduceEvent(ctx context.Context, event *Event) (*Event, 
 		Str("eventId", event.ID).
 		Str("type", string(event.Type)).
 		Int64("sequence", event.SequenceNumber).
-		Msg("[EVENT] Server-produced event accepted successfully")
+		Msg("[EVENT] Space-produced event accepted successfully")
 
 	// Broadcast to WebSocket clients
 	s.broadcastEvent(event)
@@ -274,14 +274,14 @@ func (s *EventService) ProduceEvent(ctx context.Context, event *Event) (*Event, 
 	return event, nil
 }
 
-// produceUserScopedEvent handles the user-scoped path for server-produced events.
+// produceUserScopedEvent handles the user-scoped path for space-produced events.
 func (s *EventService) produceUserScopedEvent(ctx context.Context, event *Event) (*Event, error) {
 	event.SequenceNumber = 0
 	event.CreatedAt = time.Now().Unix()
 
 	log.Debug().
 		Str("eventId", event.ID).
-		Msg("[EVENT] Persisting user-scoped server-produced event to database")
+		Msg("[EVENT] Persisting user-scoped space-produced event to database")
 
 	if err := s.repo.Create(event); err != nil {
 		log.Error().

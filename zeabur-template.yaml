@@ -3,13 +3,13 @@ kind: Template
 metadata:
   name: Prappser
 spec:
-  description: Prappser server - event-driven application sync with PostgreSQL
+  description: Prappser space - event-driven application sync with PostgreSQL
   tags:
     - Go
     - PostgreSQL
     - Backend
   readme: |
-    # Prappser Server
+    # Prappser Space
 
     Event-driven application sync server with PostgreSQL backend.
 
@@ -60,7 +60,7 @@ spec:
             default: "5432"
             expose: true
 
-    - name: prappser-server
+    - name: prappser-space
       icon: https://cdn.simpleicons.org/go/00ADD8
       template: GIT
       dependencies:

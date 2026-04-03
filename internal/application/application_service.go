@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/prappser/prappser_server/internal/user"
+	"github.com/prappser/prappser-space/internal/user"
 )
 
 // Event represents a domain event (avoiding import cycle with event package)

@@ -10,14 +10,14 @@ import (
 
 	"github.com/goccy/go-json"
 	"github.com/google/uuid"
-	"github.com/prappser/prappser_server/internal/application"
-	"github.com/prappser/prappser_server/internal/event"
-	"github.com/prappser/prappser_server/internal/user"
+	"github.com/prappser/prappser-space/internal/application"
+	"github.com/prappser/prappser-space/internal/event"
+	"github.com/prappser/prappser-space/internal/user"
 	"github.com/rs/zerolog/log"
 	"github.com/valyala/fasthttp"
 )
 
-// EventService is the interface for producing server-generated events.
+// EventService is the interface for producing space-generated events.
 type EventService interface {
 	ProduceEvent(ctx context.Context, e *event.Event) (*event.Event, error)
 }

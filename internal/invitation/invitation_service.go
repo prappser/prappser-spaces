@@ -9,9 +9,9 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
-	"github.com/prappser/prappser_server/internal/application"
-	"github.com/prappser/prappser_server/internal/event"
-	"github.com/prappser/prappser_server/internal/user"
+	"github.com/prappser/prappser-space/internal/application"
+	"github.com/prappser/prappser-space/internal/event"
+	"github.com/prappser/prappser-space/internal/user"
 	"github.com/rs/zerolog/log"
 )
 
@@ -126,7 +126,7 @@ func (s *InvitationService) CreateInvitation(opts CreateInvitationOptions) (*Inv
 }
 
 // GenerateToken creates a signed JWT token for an invitation
-func (s *InvitationService) GenerateToken(inviteID, serverURL string, expiresAt *int64) (string, error) {
+func (s *InvitationService) GenerateToken(inviteID, spaceURL string, expiresAt *int64) (string, error) {
 	now := time.Now()
 
 	issuedAt := now.Unix()
@@ -135,7 +135,7 @@ func (s *InvitationService) GenerateToken(inviteID, serverURL string, expiresAt 
 	// Create token with custom claims
 	mapClaims := jwt.MapClaims{
 		"id":        inviteID,
-		"serverUrl": serverURL,
+		"spaceUrl": spaceURL,
 		"iat":       issuedAt,
 		"nbf":       notBefore,
 	}
@@ -186,8 +186,8 @@ func (s *InvitationService) ValidateToken(tokenString string) (*InviteTokenClaim
 			IssuedAt: int64(iatFloat),
 		}
 
-		if serverURL, ok := claims["serverUrl"].(string); ok {
-			inviteClaims.ServerURL = serverURL
+		if spaceURL, ok := claims["spaceUrl"].(string); ok {
+			inviteClaims.SpaceURL = spaceURL
 		}
 
 		if expFloat, ok := claims["exp"].(float64); ok {

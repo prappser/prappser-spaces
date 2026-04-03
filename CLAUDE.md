@@ -22,7 +22,7 @@ docker compose up -d && go test -tags=integration ./...  # Integration tests
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `DATABASE_URL` | Yes | — | PostgreSQL connection string |
-| `MASTER_PASSWORD` | Yes | — | Used to encrypt/decrypt server Ed25519 keys |
+| `MASTER_PASSWORD` | Yes | — | Used to encrypt/decrypt space Ed25519 keys |
 | `PORT` | No | `4545` | HTTP listen port |
 | `EXTERNAL_URL` | No | `http://localhost:{PORT}` | Public URL for invite links |
 | `ALLOWED_ORIGINS` | No | prappser.app + localhost:* | Comma-separated CORS origins |
@@ -80,7 +80,7 @@ internal/
   keys/
     crypto.go              — Ed25519 keygen, AES-GCM encrypt/decrypt
     crypto_test.go
-    keys_repository.go     — KeyRepository (stores encrypted server keypair)
+    keys_repository.go     — KeyRepository (stores encrypted space keypair)
     keys_service.go        — KeyService: Initialize(), PrivateKey(), PublicKey()
     keys_repository_integration_test.go
   storage/

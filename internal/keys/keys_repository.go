@@ -15,12 +15,12 @@ func NewKeyRepository(db *sql.DB) *KeyRepository {
 	return &KeyRepository{db: db}
 }
 
-func (r *KeyRepository) GetServerKey(ctx context.Context) (*EncryptedKey, error) {
+func (r *KeyRepository) GetSpaceKey(ctx context.Context) (*EncryptedKey, error) {
 	var pubKey, privKey, salt, nonce []byte
 
 	err := r.db.QueryRowContext(ctx,
 		`SELECT public_key, encrypted_private_key, salt, nonce
-		 FROM server_keys WHERE id = 'main'`,
+		 FROM space_keys WHERE id = 'main'`,
 	).Scan(&pubKey, &privKey, &salt, &nonce)
 
 	if err == sql.ErrNoRows {
@@ -38,9 +38,9 @@ func (r *KeyRepository) GetServerKey(ctx context.Context) (*EncryptedKey, error)
 	}, nil
 }
 
-func (r *KeyRepository) SaveServerKey(ctx context.Context, enc *EncryptedKey) error {
+func (r *KeyRepository) SaveSpaceKey(ctx context.Context, enc *EncryptedKey) error {
 	_, err := r.db.ExecContext(ctx,
-		`INSERT INTO server_keys (id, public_key, encrypted_private_key, salt, nonce, created_at, algorithm)
+		`INSERT INTO space_keys (id, public_key, encrypted_private_key, salt, nonce, created_at, algorithm)
 		 VALUES ('main', $1, $2, $3, $4, $5, 'ed25519')`,
 		[]byte(enc.PublicKey), enc.EncryptedPrivateKey, enc.Salt, enc.Nonce, time.Now().Unix(),
 	)

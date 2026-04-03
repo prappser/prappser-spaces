@@ -1,6 +1,6 @@
-# Prappser Server
+# Prappser Space
 
-Backend server for the Prappser platform - provides authentication, application state sync, and event processing.
+Backend space for the Prappser platform - provides authentication, application state sync, and event processing.
 
 ## Requirements
 
@@ -55,8 +55,8 @@ The server uses PostgreSQL and automatically runs migrations on startup. Tables 
 ### Docker
 
 ```bash
-docker build -t prappser-server .
-docker run -e DATABASE_URL="..." -e MASTER_PASSWORD="..." -p 4545:4545 prappser-server
+docker build -t prappser-space .
+docker run -e DATABASE_URL="..." -e MASTER_PASSWORD="..." -p 4545:4545 prappser-space
 ```
 
 ### Zeabur

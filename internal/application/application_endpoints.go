@@ -2,20 +2,20 @@ package application
 
 import (
 	"github.com/goccy/go-json"
-	"github.com/prappser/prappser_server/internal/user"
+	"github.com/prappser/prappser-space/internal/user"
 	"github.com/rs/zerolog/log"
 	"github.com/valyala/fasthttp"
 )
 
 type ApplicationEndpoints struct {
 	appService      *ApplicationService
-	serverPublicKey string
+	spacePublicKey string
 }
 
-func NewApplicationEndpoints(appService *ApplicationService, serverPublicKey string) *ApplicationEndpoints {
+func NewApplicationEndpoints(appService *ApplicationService, spacePublicKey string) *ApplicationEndpoints {
 	return &ApplicationEndpoints{
 		appService:      appService,
-		serverPublicKey: serverPublicKey,
+		spacePublicKey: spacePublicKey,
 	}
 }
 
@@ -52,8 +52,8 @@ func (ae *ApplicationEndpoints) RegisterApplication(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	// Set server public key for the application
-	app.ServerPublicKey = &ae.serverPublicKey
+	// Set space public key for the application
+	app.SpacePublicKey = &ae.spacePublicKey
 
 	// Register the application
 	_, err := ae.appService.RegisterApplication(authenticatedUser.PublicKey, &app)
@@ -85,7 +85,7 @@ func (ae *ApplicationEndpoints) ListApplications(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	// Return applications (server_public_key now comes from database)
+	// Return applications (space_public_key now comes from database)
 	ctx.SetStatusCode(fasthttp.StatusOK)
 	ctx.SetContentType("application/json")
 	json.NewEncoder(ctx).Encode(apps)
@@ -120,7 +120,7 @@ func (ae *ApplicationEndpoints) GetApplication(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	// Return application (server_public_key now comes from database)
+	// Return application (space_public_key now comes from database)
 	ctx.SetStatusCode(fasthttp.StatusOK)
 	ctx.SetContentType("application/json")
 	json.NewEncoder(ctx).Encode(app)

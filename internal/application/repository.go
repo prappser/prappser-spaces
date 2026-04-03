@@ -16,7 +16,7 @@ func NewRepository(db *sql.DB) *Repository {
 }
 
 func (r *Repository) CreateApplication(app *Application) error {
-	query := `INSERT INTO applications (id, name, icon, server_public_key, created_at, updated_at)
+	query := `INSERT INTO applications (id, name, icon, space_public_key, created_at, updated_at)
 			  VALUES ($1, $2, $3, $4, $5, $6)
 			  ON CONFLICT (id) DO UPDATE SET
 			    name = EXCLUDED.name,
@@ -24,18 +24,18 @@ func (r *Repository) CreateApplication(app *Application) error {
 			    updated_at = EXCLUDED.updated_at,
 			    deleted_at = NULL`
 
-	_, err := r.db.Exec(query, app.ID, app.Name, app.Icon, app.ServerPublicKey, app.CreatedAt, app.UpdatedAt)
+	_, err := r.db.Exec(query, app.ID, app.Name, app.Icon, app.SpacePublicKey, app.CreatedAt, app.UpdatedAt)
 	return err
 }
 
 func (r *Repository) GetApplicationByID(id string) (*Application, error) {
-	query := `SELECT id, name, icon, server_public_key, created_at, updated_at, last_sequence
+	query := `SELECT id, name, icon, space_public_key, created_at, updated_at, last_sequence
 			  FROM applications WHERE id = $1 AND deleted_at IS NULL`
 
 	app := &Application{}
 	var lastSequence sql.NullInt64
 	err := r.db.QueryRow(query, id).Scan(
-		&app.ID, &app.Name, &app.Icon, &app.ServerPublicKey, &app.CreatedAt, &app.UpdatedAt,
+		&app.ID, &app.Name, &app.Icon, &app.SpacePublicKey, &app.CreatedAt, &app.UpdatedAt,
 		&lastSequence,
 	)
 
@@ -632,7 +632,7 @@ func (r *Repository) GetMemberByPublicKey(appID, publicKey string) (*Member, err
 }
 
 func (r *Repository) GetApplicationsByMemberPublicKey(publicKey string) ([]*Application, error) {
-	query := `SELECT DISTINCT a.id, a.name, a.icon, a.server_public_key, a.created_at, a.updated_at, a.last_sequence
+	query := `SELECT DISTINCT a.id, a.name, a.icon, a.space_public_key, a.created_at, a.updated_at, a.last_sequence
 			  FROM applications a
 			  INNER JOIN members m ON a.id = m.application_id
 			  WHERE m.public_key = $1 AND a.deleted_at IS NULL
@@ -648,7 +648,7 @@ func (r *Repository) GetApplicationsByMemberPublicKey(publicKey string) ([]*Appl
 	for rows.Next() {
 		app := &Application{}
 		var lastSequence sql.NullInt64
-		err := rows.Scan(&app.ID, &app.Name, &app.Icon, &app.ServerPublicKey, &app.CreatedAt, &app.UpdatedAt, &lastSequence)
+		err := rows.Scan(&app.ID, &app.Name, &app.Icon, &app.SpacePublicKey, &app.CreatedAt, &app.UpdatedAt, &lastSequence)
 		if err != nil {
 			return nil, err
 		}

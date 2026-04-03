@@ -3,7 +3,7 @@ package websocket
 import (
 	"sync"
 
-	"github.com/prappser/prappser_server/internal/event"
+	"github.com/prappser/prappser-space/internal/event"
 	"github.com/rs/zerolog/log"
 )
 

@@ -23,13 +23,13 @@ func NewKeyService(repo *KeyRepository, masterPassword string) *KeyService {
 }
 
 func (s *KeyService) Initialize(ctx context.Context) error {
-	enc, err := s.repo.GetServerKey(ctx)
+	enc, err := s.repo.GetSpaceKey(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to load server key: %w", err)
+		return fmt.Errorf("failed to load space key: %w", err)
 	}
 
 	if enc == nil {
-		log.Info().Msg("No server keys found, generating new Ed25519 keypair...")
+		log.Info().Msg("No space keys found, generating new Ed25519 keypair...")
 
 		priv, pub, err := GenerateEd25519KeyPair()
 		if err != nil {
@@ -41,8 +41,8 @@ func (s *KeyService) Initialize(ctx context.Context) error {
 			return fmt.Errorf("failed to encrypt private key: %w", err)
 		}
 
-		if err := s.repo.SaveServerKey(ctx, enc); err != nil {
-			return fmt.Errorf("failed to save server key: %w", err)
+		if err := s.repo.SaveSpaceKey(ctx, enc); err != nil {
+			return fmt.Errorf("failed to save space key: %w", err)
 		}
 
 		s.privateKey = priv
@@ -51,16 +51,16 @@ func (s *KeyService) Initialize(ctx context.Context) error {
 		return nil
 	}
 
-	log.Info().Msg("Loading existing server keys from database...")
+	log.Info().Msg("Loading existing space keys from database...")
 
 	priv, err := DecryptPrivateKey(enc, s.masterPassword)
 	if err != nil {
-		return fmt.Errorf("failed to decrypt server key (wrong MASTER_PASSWORD?): %w", err)
+		return fmt.Errorf("failed to decrypt space key (wrong MASTER_PASSWORD?): %w", err)
 	}
 
 	s.privateKey = priv
 	s.publicKey = enc.PublicKey
-	log.Info().Msg("Server keys loaded successfully")
+	log.Info().Msg("Space keys loaded successfully")
 	return nil
 }
 

@@ -1,47 +1,47 @@
 sequenceDiagram
     participant Client
-    participant Server
+    participant Space
     participant DB as Database
 
     Note over Client,DB: Owner Registration Flow
-    Client->>Server: POST /owner/register<br/>Authorization: Bearer {JWE}
-    Server->>Server: Extract JWE from header
-    Server->>Server: Decrypt JWE with master password
-    Server->>Server: Extract JWS from JWE payload
-    Server->>Server: Verify JWS signature with public key
-    Server->>Server: Parse JWS claims (publicKey, username, iat)
-    Server->>DB: Check if user exists by public_key
-    DB-->>Server: User not found
-    Server->>Server: Generate user ID
-    Server->>DB: Create user (id, publicKey, username, role='owner', createdAt)
-    DB-->>Server: User created
-    Server-->>Client: 201 Created<br/>{message: "Owner registered successfully", user_id}
+    Client->>Space: POST /owner/register<br/>Authorization: Bearer {JWE}
+    Space->>Space: Extract JWE from header
+    Space->>Space: Decrypt JWE with master password
+    Space->>Space: Extract JWS from JWE payload
+    Space->>Space: Verify JWS signature with public key
+    Space->>Space: Parse JWS claims (publicKey, username, iat)
+    Space->>DB: Check if user exists by public_key
+    DB-->>Space: User not found
+    Space->>Space: Generate user ID
+    Space->>DB: Create user (id, publicKey, username, role='owner', createdAt)
+    DB-->>Space: User created
+    Space-->>Client: 201 Created<br/>{message: "Owner registered successfully", user_id}
 
     Note over Client,DB: User Authentication Flow
-    Client->>Server: GET /auth/challenge?username={username}
-    Server->>DB: Get user by username
-    DB-->>Server: User found
-    Server->>Server: Generate random challenge
-    Server->>Server: Store challenge with expiration
-    Server-->>Client: 200 OK<br/>{challenge, expires_at}
+    Client->>Space: GET /auth/challenge?username={username}
+    Space->>DB: Get user by username
+    DB-->>Space: User found
+    Space->>Space: Generate random challenge
+    Space->>Space: Store challenge with expiration
+    Space-->>Client: 200 OK<br/>{challenge, expires_at}
 
-    Client->>Server: POST /auth/login<br/>Authorization: Bearer {JWS}
-    Server->>Server: Extract JWS from header
-    Server->>Server: Parse JWS claims (username, challenge, iat)
-    Server->>DB: Get user by username
-    DB-->>Server: User found with public key
-    Server->>Server: Parse user's public key from PEM
-    Server->>Server: Verify JWS signature with user's public key
-    Server->>Server: Verify challenge matches stored challenge
-    Server->>Server: Check challenge expiration
-    Server->>Server: Generate JWT token with RSA signing
-    Server->>Server: Clean up used challenge
-    Server-->>Client: 200 OK<br/>{token, expires_at}
+    Client->>Space: POST /auth/login<br/>Authorization: Bearer {JWS}
+    Space->>Space: Extract JWS from header
+    Space->>Space: Parse JWS claims (username, challenge, iat)
+    Space->>DB: Get user by username
+    DB-->>Space: User found with public key
+    Space->>Space: Parse user's public key from PEM
+    Space->>Space: Verify JWS signature with user's public key
+    Space->>Space: Verify challenge matches stored challenge
+    Space->>Space: Check challenge expiration
+    Space->>Space: Generate JWT token with RSA signing
+    Space->>Space: Clean up used challenge
+    Space-->>Client: 200 OK<br/>{token, expires_at}
 
     Note over Client,DB: Protected Resource Access
-    Client->>Server: GET /protected/resource<br/>Authorization: Bearer {JWT}
-    Server->>Server: Extract JWT from header
-    Server->>Server: Verify JWT signature with server public key
-    Server->>DB: Get user by ID from JWT claims
-    DB-->>Server: User found
-    Server-->>Client: 200 OK<br/>{protected_data} 
+    Client->>Space: GET /protected/resource<br/>Authorization: Bearer {JWT}
+    Space->>Space: Extract JWT from header
+    Space->>Space: Verify JWT signature with space public key
+    Space->>DB: Get user by ID from JWT claims
+    DB-->>Space: User found
+    Space-->>Client: 200 OK<br/>{protected_data}

@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/prappser/prappser_server/internal/user"
+	"github.com/prappser/prappser-space/internal/user"
 )
 
 type Config struct {

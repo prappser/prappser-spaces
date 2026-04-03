@@ -67,7 +67,7 @@ type CheckInvitationResult struct {
 // InviteTokenClaims represents JWT claims for invitation tokens
 type InviteTokenClaims struct {
 	InviteID  string `json:"id"`
-	ServerURL string `json:"serverUrl"`
+	SpaceURL string `json:"spaceUrl"`
 	IssuedAt  int64  `json:"iat"`
 	ExpiresAt *int64 `json:"exp,omitempty"`
 }

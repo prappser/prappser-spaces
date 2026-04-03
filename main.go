@@ -1,4 +1,4 @@
-// Prappser Server - Password manager synchronization server
+// Prappser Space - Password manager synchronization space
 // Copyright (C) 2025 Prappser Authors
 //
 // This program is free software: you can redistribute it and/or modify
@@ -24,17 +24,17 @@ import (
 	"strings"
 
 	_ "github.com/lib/pq"
-	"github.com/prappser/prappser_server/internal"
-	"github.com/prappser/prappser_server/internal/application"
-	"github.com/prappser/prappser_server/internal/event"
-	"github.com/prappser/prappser_server/internal/health"
-	"github.com/prappser/prappser_server/internal/invitation"
-	"github.com/prappser/prappser_server/internal/keys"
-	"github.com/prappser/prappser_server/internal/storage"
-	"github.com/prappser/prappser_server/internal/setup"
-	"github.com/prappser/prappser_server/internal/status"
-	"github.com/prappser/prappser_server/internal/user"
-	"github.com/prappser/prappser_server/internal/websocket"
+	"github.com/prappser/prappser-space/internal"
+	"github.com/prappser/prappser-space/internal/application"
+	"github.com/prappser/prappser-space/internal/event"
+	"github.com/prappser/prappser-space/internal/health"
+	"github.com/prappser/prappser-space/internal/invitation"
+	"github.com/prappser/prappser-space/internal/keys"
+	"github.com/prappser/prappser-space/internal/storage"
+	"github.com/prappser/prappser-space/internal/setup"
+	"github.com/prappser/prappser-space/internal/status"
+	"github.com/prappser/prappser-space/internal/user"
+	"github.com/prappser/prappser-space/internal/websocket"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/valyala/fasthttp"
@@ -81,7 +81,7 @@ func main() {
 	keyRepo := keys.NewKeyRepository(db)
 	keyService := keys.NewKeyService(keyRepo, config.MasterPassword)
 	if err := keyService.Initialize(context.Background()); err != nil {
-		log.Fatal().Err(err).Msg("Failed to initialize server keys")
+		log.Fatal().Err(err).Msg("Failed to initialize space keys")
 		return
 	}
 
@@ -124,9 +124,9 @@ func main() {
 	eventEndpoints := event.NewEventEndpoints(eventService)
 
 	appService := application.NewApplicationService(appRepository)
-	serverPublicKeyString := base64.StdEncoding.EncodeToString(publicKey)
+	spacePublicKeyString := base64.StdEncoding.EncodeToString(publicKey)
 
-	appEndpoints := application.NewApplicationEndpoints(appService, serverPublicKeyString)
+	appEndpoints := application.NewApplicationEndpoints(appService, spacePublicKeyString)
 
 	cleanupScheduler := event.NewCleanupScheduler(eventService, 7)
 	cleanupScheduler.Start()

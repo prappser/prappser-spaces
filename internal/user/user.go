@@ -10,7 +10,7 @@ import (
 
 	"github.com/goccy/go-json"
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/prappser/prappser_server/internal/user/owner"
+	"github.com/prappser/prappser-space/internal/user/owner"
 	"github.com/rs/zerolog/log"
 	"github.com/valyala/fasthttp"
 )
@@ -72,7 +72,7 @@ type JWTClaims struct {
 type ChallengeResponse struct {
 	Challenge       string `json:"challenge"`
 	ExpiresAt       int64  `json:"expiresAt"`
-	ServerPublicKey string `json:"serverPublicKey"`
+	SpacePublicKey string `json:"spacePublicKey"`
 }
 
 type LoginResponse struct {
@@ -225,13 +225,13 @@ func (ue UserEndpoints) GetChallenge(ctx *fasthttp.RequestCtx) {
 
 	log.Debug().Str("publicKey", publicKeyStr[:min(50, len(publicKeyStr))]+"...").Time("expiresAt", expiresAt).Msg("[CHALLENGE] Challenge generated and stored")
 
-	// Convert server's Ed25519 public key to base64
-	serverPublicKeyString := base64.StdEncoding.EncodeToString(ue.publicKey)
+	// Convert space's Ed25519 public key to base64
+	spacePublicKeyString := base64.StdEncoding.EncodeToString(ue.publicKey)
 
 	response := ChallengeResponse{
 		Challenge:       challenge,
 		ExpiresAt:       expiresAt.Unix(),
-		ServerPublicKey: serverPublicKeyString,
+		SpacePublicKey: spacePublicKeyString,
 	}
 
 	ctx.SetStatusCode(fasthttp.StatusOK)
@@ -460,8 +460,8 @@ func (ue UserEndpoints) GetProfile(ctx *fasthttp.RequestCtx) {
 	json.NewEncoder(ctx).Encode(authenticatedUser)
 }
 
-// GetServerPublicKey returns the server's Ed25519 public key for JWT verification
-func (ue UserEndpoints) GetServerPublicKey(ctx *fasthttp.RequestCtx) {
+// GetSpacePublicKey returns the space's Ed25519 public key for JWT verification
+func (ue UserEndpoints) GetSpacePublicKey(ctx *fasthttp.RequestCtx) {
 	response := map[string]string{
 		"publicKey": base64.StdEncoding.EncodeToString(ue.publicKey),
 		"algorithm": "ed25519",

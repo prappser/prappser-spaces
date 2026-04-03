@@ -4,8 +4,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/prappser/prappser_server/internal/application"
-	"github.com/prappser/prappser_server/internal/user"
+	"github.com/prappser/prappser-space/internal/application"
+	"github.com/prappser/prappser-space/internal/user"
 )
 
 var (
@@ -90,7 +90,7 @@ func AuthorizeEvent(event *Event, submitter *user.User, app *application.Applica
 		}
 
 	case EventTypeApplicationFileCreated, EventTypeApplicationFileDeleted:
-		return fmt.Errorf("%w: file events are server-produced and cannot be submitted by clients", ErrUnauthorized)
+		return fmt.Errorf("%w: file events are space-produced and cannot be submitted by clients", ErrUnauthorized)
 
 	default:
 		return fmt.Errorf("%w: unknown event type: %s", ErrUnauthorized, event.Type)

@@ -9,7 +9,7 @@ type Application struct {
 	ID              string           `json:"id"`
 	Name            string           `json:"name"`
 	Icon            *string          `json:"icon,omitempty"`
-	ServerPublicKey *string          `json:"serverPublicKey,omitempty"`
+	SpacePublicKey *string          `json:"spacePublicKey,omitempty"`
 	CreatedAt       int64            `json:"createdAt"`
 	UpdatedAt       int64            `json:"updatedAt"`
 	DeletedAt       *int64           `json:"deletedAt,omitempty"`

@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/fasthttp/websocket"
-	"github.com/prappser/prappser_server/internal/user"
+	"github.com/prappser/prappser-space/internal/user"
 	"github.com/rs/zerolog/log"
 )
 

@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prappser/prappser_server/internal/user"
+	"github.com/prappser/prappser-space/internal/user"
 )
 
 func strPtr(s string) *string { return &s }
