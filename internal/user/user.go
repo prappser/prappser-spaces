@@ -20,12 +20,15 @@ const (
 	headerBearer        = "Bearer"
 
 	RoleOwner = "owner"
+	RoleUser  = "user"
+	RoleGuest = "guest"
 )
 
 type User struct {
 	PublicKey       string  `json:"publicKey"`
 	Username        string  `json:"username"`
 	Role            string  `json:"role"`
+	SpaceID         string  `json:"spaceId,omitempty"`
 	CreatedAt       int64   `json:"createdAt"`
 	AvatarStorageID *string `json:"avatarStorageId,omitempty"`
 }
@@ -38,12 +41,18 @@ type UserRepository interface {
 	UpdateAvatarStorageID(publicKey string, avatarStorageID *string) error
 }
 
+// SpaceCreator creates a default space for new owners.
+type SpaceCreator interface {
+	CreateSpace(name string, userPublicKey *string) error
+}
+
 type UserEndpoints struct {
 	userRepository UserRepository
 	config         Config
 	privateKey     ed25519.PrivateKey
 	publicKey      ed25519.PublicKey
 	userService    *UserService
+	spaceCreator   SpaceCreator
 	// Add challenge storage for verification
 	challenges map[string]challengeInfo
 }
@@ -66,6 +75,7 @@ type JWTClaims struct {
 	UserPublicKey string `json:"userPublicKey"`
 	Username      string `json:"username"`
 	Role          string `json:"role"`
+	SpaceID       string `json:"spaceId"`
 	jwt.RegisteredClaims
 }
 
@@ -87,13 +97,14 @@ type challengeInfo struct {
 
 var timeNowFunc = time.Now
 
-func NewEndpoints(userRepository UserRepository, config Config, privateKey ed25519.PrivateKey, publicKey ed25519.PublicKey, userService *UserService) *UserEndpoints {
+func NewEndpoints(userRepository UserRepository, config Config, privateKey ed25519.PrivateKey, publicKey ed25519.PublicKey, userService *UserService, spaceCreator SpaceCreator) *UserEndpoints {
 	return &UserEndpoints{
 		userRepository: userRepository,
 		config:         config,
 		privateKey:     privateKey,
 		publicKey:      publicKey,
 		userService:    userService,
+		spaceCreator:   spaceCreator,
 		challenges:     make(map[string]challengeInfo),
 	}
 }
@@ -151,6 +162,16 @@ func (ue UserEndpoints) OwnerRegister(ctx *fasthttp.RequestCtx) {
 				ctx.Error("Failed to upgrade user to owner", fasthttp.StatusInternalServerError)
 				return
 			}
+
+			// Auto-create default space for newly upgraded owner
+			if ue.spaceCreator != nil {
+				if err := ue.spaceCreator.CreateSpace(existingUser.Username+"'s space", &existingUser.PublicKey); err != nil {
+					log.Error().Err(err).Msg("Failed to create default space for upgraded owner")
+					// Non-fatal: owner is upgraded, space can be created later
+				} else {
+					log.Info().Str("publicKey", existingUser.PublicKey[:min(50, len(existingUser.PublicKey))]+"...").Msg("Default space created for upgraded owner")
+				}
+			}
 		}
 
 		ctx.SetStatusCode(fasthttp.StatusCreated)
@@ -172,6 +193,16 @@ func (ue UserEndpoints) OwnerRegister(ctx *fasthttp.RequestCtx) {
 		log.Error().Err(err).Msg("Failed to create owner")
 		ctx.Error("Failed to create owner", fasthttp.StatusInternalServerError)
 		return
+	}
+
+	// Auto-create default space for new owner
+	if ue.spaceCreator != nil {
+		if err := ue.spaceCreator.CreateSpace(newUser.Username+"'s space", &newUser.PublicKey); err != nil {
+			log.Error().Err(err).Msg("Failed to create default space for new owner")
+			// Non-fatal: owner is created, space can be created later
+		} else {
+			log.Info().Str("publicKey", newUser.PublicKey[:min(50, len(newUser.PublicKey))]+"...").Msg("Default space created for new owner")
+		}
 	}
 
 	ctx.SetStatusCode(fasthttp.StatusCreated)

@@ -28,8 +28,8 @@ func (r *invitationRepository) Create(invite *Invitation) error {
 	query := `
 		INSERT INTO invitations (
 			id, application_id, created_by_public_key,
-			role, max_uses, used_count, created_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7)
+			role, max_uses, used_count, created_at, space_id
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 	`
 
 	_, err := r.db.Exec(query,
@@ -40,6 +40,7 @@ func (r *invitationRepository) Create(invite *Invitation) error {
 		invite.MaxUses,
 		invite.UsedCount,
 		invite.CreatedAt,
+		invite.SpaceID,
 	)
 
 	return err

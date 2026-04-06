@@ -14,12 +14,13 @@ func NewRepository(db *sql.DB) *Repository {
 }
 
 func (r *Repository) Create(s *Storage) error {
-	query := `INSERT INTO storage (id, application_id, uploader_public_key, filename, content_type, size_bytes, storage_path, thumbnail_path, width, height, duration_ms, checksum, created_at, status)
-			  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`
+	query := `INSERT INTO storage (id, application_id, space_id, uploader_public_key, filename, content_type, size_bytes, storage_path, thumbnail_path, width, height, duration_ms, checksum, created_at, status)
+			  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`
 
 	_, err := r.db.Exec(query,
 		s.ID,
 		s.ApplicationID,
+		s.SpaceID,
 		s.UploaderPublicKey,
 		s.Filename,
 		s.ContentType,

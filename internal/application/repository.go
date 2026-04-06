@@ -16,26 +16,28 @@ func NewRepository(db *sql.DB) *Repository {
 }
 
 func (r *Repository) CreateApplication(app *Application) error {
-	query := `INSERT INTO applications (id, name, icon, space_public_key, created_at, updated_at)
-			  VALUES ($1, $2, $3, $4, $5, $6)
+	query := `INSERT INTO applications (id, name, icon, space_public_key, space_id, created_at, updated_at)
+			  VALUES ($1, $2, $3, $4, $5, $6, $7)
 			  ON CONFLICT (id) DO UPDATE SET
 			    name = EXCLUDED.name,
 			    icon = EXCLUDED.icon,
+			    space_id = EXCLUDED.space_id,
 			    updated_at = EXCLUDED.updated_at,
 			    deleted_at = NULL`
 
-	_, err := r.db.Exec(query, app.ID, app.Name, app.Icon, app.SpacePublicKey, app.CreatedAt, app.UpdatedAt)
+	_, err := r.db.Exec(query, app.ID, app.Name, app.Icon, app.SpacePublicKey, app.SpaceID, app.CreatedAt, app.UpdatedAt)
 	return err
 }
 
 func (r *Repository) GetApplicationByID(id string) (*Application, error) {
-	query := `SELECT id, name, icon, space_public_key, created_at, updated_at, last_sequence
+	query := `SELECT id, name, icon, space_public_key, space_id, created_at, updated_at, last_sequence
 			  FROM applications WHERE id = $1 AND deleted_at IS NULL`
 
 	app := &Application{}
 	var lastSequence sql.NullInt64
+	var spaceID sql.NullString
 	err := r.db.QueryRow(query, id).Scan(
-		&app.ID, &app.Name, &app.Icon, &app.SpacePublicKey, &app.CreatedAt, &app.UpdatedAt,
+		&app.ID, &app.Name, &app.Icon, &app.SpacePublicKey, &spaceID, &app.CreatedAt, &app.UpdatedAt,
 		&lastSequence,
 	)
 
@@ -48,6 +50,9 @@ func (r *Repository) GetApplicationByID(id string) (*Application, error) {
 
 	if lastSequence.Valid {
 		app.LastSequence = &lastSequence.Int64
+	}
+	if spaceID.Valid {
+		app.SpaceID = &spaceID.String
 	}
 
 	// Load component groups
@@ -632,7 +637,7 @@ func (r *Repository) GetMemberByPublicKey(appID, publicKey string) (*Member, err
 }
 
 func (r *Repository) GetApplicationsByMemberPublicKey(publicKey string) ([]*Application, error) {
-	query := `SELECT DISTINCT a.id, a.name, a.icon, a.space_public_key, a.created_at, a.updated_at, a.last_sequence
+	query := `SELECT DISTINCT a.id, a.name, a.icon, a.space_public_key, a.space_id, a.created_at, a.updated_at, a.last_sequence
 			  FROM applications a
 			  INNER JOIN members m ON a.id = m.application_id
 			  WHERE m.public_key = $1 AND a.deleted_at IS NULL
@@ -648,12 +653,16 @@ func (r *Repository) GetApplicationsByMemberPublicKey(publicKey string) ([]*Appl
 	for rows.Next() {
 		app := &Application{}
 		var lastSequence sql.NullInt64
-		err := rows.Scan(&app.ID, &app.Name, &app.Icon, &app.SpacePublicKey, &app.CreatedAt, &app.UpdatedAt, &lastSequence)
+		var spaceID sql.NullString
+		err := rows.Scan(&app.ID, &app.Name, &app.Icon, &app.SpacePublicKey, &spaceID, &app.CreatedAt, &app.UpdatedAt, &lastSequence)
 		if err != nil {
 			return nil, err
 		}
 		if lastSequence.Valid {
 			app.LastSequence = &lastSequence.Int64
+		}
+		if spaceID.Valid {
+			app.SpaceID = &spaceID.String
 		}
 
 		// Load component groups for this application

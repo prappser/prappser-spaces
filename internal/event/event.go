@@ -38,6 +38,7 @@ type Event struct {
 	CreatorPublicKey string                 `json:"creatorPublicKey"`
 	Version          int                    `json:"version"`
 	Data             map[string]interface{} `json:"data"`
+	SpaceID          string                 `json:"spaceId,omitempty"`
 }
 
 // MemberAddedData represents the data for a member_added event

@@ -63,6 +63,7 @@ func (ie *InvitationEndpoints) CreateInvite(ctx *fasthttp.RequestCtx) {
 		Role:               req.Role,
 		MaxUses:            req.MaxUses,
 		ExpiresInHours:     req.ExpiresInHours,
+		SpaceID:            spaceIDPtr(authenticatedUser.SpaceID),
 	}
 
 	response, err := ie.invitationService.CreateInvitation(opts)
@@ -280,6 +281,14 @@ func (ie *InvitationEndpoints) RevokeInvite(ctx *fasthttp.RequestCtx) {
 
 	// Return success (204 No Content)
 	ctx.SetStatusCode(fasthttp.StatusNoContent)
+}
+
+// spaceIDPtr converts a space ID string to a pointer, returning nil for empty strings.
+func spaceIDPtr(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }
 
 // ListInvites handles GET /applications/{appID}/invites

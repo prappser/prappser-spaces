@@ -10,6 +10,7 @@ type Application struct {
 	Name            string           `json:"name"`
 	Icon            *string          `json:"icon,omitempty"`
 	SpacePublicKey *string          `json:"spacePublicKey,omitempty"`
+	SpaceID         *string          `json:"spaceId,omitempty"`
 	CreatedAt       int64            `json:"createdAt"`
 	UpdatedAt       int64            `json:"updatedAt"`
 	DeletedAt       *int64           `json:"deletedAt,omitempty"`

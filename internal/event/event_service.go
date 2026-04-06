@@ -60,6 +60,9 @@ func (s *EventService) AcceptEvent(ctx context.Context, event *Event, submitter 
 	// Set ApplicationID field from data
 	event.ApplicationID = appID
 
+	// Set space ID from submitter's JWT claims
+	event.SpaceID = submitter.SpaceID
+
 	app, err := s.appRepo.GetApplicationByID(appID)
 	if err != nil {
 		return nil, fmt.Errorf("application not found: %w", err)
@@ -139,6 +142,9 @@ func (s *EventService) acceptUserScopedEvent(ctx context.Context, event *Event, 
 		return nil, fmt.Errorf("authorization failed: %w", err)
 	}
 	log.Debug().Str("eventId", event.ID).Msg("[EVENT] Authorization passed")
+
+	// Set space ID from submitter's JWT claims
+	event.SpaceID = submitter.SpaceID
 
 	// User-scoped events have no sequence number
 	event.SequenceNumber = 0

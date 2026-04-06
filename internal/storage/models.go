@@ -3,6 +3,7 @@ package storage
 type Storage struct {
 	ID                string  `json:"id"`
 	ApplicationID     *string `json:"applicationId,omitempty"`
+	SpaceID           *string `json:"spaceId,omitempty"`
 	UploaderPublicKey string  `json:"uploaderPublicKey"`
 	Filename          string `json:"filename"`
 	ContentType       string `json:"contentType"`

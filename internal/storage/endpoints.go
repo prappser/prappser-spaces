@@ -43,14 +43,16 @@ func (e *Endpoints) Upload(ctx *fasthttp.RequestCtx) {
 
 	var appID *string
 	var publicKey string
+	var spaceID *string
 
 	if appIDStr != "" {
-		aid, pk, ok := e.checkAuthorization(ctx)
+		aid, pk, sid, ok := e.checkAuthorization(ctx)
 		if !ok {
 			return
 		}
 		appID = &aid
 		publicKey = pk
+		spaceID = sid
 	} else {
 		authenticatedUser, ok := ctx.UserValue("user").(*user.User)
 		if !ok || authenticatedUser == nil {
@@ -59,6 +61,9 @@ func (e *Endpoints) Upload(ctx *fasthttp.RequestCtx) {
 			return
 		}
 		publicKey = authenticatedUser.PublicKey
+		if authenticatedUser.SpaceID != "" {
+			spaceID = &authenticatedUser.SpaceID
+		}
 	}
 
 	contentType := string(ctx.Request.Header.ContentType())
@@ -113,7 +118,7 @@ func (e *Endpoints) Upload(ctx *fasthttp.RequestCtx) {
 		req.ContentType = detectContentType(fileHeader.Filename)
 	}
 
-	stored, err := e.service.Upload(ctx, appID, publicKey, req, file)
+	stored, err := e.service.Upload(ctx, appID, publicKey, spaceID, req, file)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to upload file")
 		ctx.Error(err.Error(), fasthttp.StatusBadRequest)
@@ -207,7 +212,12 @@ func (e *Endpoints) UploadUserAvatar(ctx *fasthttp.RequestCtx) {
 		req.ContentType = detectContentType(fileHeader.Filename)
 	}
 
-	stored, err := e.service.Upload(ctx, nil, publicKey, req, file)
+	var avatarSpaceID *string
+	if authenticatedUser.SpaceID != "" {
+		avatarSpaceID = &authenticatedUser.SpaceID
+	}
+
+	stored, err := e.service.Upload(ctx, nil, publicKey, avatarSpaceID, req, file)
 	if err != nil {
 		log.Error().Err(err).Msg("[STORAGE] Failed to upload avatar")
 		ctx.Error("Failed to upload avatar", fasthttp.StatusInternalServerError)
@@ -234,7 +244,7 @@ func (e *Endpoints) UploadUserAvatar(ctx *fasthttp.RequestCtx) {
 }
 
 func (e *Endpoints) InitChunkedUpload(ctx *fasthttp.RequestCtx) {
-	appID, publicKey, ok := e.checkAuthorization(ctx)
+	appID, publicKey, spaceID, ok := e.checkAuthorization(ctx)
 	if !ok {
 		return
 	}
@@ -245,7 +255,7 @@ func (e *Endpoints) InitChunkedUpload(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	response, err := e.service.InitChunkedUpload(ctx, &appID, publicKey, &req)
+	response, err := e.service.InitChunkedUpload(ctx, &appID, publicKey, spaceID, &req)
 	if err != nil {
 		ctx.Error(err.Error(), fasthttp.StatusBadRequest)
 		return
@@ -460,31 +470,34 @@ func (e *Endpoints) DeleteFile(ctx *fasthttp.RequestCtx) {
 	ctx.SetStatusCode(fasthttp.StatusNoContent)
 }
 
-func (e *Endpoints) checkAuthorization(ctx *fasthttp.RequestCtx) (appID, publicKey string, ok bool) {
+func (e *Endpoints) checkAuthorization(ctx *fasthttp.RequestCtx) (appID, publicKey string, spaceID *string, ok bool) {
 	authenticatedUser, ok := ctx.UserValue("user").(*user.User)
 	if !ok || authenticatedUser == nil {
 		ctx.Error("Unauthorized", fasthttp.StatusUnauthorized)
-		return "", "", false
+		return "", "", nil, false
 	}
 	publicKey = authenticatedUser.PublicKey
+	if authenticatedUser.SpaceID != "" {
+		spaceID = &authenticatedUser.SpaceID
+	}
 
 	appID = string(ctx.QueryArgs().Peek("applicationId"))
 	if appID == "" {
 		ctx.Error("applicationId is required", fasthttp.StatusBadRequest)
-		return "", "", false
+		return "", "", nil, false
 	}
 
 	isMember, err := e.appRepo.IsMember(appID, publicKey)
 	if err != nil {
 		ctx.Error("Failed to verify membership", fasthttp.StatusInternalServerError)
-		return "", "", false
+		return "", "", nil, false
 	}
 	if !isMember {
 		ctx.Error("Not a member of this application", fasthttp.StatusForbidden)
-		return "", "", false
+		return "", "", nil, false
 	}
 
-	return appID, publicKey, true
+	return appID, publicKey, spaceID, true
 }
 
 func (e *Endpoints) getStorageAndCheckAccess(ctx *fasthttp.RequestCtx) (stored *Storage, publicKey string, ok bool) {

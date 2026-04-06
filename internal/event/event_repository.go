@@ -61,8 +61,13 @@ func (r *EventRepository) Create(event *Event) error {
 		appID = event.ApplicationID
 	}
 
-	query := `INSERT INTO events (id, created_at, application_id, sequence_number, type, creator_public_key, version, data)
-			  VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`
+	var spaceIDVal interface{}
+	if event.SpaceID != "" {
+		spaceIDVal = event.SpaceID
+	}
+
+	query := `INSERT INTO events (id, created_at, application_id, sequence_number, type, creator_public_key, version, data, space_id)
+			  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`
 
 	_, err = r.db.Exec(query,
 		event.ID,
@@ -73,6 +78,7 @@ func (r *EventRepository) Create(event *Event) error {
 		event.CreatorPublicKey,
 		event.Version,
 		string(dataJSON),
+		spaceIDVal,
 	)
 
 	if err != nil {
