@@ -55,6 +55,11 @@ func (ae *ApplicationEndpoints) RegisterApplication(ctx *fasthttp.RequestCtx) {
 	// Set space public key for the application
 	app.SpacePublicKey = &ae.spacePublicKey
 
+	// Set space ID from authenticated user's JWT claims
+	if authenticatedUser.SpaceID != "" {
+		app.SpaceID = &authenticatedUser.SpaceID
+	}
+
 	// Register the application
 	_, err := ae.appService.RegisterApplication(authenticatedUser.PublicKey, &app)
 	if err != nil {

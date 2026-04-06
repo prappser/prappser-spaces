@@ -10,16 +10,28 @@ import (
 	"github.com/valyala/fasthttp"
 )
 
+// SpaceLookup is a minimal interface to avoid circular dependency with space package.
+type SpaceLookup interface {
+	GetByUserPublicKey(publicKey string) (*SpaceInfo, error)
+}
+
+// SpaceInfo carries the space fields needed for JWT claims.
+type SpaceInfo struct {
+	ID string
+}
+
 type UserService struct {
 	userRepository UserRepository
+	spaceLookup    SpaceLookup
 	config         Config
 	privateKey     ed25519.PrivateKey
 	publicKey      ed25519.PublicKey
 }
 
-func NewUserService(userRepository UserRepository, config Config, privateKey ed25519.PrivateKey, publicKey ed25519.PublicKey) *UserService {
+func NewUserService(userRepository UserRepository, spaceLookup SpaceLookup, config Config, privateKey ed25519.PrivateKey, publicKey ed25519.PublicKey) *UserService {
 	return &UserService{
 		userRepository: userRepository,
+		spaceLookup:    spaceLookup,
 		config:         config,
 		privateKey:     privateKey,
 		publicKey:      publicKey,
@@ -43,10 +55,18 @@ func (us *UserService) ValidateJWTFromRequest(ctx *fasthttp.RequestCtx) (*User, 
 func (us *UserService) GenerateJWT(user *User) (string, int64, error) {
 	expiresAt := time.Now().Add(time.Duration(us.config.JWTExpirationHours) * time.Hour).Unix()
 
+	var spaceID string
+	if us.spaceLookup != nil {
+		if spaceInfo, err := us.spaceLookup.GetByUserPublicKey(user.PublicKey); err == nil && spaceInfo != nil {
+			spaceID = spaceInfo.ID
+		}
+	}
+
 	claims := JWTClaims{
 		UserPublicKey: user.PublicKey,
 		Username:      user.Username,
 		Role:          user.Role,
+		SpaceID:       spaceID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Unix(expiresAt, 0)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -80,6 +100,7 @@ func (us *UserService) ValidateJWT(tokenString string) (*User, error) {
 		if user == nil {
 			return nil, fmt.Errorf("user not found")
 		}
+		user.SpaceID = claims.SpaceID
 		return user, nil
 	}
 

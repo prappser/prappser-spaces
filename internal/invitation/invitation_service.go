@@ -55,6 +55,7 @@ type CreateInvitationOptions struct {
 	Role               string
 	MaxUses            *int
 	ExpiresInHours     *int
+	SpaceID            *string
 }
 
 // CreateInvitation creates a new invitation and generates a JWT token
@@ -92,6 +93,7 @@ func (s *InvitationService) CreateInvitation(opts CreateInvitationOptions) (*Inv
 		MaxUses:            opts.MaxUses,
 		UsedCount:          0,
 		CreatedAt:          now,
+		SpaceID:            opts.SpaceID,
 	}
 
 	// Save to database
@@ -460,11 +462,11 @@ func (s *InvitationService) Join(tokenString, userPublicKey, userName string) (*
 			return nil, fmt.Errorf("public key cannot be empty")
 		}
 
-		// Create user with member role
+		// Create user with guest role
 		newUser := &user.User{
 			PublicKey: userPublicKey,
 			Username:  userName,
-			Role:      "member",
+			Role:      user.RoleGuest,
 			CreatedAt: time.Now().Unix(),
 		}
 
@@ -519,6 +521,11 @@ func (s *InvitationService) Join(tokenString, userPublicKey, userName string) (*
 		},
 		CreatedAt:     time.Now().Unix(),
 		ApplicationID: invite.ApplicationID,
+	}
+
+	// Set space ID from invitation so the event is tagged to the correct space
+	if invite.SpaceID != nil {
+		evt.SpaceID = *invite.SpaceID
 	}
 
 	log.Debug().

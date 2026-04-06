@@ -30,6 +30,7 @@ import (
 	"github.com/prappser/prappser-spaces/internal/health"
 	"github.com/prappser/prappser-spaces/internal/invitation"
 	"github.com/prappser/prappser-spaces/internal/keys"
+	"github.com/prappser/prappser-spaces/internal/space"
 	"github.com/prappser/prappser-spaces/internal/storage"
 	"github.com/prappser/prappser-spaces/internal/setup"
 	"github.com/prappser/prappser-spaces/internal/status"
@@ -39,6 +40,32 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/valyala/fasthttp"
 )
+
+// spaceLookupAdapter adapts space.SpaceRepository to user.SpaceLookup.
+type spaceLookupAdapter struct {
+	repo space.SpaceRepository
+}
+
+// spaceCreatorAdapter adapts space.SpaceService to user.SpaceCreator.
+type spaceCreatorAdapter struct {
+	service *space.SpaceService
+}
+
+func (a *spaceCreatorAdapter) CreateSpace(name string, userPublicKey *string) error {
+	_, err := a.service.CreateSpace(name, userPublicKey)
+	return err
+}
+
+func (a *spaceLookupAdapter) GetByUserPublicKey(publicKey string) (*user.SpaceInfo, error) {
+	s, err := a.repo.GetByUserPublicKey(publicKey)
+	if err != nil {
+		return nil, err
+	}
+	if s == nil {
+		return nil, nil
+	}
+	return &user.SpaceInfo{ID: s.ID}, nil
+}
 
 func initLogging() {
 	level := os.Getenv("LOG_LEVEL")
@@ -107,8 +134,10 @@ func main() {
 		log.Info().Int("count", count).Msg("[DEBUG] Total registered users")
 	}
 
-	userService := user.NewUserService(userRepository, config.Users, privateKey, publicKey)
-	userEndpoints := user.NewEndpoints(userRepository, config.Users, privateKey, publicKey, userService)
+	spaceRepository := space.NewSpaceRepository(db)
+	spaceService := space.NewSpaceService(spaceRepository, privateKey, publicKey)
+	userService := user.NewUserService(userRepository, &spaceLookupAdapter{repo: spaceRepository}, config.Users, privateKey, publicKey)
+	userEndpoints := user.NewEndpoints(userRepository, config.Users, privateKey, publicKey, userService, &spaceCreatorAdapter{service: spaceService})
 	healthEndpoints := health.NewEndpoints("1.0.0")
 
 	appRepository := application.NewRepository(db)
@@ -164,7 +193,9 @@ func main() {
 
 	wsHandler := websocket.NewHandler(wsHub, userService)
 
-	requestHandler := internal.NewRequestHandler(config, userEndpoints, statusEndpoints, healthEndpoints, userService, appEndpoints, invitationEndpoints, eventEndpoints, setupEndpoints, storageEndpoints, wsHandler)
+	spaceEndpoints := space.NewSpaceEndpoints(spaceService, userRepository)
+
+	requestHandler := internal.NewRequestHandler(config, userEndpoints, statusEndpoints, healthEndpoints, userService, appEndpoints, invitationEndpoints, eventEndpoints, setupEndpoints, storageEndpoints, wsHandler, spaceEndpoints)
 
 	serverAddr := fmt.Sprintf(":%s", config.Port)
 	log.Info().Str("addr", serverAddr).Msg("Starting HTTP server")

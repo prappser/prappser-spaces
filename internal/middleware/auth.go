@@ -31,15 +31,23 @@ func (am *AuthMiddleware) RequireAuth(handler fasthttp.RequestHandler) fasthttp.
 	}
 }
 
-func (am *AuthMiddleware) RequireRole(role string, handler fasthttp.RequestHandler) fasthttp.RequestHandler {
+func (am *AuthMiddleware) RequireRole(handler fasthttp.RequestHandler, roles ...string) fasthttp.RequestHandler {
 	return am.RequireAuth(func(ctx *fasthttp.RequestCtx) {
 		authenticatedUser, ok := ctx.UserValue("user").(*user.User)
-		if !ok || authenticatedUser.Role != role {
+		if !ok {
 			log.Error().Msg("Insufficient permissions")
 			ctx.Error("Forbidden", fasthttp.StatusForbidden)
 			return
 		}
 
-		handler(ctx)
+		for _, role := range roles {
+			if authenticatedUser.Role == role {
+				handler(ctx)
+				return
+			}
+		}
+
+		log.Error().Str("role", authenticatedUser.Role).Msg("Insufficient permissions")
+		ctx.Error("Forbidden", fasthttp.StatusForbidden)
 	})
 }

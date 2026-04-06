@@ -7,16 +7,17 @@ import (
 	"github.com/prappser/prappser-spaces/internal/event"
 	"github.com/prappser/prappser-spaces/internal/health"
 	"github.com/prappser/prappser-spaces/internal/invitation"
-	"github.com/prappser/prappser-spaces/internal/storage"
 	"github.com/prappser/prappser-spaces/internal/middleware"
 	"github.com/prappser/prappser-spaces/internal/setup"
+	"github.com/prappser/prappser-spaces/internal/space"
 	"github.com/prappser/prappser-spaces/internal/status"
+	"github.com/prappser/prappser-spaces/internal/storage"
 	"github.com/prappser/prappser-spaces/internal/user"
 	"github.com/prappser/prappser-spaces/internal/websocket"
 	"github.com/valyala/fasthttp"
 )
 
-func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, statusEndpoints *status.StatusEndpoints, healthEndpoints *health.HealthEndpoints, userService *user.UserService, appEndpoints *application.ApplicationEndpoints, invitationEndpoints *invitation.InvitationEndpoints, eventEndpoints *event.EventEndpoints, setupEndpoints *setup.SetupEndpoints, storageEndpoints *storage.Endpoints, wsHandler *websocket.Handler) fasthttp.RequestHandler {
+func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, statusEndpoints *status.StatusEndpoints, healthEndpoints *health.HealthEndpoints, userService *user.UserService, appEndpoints *application.ApplicationEndpoints, invitationEndpoints *invitation.InvitationEndpoints, eventEndpoints *event.EventEndpoints, setupEndpoints *setup.SetupEndpoints, storageEndpoints *storage.Endpoints, wsHandler *websocket.Handler, spaceEndpoints *space.SpaceEndpoints) fasthttp.RequestHandler {
 	authMiddleware := middleware.NewAuthMiddleware(userService)
 	corsMiddleware := middleware.NewCORSMiddleware(config.AllowedOrigins)
 
@@ -27,7 +28,7 @@ func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, status
 		case path == "/setup/railway":
 			method := string(ctx.Method())
 			if method == "POST" {
-				authMiddleware.RequireRole(user.RoleOwner, setupEndpoints.SetRailwayToken)(ctx)
+				authMiddleware.RequireRole(setupEndpoints.SetRailwayToken, user.RoleOwner)(ctx)
 			} else {
 				ctx.Error("Method Not Allowed", fasthttp.StatusMethodNotAllowed)
 			}
@@ -58,14 +59,14 @@ func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, status
 			authMiddleware.RequireAuth(statusEndpoints.Status)(ctx)
 
 		case path == "/applications/register":
-			authMiddleware.RequireRole(user.RoleOwner, appEndpoints.RegisterApplication)(ctx)
+			authMiddleware.RequireRole(appEndpoints.RegisterApplication, user.RoleOwner, user.RoleUser)(ctx)
 		case path == "/applications":
-			authMiddleware.RequireRole(user.RoleOwner, appEndpoints.ListApplications)(ctx)
+			authMiddleware.RequireRole(appEndpoints.ListApplications, user.RoleOwner, user.RoleUser)(ctx)
 		case strings.HasPrefix(path, "/applications/") && strings.HasSuffix(path, "/state"):
 			parts := strings.Split(path, "/")
 			if len(parts) == 4 && parts[3] == "state" {
 				ctx.SetUserValue("appID", parts[2])
-				authMiddleware.RequireRole(user.RoleOwner, appEndpoints.GetApplicationState)(ctx)
+				authMiddleware.RequireRole(appEndpoints.GetApplicationState, user.RoleOwner, user.RoleUser)(ctx)
 			} else {
 				ctx.Error("Not Found", fasthttp.StatusNotFound)
 			}
@@ -78,9 +79,9 @@ func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, status
 					method := string(ctx.Method())
 					switch method {
 					case "POST":
-						authMiddleware.RequireRole(user.RoleOwner, invitationEndpoints.CreateInvite)(ctx)
+						authMiddleware.RequireRole(invitationEndpoints.CreateInvite, user.RoleOwner, user.RoleUser)(ctx)
 					case "GET":
-						authMiddleware.RequireRole(user.RoleOwner, invitationEndpoints.ListInvites)(ctx)
+						authMiddleware.RequireRole(invitationEndpoints.ListInvites, user.RoleOwner, user.RoleUser)(ctx)
 					default:
 						ctx.Error("Method Not Allowed", fasthttp.StatusMethodNotAllowed)
 					}
@@ -88,7 +89,7 @@ func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, status
 					ctx.SetUserValue("inviteID", parts[4])
 					method := string(ctx.Method())
 					if method == "DELETE" {
-						authMiddleware.RequireRole(user.RoleOwner, invitationEndpoints.RevokeInvite)(ctx)
+						authMiddleware.RequireRole(invitationEndpoints.RevokeInvite, user.RoleOwner, user.RoleUser)(ctx)
 					} else {
 						ctx.Error("Method Not Allowed", fasthttp.StatusMethodNotAllowed)
 					}
@@ -120,7 +121,7 @@ func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, status
 				case "GET":
 					authMiddleware.RequireAuth(appEndpoints.GetApplication)(ctx)
 				case "DELETE":
-					authMiddleware.RequireRole(user.RoleOwner, appEndpoints.DeleteApplication)(ctx)
+					authMiddleware.RequireRole(appEndpoints.DeleteApplication, user.RoleOwner, user.RoleUser)(ctx)
 				default:
 					ctx.Error("Method Not Allowed", fasthttp.StatusMethodNotAllowed)
 				}
@@ -235,6 +236,57 @@ func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, status
 
 		case path == "/ws":
 			wsHandler.HandleFastHTTP(ctx)
+
+		case path == "/spaces/mine":
+			method := string(ctx.Method())
+			if method == "GET" {
+				authMiddleware.RequireAuth(spaceEndpoints.GetMySpace)(ctx)
+			} else {
+				ctx.Error("Method Not Allowed", fasthttp.StatusMethodNotAllowed)
+			}
+		case path == "/spaces/claim":
+			method := string(ctx.Method())
+			if method == "POST" {
+				authMiddleware.RequireAuth(spaceEndpoints.ClaimSpace)(ctx)
+			} else {
+				ctx.Error("Method Not Allowed", fasthttp.StatusMethodNotAllowed)
+			}
+		case path == "/spaces":
+			method := string(ctx.Method())
+			switch method {
+			case "GET":
+				authMiddleware.RequireRole(spaceEndpoints.ListSpaces, user.RoleOwner)(ctx)
+			case "POST":
+				authMiddleware.RequireRole(spaceEndpoints.CreateSpace, user.RoleOwner)(ctx)
+			default:
+				ctx.Error("Method Not Allowed", fasthttp.StatusMethodNotAllowed)
+			}
+		case strings.HasPrefix(path, "/spaces/") && strings.HasSuffix(path, "/claim-invite"):
+			parts := strings.Split(path, "/")
+			if len(parts) == 4 && parts[3] == "claim-invite" {
+				ctx.SetUserValue("spaceID", parts[2])
+				method := string(ctx.Method())
+				if method == "POST" {
+					authMiddleware.RequireRole(spaceEndpoints.CreateClaimInvite, user.RoleOwner)(ctx)
+				} else {
+					ctx.Error("Method Not Allowed", fasthttp.StatusMethodNotAllowed)
+				}
+			} else {
+				ctx.Error("Not Found", fasthttp.StatusNotFound)
+			}
+		case strings.HasPrefix(path, "/spaces/"):
+			parts := strings.Split(path, "/")
+			if len(parts) == 3 {
+				ctx.SetUserValue("spaceID", parts[2])
+				method := string(ctx.Method())
+				if method == "DELETE" {
+					authMiddleware.RequireRole(spaceEndpoints.DeleteSpace, user.RoleOwner)(ctx)
+				} else {
+					ctx.Error("Method Not Allowed", fasthttp.StatusMethodNotAllowed)
+				}
+			} else {
+				ctx.Error("Not Found", fasthttp.StatusNotFound)
+			}
 
 		default:
 			ctx.Error("Not Found", fasthttp.StatusNotFound)

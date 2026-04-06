@@ -61,7 +61,7 @@ func (s *Service) ExternalURL() string {
 	return s.externalURL
 }
 
-func (s *Service) Upload(ctx context.Context, appID *string, uploaderPublicKey string, req *UploadRequest, data io.Reader) (*Storage, error) {
+func (s *Service) Upload(ctx context.Context, appID *string, uploaderPublicKey string, spaceID *string, req *UploadRequest, data io.Reader) (*Storage, error) {
 	if !allowedContentTypes[req.ContentType] {
 		return nil, fmt.Errorf("unsupported content type: %s", req.ContentType)
 	}
@@ -105,6 +105,7 @@ func (s *Service) Upload(ctx context.Context, appID *string, uploaderPublicKey s
 		Checksum:          checksum,
 		CreatedAt:         now.Unix(),
 		Status:            string(StorageStatusReady),
+		SpaceID:           spaceID,
 	}
 
 	if err := s.repo.Create(stored); err != nil {
@@ -253,7 +254,7 @@ func (s *Service) CleanupApplicationStorage(ctx context.Context, appID string) e
 	return nil
 }
 
-func (s *Service) InitChunkedUpload(ctx context.Context, appID *string, uploaderPublicKey string, req *ChunkedUploadInitRequest) (*ChunkedUploadInitResponse, error) {
+func (s *Service) InitChunkedUpload(ctx context.Context, appID *string, uploaderPublicKey string, spaceID *string, req *ChunkedUploadInitRequest) (*ChunkedUploadInitResponse, error) {
 	if !allowedContentTypes[req.ContentType] {
 		return nil, fmt.Errorf("unsupported content type: %s", req.ContentType)
 	}
@@ -276,6 +277,7 @@ func (s *Service) InitChunkedUpload(ctx context.Context, appID *string, uploader
 		Checksum:          req.Checksum,
 		CreatedAt:         now.Unix(),
 		Status:            string(StorageStatusPending),
+		SpaceID:           spaceID,
 	}
 
 	if err := s.repo.Create(stored); err != nil {

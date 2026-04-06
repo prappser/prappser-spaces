@@ -13,6 +13,7 @@ type Invitation struct {
 	MaxUses            *int    `json:"maxUses,omitempty"`
 	UsedCount          int     `json:"usedCount"`
 	CreatedAt          int64   `json:"createdAt"`
+	SpaceID            *string `json:"spaceId,omitempty"`
 }
 
 // InvitationUse tracks when a user joins via an invitation
