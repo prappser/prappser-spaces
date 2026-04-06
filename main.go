@@ -1,4 +1,4 @@
-// Prappser Space - Password manager synchronization space
+// Prappser Spaces - Backend service for hosting spaces for Prappser apps
 // Copyright (C) 2025 Prappser Authors
 //
 // This program is free software: you can redistribute it and/or modify
@@ -24,17 +24,17 @@ import (
 	"strings"
 
 	_ "github.com/lib/pq"
-	"github.com/prappser/prappser-space/internal"
-	"github.com/prappser/prappser-space/internal/application"
-	"github.com/prappser/prappser-space/internal/event"
-	"github.com/prappser/prappser-space/internal/health"
-	"github.com/prappser/prappser-space/internal/invitation"
-	"github.com/prappser/prappser-space/internal/keys"
-	"github.com/prappser/prappser-space/internal/storage"
-	"github.com/prappser/prappser-space/internal/setup"
-	"github.com/prappser/prappser-space/internal/status"
-	"github.com/prappser/prappser-space/internal/user"
-	"github.com/prappser/prappser-space/internal/websocket"
+	"github.com/prappser/prappser-spaces/internal"
+	"github.com/prappser/prappser-spaces/internal/application"
+	"github.com/prappser/prappser-spaces/internal/event"
+	"github.com/prappser/prappser-spaces/internal/health"
+	"github.com/prappser/prappser-spaces/internal/invitation"
+	"github.com/prappser/prappser-spaces/internal/keys"
+	"github.com/prappser/prappser-spaces/internal/storage"
+	"github.com/prappser/prappser-spaces/internal/setup"
+	"github.com/prappser/prappser-spaces/internal/status"
+	"github.com/prappser/prappser-spaces/internal/user"
+	"github.com/prappser/prappser-spaces/internal/websocket"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/valyala/fasthttp"

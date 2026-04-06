@@ -3,16 +3,16 @@ package internal
 import (
 	"strings"
 
-	"github.com/prappser/prappser-space/internal/application"
-	"github.com/prappser/prappser-space/internal/event"
-	"github.com/prappser/prappser-space/internal/health"
-	"github.com/prappser/prappser-space/internal/invitation"
-	"github.com/prappser/prappser-space/internal/storage"
-	"github.com/prappser/prappser-space/internal/middleware"
-	"github.com/prappser/prappser-space/internal/setup"
-	"github.com/prappser/prappser-space/internal/status"
-	"github.com/prappser/prappser-space/internal/user"
-	"github.com/prappser/prappser-space/internal/websocket"
+	"github.com/prappser/prappser-spaces/internal/application"
+	"github.com/prappser/prappser-spaces/internal/event"
+	"github.com/prappser/prappser-spaces/internal/health"
+	"github.com/prappser/prappser-spaces/internal/invitation"
+	"github.com/prappser/prappser-spaces/internal/storage"
+	"github.com/prappser/prappser-spaces/internal/middleware"
+	"github.com/prappser/prappser-spaces/internal/setup"
+	"github.com/prappser/prappser-spaces/internal/status"
+	"github.com/prappser/prappser-spaces/internal/user"
+	"github.com/prappser/prappser-spaces/internal/websocket"
 	"github.com/valyala/fasthttp"
 )
 

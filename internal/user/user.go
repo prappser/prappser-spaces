@@ -10,7 +10,7 @@ import (
 
 	"github.com/goccy/go-json"
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/prappser/prappser-space/internal/user/owner"
+	"github.com/prappser/prappser-spaces/internal/user/owner"
 	"github.com/rs/zerolog/log"
 	"github.com/valyala/fasthttp"
 )

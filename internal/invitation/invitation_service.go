@@ -9,9 +9,9 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
-	"github.com/prappser/prappser-space/internal/application"
-	"github.com/prappser/prappser-space/internal/event"
-	"github.com/prappser/prappser-space/internal/user"
+	"github.com/prappser/prappser-spaces/internal/application"
+	"github.com/prappser/prappser-spaces/internal/event"
+	"github.com/prappser/prappser-spaces/internal/user"
 	"github.com/rs/zerolog/log"
 )
 

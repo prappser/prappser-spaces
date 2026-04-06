@@ -1,4 +1,4 @@
-module github.com/prappser/prappser-space
+module github.com/prappser/prappser-spaces
 
 go 1.24.0
 

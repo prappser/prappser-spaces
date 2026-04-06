@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/prappser/prappser-space/internal/application"
-	"github.com/prappser/prappser-space/internal/user"
+	"github.com/prappser/prappser-spaces/internal/application"
+	"github.com/prappser/prappser-spaces/internal/user"
 	"github.com/rs/zerolog/log"
 )
 

@@ -1,6 +1,6 @@
 package websocket
 
-import "github.com/prappser/prappser-space/internal/event"
+import "github.com/prappser/prappser-spaces/internal/event"
 
 type MessageType string
 
