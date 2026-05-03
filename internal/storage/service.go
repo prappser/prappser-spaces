@@ -42,10 +42,9 @@ type Service struct {
 	repo        *Repository
 	backend     StorageBackend
 	maxFileSize int64
-	externalURL string
 }
 
-func NewService(repo *Repository, backend StorageBackend, maxFileSize int64, externalURL string) *Service {
+func NewService(repo *Repository, backend StorageBackend, maxFileSize int64) *Service {
 	if maxFileSize <= 0 {
 		maxFileSize = 500 * 1024 * 1024
 	}
@@ -53,15 +52,10 @@ func NewService(repo *Repository, backend StorageBackend, maxFileSize int64, ext
 		repo:        repo,
 		backend:     backend,
 		maxFileSize: maxFileSize,
-		externalURL: externalURL,
 	}
 }
 
-func (s *Service) ExternalURL() string {
-	return s.externalURL
-}
-
-func (s *Service) Upload(ctx context.Context, appID *string, uploaderPublicKey string, spaceID *string, req *UploadRequest, data io.Reader) (*Storage, error) {
+func (s *Service) Upload(ctx context.Context, appID *string, uploaderPublicKey string, spaceID *string, req *UploadRequest, data io.Reader, baseURL string) (*Storage, error) {
 	if !allowedContentTypes[req.ContentType] {
 		return nil, fmt.Errorf("unsupported content type: %s", req.ContentType)
 	}
@@ -116,7 +110,7 @@ func (s *Service) Upload(ctx context.Context, appID *string, uploaderPublicKey s
 			if err != nil {
 				return nil, fmt.Errorf("failed to fetch existing storage record: %w", err)
 			}
-			s.populateURLs(ctx, existing)
+			s.populateURLs(ctx, existing, baseURL)
 			return existing, nil
 		}
 		s.backend.Delete(ctx, storagePath)
@@ -133,7 +127,7 @@ func (s *Service) Upload(ctx context.Context, appID *string, uploaderPublicKey s
 		}
 	}
 
-	s.populateURLs(ctx, stored)
+	s.populateURLs(ctx, stored, baseURL)
 	return stored, nil
 }
 
@@ -162,18 +156,18 @@ func (s *Service) generateThumbnail(ctx context.Context, stored *Storage, data [
 	return nil
 }
 
-func (s *Service) Get(ctx context.Context, id string) (*Storage, error) {
+func (s *Service) Get(ctx context.Context, id string, baseURL string) (*Storage, error) {
 	stored, err := s.repo.GetByID(id)
 	if err != nil {
 		return nil, err
 	}
 
-	s.populateURLs(ctx, stored)
+	s.populateURLs(ctx, stored, baseURL)
 	return stored, nil
 }
 
-func (s *Service) populateURLs(ctx context.Context, stored *Storage) {
-	stored.URL, _ = s.backend.GetURL(ctx, stored.StoragePath)
+func (s *Service) populateURLs(ctx context.Context, stored *Storage, baseURL string) {
+	stored.URL, _ = s.backend.GetURL(ctx, stored.StoragePath, baseURL)
 	if stored.ThumbnailPath != "" {
 		stored.ThumbnailURL = stored.URL + "/thumb"
 	}
@@ -332,7 +326,7 @@ func (s *Service) UploadChunk(ctx context.Context, storageID string, chunkIndex 
 	return s.repo.CreateChunk(chunk)
 }
 
-func (s *Service) CompleteChunkedUpload(ctx context.Context, storageID string) (*Storage, error) {
+func (s *Service) CompleteChunkedUpload(ctx context.Context, storageID string, baseURL string) (*Storage, error) {
 	stored, err := s.repo.GetByID(storageID)
 	if err != nil {
 		return nil, err
@@ -405,7 +399,7 @@ func (s *Service) CompleteChunkedUpload(ctx context.Context, storageID string) (
 		return nil, err
 	}
 
-	s.populateURLs(ctx, stored)
+	s.populateURLs(ctx, stored, baseURL)
 	return stored, nil
 }
 

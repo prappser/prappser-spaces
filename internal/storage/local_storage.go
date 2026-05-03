@@ -10,8 +10,7 @@ import (
 )
 
 type LocalStorage struct {
-	basePath    string
-	externalURL string
+	basePath string
 }
 
 func NewLocalStorage(config *BackendConfig) (*LocalStorage, error) {
@@ -25,8 +24,7 @@ func NewLocalStorage(config *BackendConfig) (*LocalStorage, error) {
 	}
 
 	return &LocalStorage{
-		basePath:    basePath,
-		externalURL: config.ExternalURL,
+		basePath: basePath,
 	}, nil
 }
 
@@ -90,9 +88,9 @@ func (s *LocalStorage) Exists(ctx context.Context, path string) (bool, error) {
 	return true, nil
 }
 
-func (s *LocalStorage) GetURL(ctx context.Context, path string) (string, error) {
+func (s *LocalStorage) GetURL(ctx context.Context, path string, baseURL string) (string, error) {
 	base := filepath.Base(path)
 	ext := filepath.Ext(base)
 	storageID := strings.TrimSuffix(base, ext)
-	return fmt.Sprintf("%s/storage/%s", s.externalURL, storageID), nil
+	return fmt.Sprintf("%s/storage/%s", baseURL, storageID), nil
 }

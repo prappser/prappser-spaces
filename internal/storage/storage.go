@@ -10,7 +10,7 @@ type StorageBackend interface {
 	Get(ctx context.Context, path string) (io.ReadCloser, error)
 	Delete(ctx context.Context, path string) error
 	Exists(ctx context.Context, path string) (bool, error)
-	GetURL(ctx context.Context, path string) (string, error)
+	GetURL(ctx context.Context, path string, baseURL string) (string, error)
 }
 
 type StorageType string
@@ -21,17 +21,16 @@ const (
 )
 
 type BackendConfig struct {
-	Type         StorageType
-	LocalPath    string
-	S3Endpoint   string
-	S3Bucket     string
-	S3AccessKey  string
-	S3SecretKey  string
-	S3Region     string
-	S3UseSSL     bool
-	MaxFileSize  int64
-	ChunkSize    int64
-	ExternalURL  string
+	Type        StorageType
+	LocalPath   string
+	S3Endpoint  string
+	S3Bucket    string
+	S3AccessKey string
+	S3SecretKey string
+	S3Region    string
+	S3UseSSL    bool
+	MaxFileSize int64
+	ChunkSize   int64
 }
 
 func NewBackend(config *BackendConfig) (StorageBackend, error) {

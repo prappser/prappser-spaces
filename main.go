@@ -163,8 +163,8 @@ func main() {
 	log.Info().Msg("Event cleanup scheduler started")
 
 	invitationRepository := invitation.NewInvitationRepository(db)
-	invitationService := invitation.NewInvitationService(invitationRepository, privateKey, publicKey, appRepository, db, config.ExternalURL, userRepository, eventService)
-	invitationEndpoints := invitation.NewInvitationEndpoints(invitationService)
+	invitationService := invitation.NewInvitationService(invitationRepository, privateKey, publicKey, appRepository, db, userRepository, eventService)
+	invitationEndpoints := invitation.NewInvitationEndpoints(invitationService, config.ExternalURL)
 
 	setupEndpoints := setup.NewSetupEndpoints(db)
 
@@ -179,7 +179,6 @@ func main() {
 		S3UseSSL:    config.Storage.S3UseSSL,
 		MaxFileSize: config.Storage.MaxFileSize,
 		ChunkSize:   config.Storage.ChunkSize,
-		ExternalURL: config.ExternalURL,
 	}
 
 	storageBackend, err := storage.NewBackend(storageBackendConfig)
@@ -188,8 +187,8 @@ func main() {
 		return
 	}
 
-	storageService := storage.NewService(storageRepo, storageBackend, config.Storage.MaxFileSize, config.ExternalURL)
-	storageEndpoints := storage.NewEndpoints(storageService, appRepository, eventService, userRepository)
+	storageService := storage.NewService(storageRepo, storageBackend, config.Storage.MaxFileSize)
+	storageEndpoints := storage.NewEndpoints(storageService, appRepository, eventService, userRepository, config.ExternalURL)
 	log.Info().Str("storageType", config.Storage.StorageType).Msg("Storage service initialized")
 
 	wsHandler := websocket.NewHandler(wsHub, userService)

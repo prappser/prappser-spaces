@@ -2,18 +2,21 @@ package invitation
 
 import (
 	"github.com/goccy/go-json"
+	"github.com/prappser/prappser-spaces/internal/httputil"
 	"github.com/prappser/prappser-spaces/internal/user"
 	"github.com/rs/zerolog/log"
 	"github.com/valyala/fasthttp"
 )
 
 type InvitationEndpoints struct {
-	invitationService *InvitationService
+	invitationService   *InvitationService
+	externalURLOverride string
 }
 
-func NewInvitationEndpoints(invitationService *InvitationService) *InvitationEndpoints {
+func NewInvitationEndpoints(invitationService *InvitationService, externalURLOverride string) *InvitationEndpoints {
 	return &InvitationEndpoints{
-		invitationService: invitationService,
+		invitationService:   invitationService,
+		externalURLOverride: externalURLOverride,
 	}
 }
 
@@ -64,6 +67,7 @@ func (ie *InvitationEndpoints) CreateInvite(ctx *fasthttp.RequestCtx) {
 		MaxUses:            req.MaxUses,
 		ExpiresInHours:     req.ExpiresInHours,
 		SpaceID:            spaceIDPtr(authenticatedUser.SpaceID),
+		SpaceURL:           httputil.PublicURL(ctx, ie.externalURLOverride),
 	}
 
 	response, err := ie.invitationService.CreateInvitation(opts)

@@ -30,19 +30,17 @@ type InvitationService struct {
 	publicKey      ed25519.PublicKey
 	appRepo        application.ApplicationRepository
 	db             *sql.DB
-	externalURL    string
 	userRepository user.UserRepository
 	eventService   EventService
 }
 
-func NewInvitationService(repo InvitationRepository, privateKey ed25519.PrivateKey, publicKey ed25519.PublicKey, appRepo application.ApplicationRepository, db *sql.DB, externalURL string, userRepository user.UserRepository, eventService EventService) *InvitationService {
+func NewInvitationService(repo InvitationRepository, privateKey ed25519.PrivateKey, publicKey ed25519.PublicKey, appRepo application.ApplicationRepository, db *sql.DB, userRepository user.UserRepository, eventService EventService) *InvitationService {
 	return &InvitationService{
 		repo:           repo,
 		privateKey:     privateKey,
 		publicKey:      publicKey,
 		appRepo:        appRepo,
 		db:             db,
-		externalURL:    externalURL,
 		userRepository: userRepository,
 		eventService:   eventService,
 	}
@@ -56,6 +54,7 @@ type CreateInvitationOptions struct {
 	MaxUses            *int
 	ExpiresInHours     *int
 	SpaceID            *string
+	SpaceURL           string
 }
 
 // CreateInvitation creates a new invitation and generates a JWT token
@@ -108,7 +107,7 @@ func (s *InvitationService) CreateInvitation(opts CreateInvitationOptions) (*Inv
 		expiresAt = &exp
 	}
 
-	token, err := s.GenerateToken(invite.ID, s.externalURL, expiresAt)
+	token, err := s.GenerateToken(invite.ID, opts.SpaceURL, expiresAt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate token: %w", err)
 	}

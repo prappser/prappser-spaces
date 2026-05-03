@@ -11,9 +11,8 @@ import (
 )
 
 type S3Storage struct {
-	client      *minio.Client
-	bucket      string
-	externalURL string
+	client *minio.Client
+	bucket string
 }
 
 func NewS3Storage(config *BackendConfig) (*S3Storage, error) {
@@ -41,9 +40,8 @@ func NewS3Storage(config *BackendConfig) (*S3Storage, error) {
 	}
 
 	return &S3Storage{
-		client:      client,
-		bucket:      config.S3Bucket,
-		externalURL: config.ExternalURL,
+		client: client,
+		bucket: config.S3Bucket,
 	}, nil
 }
 
@@ -86,7 +84,7 @@ func (s *S3Storage) Exists(ctx context.Context, path string) (bool, error) {
 	return true, nil
 }
 
-func (s *S3Storage) GetURL(ctx context.Context, path string) (string, error) {
+func (s *S3Storage) GetURL(ctx context.Context, path string, _ string) (string, error) {
 	presignedURL, err := s.client.PresignedGetObject(ctx, s.bucket, path, time.Hour, nil)
 	if err != nil {
 		return "", err

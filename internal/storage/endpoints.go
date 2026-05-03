@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/prappser/prappser-spaces/internal/application"
 	"github.com/prappser/prappser-spaces/internal/event"
+	"github.com/prappser/prappser-spaces/internal/httputil"
 	"github.com/prappser/prappser-spaces/internal/user"
 	"github.com/rs/zerolog/log"
 	"github.com/valyala/fasthttp"
@@ -23,18 +24,20 @@ type EventService interface {
 }
 
 type Endpoints struct {
-	service      *Service
-	appRepo      *application.Repository
-	eventService EventService
-	userRepo     user.UserRepository
+	service             *Service
+	appRepo             *application.Repository
+	eventService        EventService
+	userRepo            user.UserRepository
+	externalURLOverride string
 }
 
-func NewEndpoints(service *Service, appRepo *application.Repository, eventService EventService, userRepo user.UserRepository) *Endpoints {
+func NewEndpoints(service *Service, appRepo *application.Repository, eventService EventService, userRepo user.UserRepository, externalURLOverride string) *Endpoints {
 	return &Endpoints{
-		service:      service,
-		appRepo:      appRepo,
-		eventService: eventService,
-		userRepo:     userRepo,
+		service:             service,
+		appRepo:             appRepo,
+		eventService:        eventService,
+		userRepo:            userRepo,
+		externalURLOverride: externalURLOverride,
 	}
 }
 
@@ -118,7 +121,8 @@ func (e *Endpoints) Upload(ctx *fasthttp.RequestCtx) {
 		req.ContentType = detectContentType(fileHeader.Filename)
 	}
 
-	stored, err := e.service.Upload(ctx, appID, publicKey, spaceID, req, file)
+	baseURL := httputil.PublicURL(ctx, e.externalURLOverride)
+	stored, err := e.service.Upload(ctx, appID, publicKey, spaceID, req, file, baseURL)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to upload file")
 		ctx.Error(err.Error(), fasthttp.StatusBadRequest)
@@ -138,7 +142,7 @@ func (e *Endpoints) Upload(ctx *fasthttp.RequestCtx) {
 				"filename":      stored.Filename,
 				"contentType":   stored.ContentType,
 				"sizeBytes":     stored.SizeBytes,
-				"remoteUrl":     fmt.Sprintf("%s/storage/%s", e.service.ExternalURL(), stored.ID),
+				"remoteUrl":     fmt.Sprintf("%s/storage/%s", baseURL, stored.ID),
 			},
 		}
 		if _, err := e.eventService.ProduceEvent(ctx, evt); err != nil {
@@ -217,7 +221,7 @@ func (e *Endpoints) UploadUserAvatar(ctx *fasthttp.RequestCtx) {
 		avatarSpaceID = &authenticatedUser.SpaceID
 	}
 
-	stored, err := e.service.Upload(ctx, nil, publicKey, avatarSpaceID, req, file)
+	stored, err := e.service.Upload(ctx, nil, publicKey, avatarSpaceID, req, file, httputil.PublicURL(ctx, e.externalURLOverride))
 	if err != nil {
 		log.Error().Err(err).Msg("[STORAGE] Failed to upload avatar")
 		ctx.Error("Failed to upload avatar", fasthttp.StatusInternalServerError)
@@ -293,7 +297,7 @@ func (e *Endpoints) UploadChunk(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	stored, err := e.service.Get(ctx, storageID)
+	stored, err := e.service.Get(ctx, storageID, "")
 	if err != nil {
 		ctx.Error("Storage not found", fasthttp.StatusNotFound)
 		return
@@ -327,7 +331,7 @@ func (e *Endpoints) CompleteChunkedUpload(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	stored, err := e.service.Get(ctx, storageID)
+	stored, err := e.service.Get(ctx, storageID, "")
 	if err != nil {
 		ctx.Error("Storage not found", fasthttp.StatusNotFound)
 		return
@@ -338,7 +342,8 @@ func (e *Endpoints) CompleteChunkedUpload(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	completedStorage, err := e.service.CompleteChunkedUpload(ctx, storageID)
+	baseURL := httputil.PublicURL(ctx, e.externalURLOverride)
+	completedStorage, err := e.service.CompleteChunkedUpload(ctx, storageID, baseURL)
 	if err != nil {
 		ctx.Error(err.Error(), fasthttp.StatusBadRequest)
 		return
@@ -357,7 +362,7 @@ func (e *Endpoints) CompleteChunkedUpload(ctx *fasthttp.RequestCtx) {
 				"filename":      completedStorage.Filename,
 				"contentType":   completedStorage.ContentType,
 				"sizeBytes":     completedStorage.SizeBytes,
-				"remoteUrl":     fmt.Sprintf("%s/storage/%s", e.service.ExternalURL(), completedStorage.ID),
+				"remoteUrl":     fmt.Sprintf("%s/storage/%s", baseURL, completedStorage.ID),
 			},
 		}
 		if _, err := e.eventService.ProduceEvent(ctx, evt); err != nil {
@@ -430,7 +435,7 @@ func (e *Endpoints) DeleteFile(ctx *fasthttp.RequestCtx) {
 	}
 
 	// Fetch record before deletion to capture metadata for the event
-	stored, err := e.service.Get(ctx, storageID)
+	stored, err := e.service.Get(ctx, storageID, "")
 	if err != nil {
 		ctx.Error("Storage not found", fasthttp.StatusNotFound)
 		return
@@ -514,7 +519,7 @@ func (e *Endpoints) getStorageAndCheckAccess(ctx *fasthttp.RequestCtx) (stored *
 		return nil, "", false
 	}
 
-	stored, err := e.service.Get(ctx, storageID)
+	stored, err := e.service.Get(ctx, storageID, "")
 	if err != nil {
 		ctx.Error("Storage not found", fasthttp.StatusNotFound)
 		return nil, "", false

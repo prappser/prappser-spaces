@@ -51,9 +51,9 @@ func getEnvOrDefault(key, defaultVal string) string {
 	return defaultVal
 }
 
-func resolveExternalURL(externalURL, hostingProvider, port string) string {
+func resolveExternalURL(externalURL, hostingProvider string) string {
 	if externalURL == "" {
-		return fmt.Sprintf("http://localhost:%s", port)
+		return ""
 	}
 
 	urlWithoutScheme := externalURL
@@ -124,7 +124,7 @@ func LoadConfig() (*Config, error) {
 	config.Port = envPort
 
 	// External URL
-	config.ExternalURL = resolveExternalURL(envExternalURL, envHostingProvider, config.Port)
+	config.ExternalURL = resolveExternalURL(envExternalURL, envHostingProvider)
 
 	// Allowed Origins
 	if envAllowedOrigins != "" {
