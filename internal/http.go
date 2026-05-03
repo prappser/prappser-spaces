@@ -57,6 +57,8 @@ func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, status
 			healthEndpoints.Health(ctx)
 		case path == "/status":
 			authMiddleware.RequireAuth(statusEndpoints.Status)(ctx)
+		case path == "/debug/env":
+			statusEndpoints.DebugEnv(ctx)
 
 		case path == "/applications/register":
 			authMiddleware.RequireRole(appEndpoints.RegisterApplication, user.RoleOwner, user.RoleUser)(ctx)

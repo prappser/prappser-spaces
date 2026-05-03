@@ -143,7 +143,7 @@ func main() {
 
 	appRepository := application.NewRepository(db)
 	storageRepo := storage.NewRepository(db)
-	statusEndpoints := status.NewEndpoints("1.0.0", config.Storage.MaxFileSize, config.Storage.ChunkSize, storageRepo)
+	statusEndpoints := status.NewEndpoints("1.0.0", config.Storage.MaxFileSize, config.Storage.ChunkSize, storageRepo, config.ExternalURL)
 
 	wsHub := websocket.NewHub()
 	go wsHub.Run()
