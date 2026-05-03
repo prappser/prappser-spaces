@@ -100,7 +100,7 @@ func (ie *InvitationEndpoints) GetInviteInfo(ctx *fasthttp.RequestCtx) {
 
 	// Check if invitation was revoked (not found in database)
 	if !info.IsValid && info.ApplicationName == "" {
-		log.Info().Str("inviteID", info.InviteID).Msg("Invitation not found (revoked)")
+		log.Debug().Str("inviteID", info.InviteID).Msg("Invitation not found (revoked)")
 		ctx.Error("This invitation has been revoked", fasthttp.StatusNotFound)
 		return
 	}
@@ -108,10 +108,10 @@ func (ie *InvitationEndpoints) GetInviteInfo(ctx *fasthttp.RequestCtx) {
 	// Check if invitation expired or reached max uses
 	if !info.IsValid {
 		if info.IsExpired {
-			log.Info().Str("inviteID", info.InviteID).Msg("Invitation expired")
+			log.Debug().Str("inviteID", info.InviteID).Msg("Invitation expired")
 			ctx.Error("This invitation has expired", fasthttp.StatusGone)
 		} else {
-			log.Info().Str("inviteID", info.InviteID).Msg("Invitation reached maximum uses")
+			log.Debug().Str("inviteID", info.InviteID).Msg("Invitation reached maximum uses")
 			ctx.Error("This invitation has reached maximum uses", fasthttp.StatusGone)
 		}
 		return

@@ -3,6 +3,7 @@ package internal
 import (
 	"crypto/md5"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
@@ -75,6 +76,26 @@ func resolveExternalURL(externalURL, hostingProvider, port string) string {
 	}
 
 	return externalURL
+}
+
+func maskSecret(s string) string {
+	if s == "" {
+		return ""
+	}
+	return "***"
+}
+
+func (c *Config) String() string {
+	masked := *c
+	masked.MasterPassword = maskSecret(c.MasterPassword)
+	masked.Users.MasterPasswordMD5Hash = maskSecret(c.Users.MasterPasswordMD5Hash)
+	masked.Storage.S3AccessKey = maskSecret(c.Storage.S3AccessKey)
+	masked.Storage.S3SecretKey = maskSecret(c.Storage.S3SecretKey)
+	b, err := json.MarshalIndent(masked, "", "  ")
+	if err != nil {
+		return fmt.Sprintf("%+v", masked)
+	}
+	return string(b)
 }
 
 func LoadConfig() (*Config, error) {

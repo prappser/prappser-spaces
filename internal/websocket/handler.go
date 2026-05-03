@@ -62,7 +62,7 @@ func (h *Handler) HandleFastHTTP(ctx *fasthttp.RequestCtx) {
 			UserID: authenticatedUser.PublicKey,
 		}
 
-		log.Info().
+		log.Debug().
 			Str("userPublicKey", authenticatedUser.PublicKey[:20]+"...").
 			Str("username", authenticatedUser.Username).
 			Msg("[WS] Client connected")

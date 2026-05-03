@@ -40,7 +40,7 @@ func (cm *CORSMiddleware) Handle(next fasthttp.RequestHandler) fasthttp.RequestH
 
 		isAllowed := cm.isOriginAllowed(origin)
 
-		log.Info().
+		log.Debug().
 			Str("origin", origin).
 			Str("referer", referer).
 			Bool("hasAuth", auth != "").

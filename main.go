@@ -98,6 +98,7 @@ func main() {
 		log.Fatal().Err(err).Msg("Error loading config")
 		return
 	}
+	log.Info().Msgf("Config loaded:\n%s", config)
 
 	db, err := internal.NewDB()
 	if err != nil {
@@ -127,11 +128,11 @@ func main() {
 		for rows.Next() {
 			var pk, uname, role string
 			if err := rows.Scan(&pk, &uname, &role); err == nil {
-				log.Info().Str("publicKey", pk[:min(50, len(pk))]+"...").Str("username", uname).Str("role", role).Msg("[DEBUG] Registered user")
+				log.Debug().Str("publicKey", pk[:min(50, len(pk))]+"...").Str("username", uname).Str("role", role).Msg("[DEBUG] Registered user")
 				count++
 			}
 		}
-		log.Info().Int("count", count).Msg("[DEBUG] Total registered users")
+		log.Debug().Int("count", count).Msg("[DEBUG] Total registered users")
 	}
 
 	spaceRepository := space.NewSpaceRepository(db)

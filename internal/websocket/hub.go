@@ -55,7 +55,7 @@ func (h *Hub) registerClient(client *Client) {
 	h.clients[client] = true
 	h.byUser[client.user.PublicKey] = append(h.byUser[client.user.PublicKey], client)
 
-	log.Info().
+	log.Debug().
 		Str("userPublicKey", client.user.PublicKey[:20]+"...").
 		Int("totalClients", len(h.clients)).
 		Msg("[WS] Client registered")
@@ -89,7 +89,7 @@ func (h *Hub) unregisterClient(client *Client) {
 		h.removeFromAppSubscribers(client, appID)
 	}
 
-	log.Info().
+	log.Debug().
 		Str("userPublicKey", client.user.PublicKey[:20]+"...").
 		Int("totalClients", len(h.clients)).
 		Msg("[WS] Client unregistered")

@@ -120,7 +120,7 @@ func (s *EventService) AcceptEvent(ctx context.Context, event *Event, submitter 
 		s.updateAppVersion(event)
 	}
 
-	log.Info().
+	log.Debug().
 		Str("eventId", event.ID).
 		Str("type", string(event.Type)).
 		Int64("sequence", event.SequenceNumber).
@@ -180,7 +180,7 @@ func (s *EventService) acceptUserScopedEvent(ctx context.Context, event *Event, 
 			Msg("[EVENT] Execution complete")
 	}
 
-	log.Info().
+	log.Debug().
 		Str("eventId", event.ID).
 		Str("type", string(event.Type)).
 		Msg("[EVENT] User-scoped event accepted successfully")
@@ -268,7 +268,7 @@ func (s *EventService) ProduceEvent(ctx context.Context, event *Event) (*Event, 
 		s.updateAppVersion(event)
 	}
 
-	log.Info().
+	log.Debug().
 		Str("eventId", event.ID).
 		Str("type", string(event.Type)).
 		Int64("sequence", event.SequenceNumber).
@@ -315,7 +315,7 @@ func (s *EventService) produceUserScopedEvent(ctx context.Context, event *Event)
 			Msg("[EVENT] Execution complete")
 	}
 
-	log.Info().
+	log.Debug().
 		Str("eventId", event.ID).
 		Str("type", string(event.Type)).
 		Msg("[EVENT] Server-produced user-scoped event accepted successfully")
