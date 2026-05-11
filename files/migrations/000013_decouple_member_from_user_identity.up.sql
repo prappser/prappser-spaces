@@ -1,0 +1,2 @@
+ALTER TABLE members DROP COLUMN IF EXISTS name;
+ALTER TABLE members DROP COLUMN IF EXISTS avatar_storage_id;

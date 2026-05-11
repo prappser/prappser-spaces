@@ -210,8 +210,9 @@ func (s *EventService) ProduceEvent(ctx context.Context, event *Event) (*Event, 
 	}
 	log.Debug().Str("eventId", event.ID).Msg("[EVENT] Validation passed")
 
-	// User-scoped events have no application context or sequence number
-	if IsUserScoped(event.Type) {
+	// User-scoped events have no application context or sequence number.
+	// Exception: if ApplicationID is explicitly set, treat as app-scoped (e.g. fan-out from avatar upload).
+	if IsUserScoped(event.Type) && event.ApplicationID == "" {
 		return s.produceUserScopedEvent(ctx, event)
 	}
 
@@ -493,11 +494,6 @@ func (s *EventService) executeMemberAdded(ctx context.Context, event *Event) err
 		return fmt.Errorf("missing memberPublicKey in member_added event")
 	}
 
-	memberName, ok := event.Data["memberName"].(string)
-	if !ok || memberName == "" {
-		return fmt.Errorf("missing memberName in member_added event")
-	}
-
 	roleStr, ok := event.Data["role"].(string)
 	if !ok || roleStr == "" {
 		roleStr = "member" // Default role
@@ -506,7 +502,6 @@ func (s *EventService) executeMemberAdded(ctx context.Context, event *Event) err
 	member := &application.Member{
 		ID:            uuid.New().String(),
 		ApplicationID: appID,
-		Name:          memberName,
 		Role:          application.MemberRole(roleStr),
 		PublicKey:     memberPublicKey,
 	}
@@ -587,19 +582,10 @@ func (s *EventService) executeApplicationDataChanged(ctx context.Context, event 
 	return s.appRepo.UpdateApplicationMetadata(appID, name, icon)
 }
 
-// executeUserSettingsChanged updates the avatar storage ID for all memberships of a user
+// executeUserSettingsChanged is a no-op on the server side — user identity (displayName, avatar)
+// is stored on the User entity, not on Member. Clients derive member identity from User via events.
 func (s *EventService) executeUserSettingsChanged(event *Event) error {
-	userPublicKey, ok := event.Data["userPublicKey"].(string)
-	if !ok || userPublicKey == "" {
-		return fmt.Errorf("missing userPublicKey in user_settings_changed event")
-	}
-
-	var avatarStorageID *string
-	if v, ok := event.Data["avatarStorageId"].(string); ok && v != "" {
-		avatarStorageID = &v
-	}
-
-	return s.appRepo.UpdateMemberAvatarByPublicKey(userPublicKey, avatarStorageID)
+	return nil
 }
 
 // executeApplicationDeleted deletes an application (cascades to members, groups, components)
@@ -636,8 +622,7 @@ func (s *EventService) executeMemberRoleChanged(ctx context.Context, event *Even
 	}
 
 	// Update role
-	member.Role = application.MemberRole(newRole)
-	return s.appRepo.UpdateMember(member)
+	return s.appRepo.UpdateMemberRole(member.ID, application.MemberRole(newRole))
 }
 
 // executeComponentDataChanged applies delta changes to a component's data

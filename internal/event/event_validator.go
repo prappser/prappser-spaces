@@ -62,8 +62,8 @@ func validateMemberAddedData(data map[string]interface{}) error {
 	if _, ok := data["memberPublicKey"].(string); !ok || data["memberPublicKey"] == "" {
 		return fmt.Errorf("%w: memberPublicKey is required", ErrValidation)
 	}
-	if _, ok := data["memberName"].(string); !ok || data["memberName"] == "" {
-		return fmt.Errorf("%w: memberName is required", ErrValidation)
+	if _, ok := data["userDisplayName"].(string); !ok || data["userDisplayName"] == "" {
+		return fmt.Errorf("%w: userDisplayName is required", ErrValidation)
 	}
 	if _, ok := data["role"].(string); !ok || data["role"] == "" {
 		return fmt.Errorf("%w: role is required", ErrValidation)

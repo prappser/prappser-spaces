@@ -7,8 +7,6 @@ import (
 	"github.com/prappser/prappser-spaces/internal/user"
 )
 
-func strPtr(s string) *string { return &s }
-
 func createTestUser() *user.User {
 	return &user.User{
 		PublicKey: "test-public-key",
@@ -24,11 +22,9 @@ func createBasicApplication(testUser *user.User, appName, appID string) *Applica
 		Name: appName,
 		Members: []Member{
 			{
-				ID:           appID + "-member-1", // Make member ID unique per application
-				Name:         testUser.Username,
-				Role:         MemberRoleOwner,
-				PublicKey:    testUser.PublicKey,
-				AvatarStorageID: strPtr("storage:test-avatar-id"),
+				ID:        appID + "-member-1", // Make member ID unique per application
+				Role:      MemberRoleOwner,
+				PublicKey: testUser.PublicKey,
 			},
 		},
 		ComponentGroups: []ComponentGroup{
@@ -53,11 +49,9 @@ func TestApplicationService_RegisterApplication_ShouldCreateApplicationWithCompo
 		Name: "Test App",
 		Members: []Member{
 			{
-				ID:           "member-1",
-				Name:         testUser.Username,
-				Role:         MemberRoleOwner,
-				PublicKey:    testUser.PublicKey,
-				AvatarStorageID: strPtr("storage:test-avatar-id"),
+				ID:        "member-1",
+				Role:      MemberRoleOwner,
+				PublicKey: testUser.PublicKey,
 			},
 		},
 		ComponentGroups: []ComponentGroup{
@@ -369,27 +363,25 @@ func TestApplicationService_DeleteApplication_ShouldReturnErrorForNonExistentApp
 	}
 }
 
-func TestApplicationService_RegisterApplication_ShouldRoundTripMemberWithNilAvatar(t *testing.T) {
+func TestApplicationService_RegisterApplication_ShouldRoundTripMember(t *testing.T) {
 	// given
 	testUser := createTestUser()
 	appRepo := NewMemoryRepository()
 	appService := NewApplicationService(appRepo)
 
 	app := &Application{
-		ID:   "nil-avatar-test-id",
-		Name: "Nil Avatar App",
+		ID:   "member-roundtrip-test-id",
+		Name: "Member Roundtrip App",
 		Members: []Member{
 			{
-				ID:              "nil-avatar-member-1",
-				Name:            testUser.Username,
-				Role:            MemberRoleOwner,
-				PublicKey:       testUser.PublicKey,
-				AvatarStorageID: nil,
+				ID:        "member-roundtrip-1",
+				Role:      MemberRoleOwner,
+				PublicKey: testUser.PublicKey,
 			},
 		},
 		ComponentGroups: []ComponentGroup{
 			{
-				ID:         "nil-avatar-group-1",
+				ID:         "member-roundtrip-group-1",
 				Name:       "Default Group",
 				Index:      0,
 				Components: []Component{},
@@ -414,7 +406,11 @@ func TestApplicationService_RegisterApplication_ShouldRoundTripMemberWithNilAvat
 		t.Fatalf("Expected 1 member, got %d", len(retrievedApp.Members))
 	}
 
-	if retrievedApp.Members[0].AvatarStorageID != nil {
-		t.Errorf("Expected AvatarStorageID to be nil, got %v", retrievedApp.Members[0].AvatarStorageID)
+	if retrievedApp.Members[0].PublicKey != testUser.PublicKey {
+		t.Errorf("Expected member PublicKey %q, got %q", testUser.PublicKey, retrievedApp.Members[0].PublicKey)
+	}
+
+	if retrievedApp.Members[0].Role != MemberRoleOwner {
+		t.Errorf("Expected member Role %q, got %q", MemberRoleOwner, retrievedApp.Members[0].Role)
 	}
 }

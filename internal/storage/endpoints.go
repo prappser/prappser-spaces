@@ -234,6 +234,35 @@ func (e *Endpoints) UploadUserAvatar(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
+	// Fan out UserSettingsChanged to every app the user is a member of so member-list UIs refresh.
+	// Best-effort: errors are logged but do not fail the response.
+	// TODO: when a displayName-update endpoint is added, emit UserSettingsChanged here too.
+	apps, err := e.appRepo.GetApplicationsByMemberPublicKey(publicKey)
+	if err != nil {
+		log.Warn().Err(err).Str("publicKey", publicKey).Msg("[STORAGE] Failed to look up member apps for UserSettingsChanged fan-out")
+	} else {
+		for _, app := range apps {
+			evt := &event.Event{
+				ID:               newEventID(),
+				Type:             event.EventTypeUserSettingsChanged,
+				CreatorPublicKey: publicKey,
+				ApplicationID:    app.ID,
+				Data: map[string]interface{}{
+					"version":         1,
+					"userPublicKey":   publicKey,
+					"avatarStorageId": stored.ID,
+					"applicationId":   app.ID,
+				},
+			}
+			if app.SpaceID != nil {
+				evt.SpaceID = *app.SpaceID
+			}
+			if _, evtErr := e.eventService.ProduceEvent(ctx, evt); evtErr != nil {
+				log.Warn().Err(evtErr).Str("applicationId", app.ID).Msg("[STORAGE] Failed to produce UserSettingsChanged event")
+			}
+		}
+	}
+
 	// Delete previous avatar after successful upload and DB update (best-effort)
 	if authenticatedUser.AvatarStorageID != nil {
 		if delErr := e.service.Delete(ctx, *authenticatedUser.AvatarStorageID, publicKey); delErr != nil {

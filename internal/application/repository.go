@@ -487,20 +487,18 @@ func (r *Repository) DeleteComponentGroup(groupID string) error {
 }
 
 func (r *Repository) CreateMember(member *Member) error {
-	query := `INSERT INTO members (id, application_id, name, role, public_key, avatar_storage_id)
-			  VALUES ($1, $2, $3, $4, $5, $6)
+	query := `INSERT INTO members (id, application_id, role, public_key)
+			  VALUES ($1, $2, $3, $4)
 			  ON CONFLICT (id) DO UPDATE SET
-			    name = EXCLUDED.name,
-			    role = EXCLUDED.role,
-			    avatar_storage_id = EXCLUDED.avatar_storage_id`
+			    role = EXCLUDED.role`
 
-	_, err := r.db.Exec(query, member.ID, member.ApplicationID, member.Name, string(member.Role), member.PublicKey, member.AvatarStorageID)
+	_, err := r.db.Exec(query, member.ID, member.ApplicationID, string(member.Role), member.PublicKey)
 	return err
 }
 
 func (r *Repository) GetMembersByApplicationID(appID string) ([]*Member, error) {
-	query := `SELECT id, application_id, name, role, public_key, avatar_storage_id
-			  FROM members WHERE application_id = $1 ORDER BY role, name`
+	query := `SELECT id, application_id, role, public_key
+			  FROM members WHERE application_id = $1 ORDER BY role`
 
 	rows, err := r.db.Query(query, appID)
 	if err != nil {
@@ -516,10 +514,8 @@ func (r *Repository) GetMembersByApplicationID(appID string) ([]*Member, error) 
 		err := rows.Scan(
 			&member.ID,
 			&member.ApplicationID,
-			&member.Name,
 			&roleStr,
 			&member.PublicKey,
-			&member.AvatarStorageID,
 		)
 		if err != nil {
 			return nil, err
@@ -534,7 +530,7 @@ func (r *Repository) GetMembersByApplicationID(appID string) ([]*Member, error) 
 }
 
 func (r *Repository) GetMemberByID(memberID string) (*Member, error) {
-	query := `SELECT id, application_id, name, role, public_key, avatar_storage_id
+	query := `SELECT id, application_id, role, public_key
 			  FROM members WHERE id = $1`
 
 	member := &Member{}
@@ -543,10 +539,8 @@ func (r *Repository) GetMemberByID(memberID string) (*Member, error) {
 	err := r.db.QueryRow(query, memberID).Scan(
 		&member.ID,
 		&member.ApplicationID,
-		&member.Name,
 		&roleStr,
 		&member.PublicKey,
-		&member.AvatarStorageID,
 	)
 
 	if err == sql.ErrNoRows {
@@ -561,11 +555,10 @@ func (r *Repository) GetMemberByID(memberID string) (*Member, error) {
 	return member, nil
 }
 
-func (r *Repository) UpdateMember(member *Member) error {
-	query := `UPDATE members SET name = $1, role = $2, public_key = $3, avatar_storage_id = $4
-			  WHERE id = $5`
+func (r *Repository) UpdateMemberRole(memberID string, role MemberRole) error {
+	query := `UPDATE members SET role = $1 WHERE id = $2`
 
-	result, err := r.db.Exec(query, member.Name, string(member.Role), member.PublicKey, member.AvatarStorageID, member.ID)
+	result, err := r.db.Exec(query, string(role), memberID)
 	if err != nil {
 		return err
 	}
@@ -580,12 +573,6 @@ func (r *Repository) UpdateMember(member *Member) error {
 	}
 
 	return nil
-}
-
-func (r *Repository) UpdateMemberAvatarByPublicKey(publicKey string, avatarStorageID *string) error {
-	query := `UPDATE members SET avatar_storage_id = $1 WHERE public_key = $2`
-	_, err := r.db.Exec(query, avatarStorageID, publicKey)
-	return err
 }
 
 func (r *Repository) DeleteMember(memberID string) error {
@@ -609,7 +596,7 @@ func (r *Repository) DeleteMember(memberID string) error {
 }
 
 func (r *Repository) GetMemberByPublicKey(appID, publicKey string) (*Member, error) {
-	query := `SELECT id, application_id, name, role, public_key, avatar_storage_id
+	query := `SELECT id, application_id, role, public_key
 			  FROM members WHERE application_id = $1 AND public_key = $2`
 
 	member := &Member{}
@@ -618,10 +605,8 @@ func (r *Repository) GetMemberByPublicKey(appID, publicKey string) (*Member, err
 	err := r.db.QueryRow(query, appID, publicKey).Scan(
 		&member.ID,
 		&member.ApplicationID,
-		&member.Name,
 		&roleStr,
 		&member.PublicKey,
-		&member.AvatarStorageID,
 	)
 
 	if err == sql.ErrNoRows {

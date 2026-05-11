@@ -475,6 +475,12 @@ func (s *InvitationService) Join(tokenString, userPublicKey, userName string) (*
 		}
 
 		log.Debug().Str("username", userName).Msg("[JOIN_SERVICE] User created successfully")
+
+		// Re-fetch so existingUser is populated for the event payload below
+		existingUser, err = s.userRepository.GetUserByPublicKey(userPublicKey)
+		if err != nil || existingUser == nil {
+			return nil, fmt.Errorf("failed to fetch newly created user: %w", err)
+		}
 	} else {
 		log.Debug().Str("username", userName).Msg("[JOIN_SERVICE] User already exists")
 	}
@@ -504,22 +510,28 @@ func (s *InvitationService) Join(tokenString, userPublicKey, userName string) (*
 		}, nil
 	}
 
+	// Build member_added event data with user snapshot at time of joining
+	memberAddedData := map[string]interface{}{
+		"applicationId":   invite.ApplicationID,
+		"memberPublicKey": userPublicKey,
+		"userDisplayName": existingUser.Username,
+		"role":            invite.Role,
+		"inviteId":        invite.ID,
+		"version":         1,
+	}
+	if existingUser.AvatarStorageID != nil {
+		memberAddedData["userAvatarStorageId"] = *existingUser.AvatarStorageID
+	}
+
 	// Create member_added event and submit it for execution
 	// This creates the member record so the user can immediately access the application
 	evt := &event.Event{
 		ID:               uuid.New().String(),
 		Type:             "member_added",
 		CreatorPublicKey: userPublicKey,
-		Data: map[string]interface{}{
-			"applicationId":   invite.ApplicationID,
-			"memberPublicKey": userPublicKey,
-			"memberName":      userName,
-			"role":            invite.Role,
-			"inviteId":        invite.ID,
-			"version":         1,
-		},
-		CreatedAt:     time.Now().Unix(),
-		ApplicationID: invite.ApplicationID,
+		Data:             memberAddedData,
+		CreatedAt:        time.Now().Unix(),
+		ApplicationID:    invite.ApplicationID,
 	}
 
 	// Set space ID from invitation so the event is tagged to the correct space

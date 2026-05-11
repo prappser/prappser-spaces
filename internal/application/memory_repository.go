@@ -301,21 +301,12 @@ func (r *MemoryRepository) GetMemberByID(memberID string) (*Member, error) {
 	return member, nil
 }
 
-func (r *MemoryRepository) UpdateMember(member *Member) error {
-	_, exists := r.members[member.ID]
+func (r *MemoryRepository) UpdateMemberRole(memberID string, role MemberRole) error {
+	member, exists := r.members[memberID]
 	if !exists {
 		return fmt.Errorf("member not found")
 	}
-	r.members[member.ID] = member
-	return nil
-}
-
-func (r *MemoryRepository) UpdateMemberAvatarByPublicKey(publicKey string, avatarStorageID *string) error {
-	for _, member := range r.members {
-		if member.PublicKey == publicKey {
-			member.AvatarStorageID = avatarStorageID
-		}
-	}
+	member.Role = role
 	return nil
 }
 

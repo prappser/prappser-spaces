@@ -43,12 +43,13 @@ type Event struct {
 
 // MemberAddedData represents the data for a member_added event
 type MemberAddedData struct {
-	Version         int    `json:"version"`
-	ApplicationID   string `json:"applicationId"`
-	MemberPublicKey string `json:"memberPublicKey"`
-	MemberName      string `json:"memberName"`
-	Role            string `json:"role"`
-	InviteID        string `json:"inviteId"`
+	Version             int     `json:"version"`
+	ApplicationID       string  `json:"applicationId"`
+	MemberPublicKey     string  `json:"memberPublicKey"`
+	Role                string  `json:"role"`
+	InviteID            string  `json:"inviteId"`
+	UserDisplayName     string  `json:"userDisplayName"`
+	UserAvatarStorageID *string `json:"userAvatarStorageId,omitempty"`
 }
 
 // MemberRemovedData represents the data for a member_removed event
@@ -125,6 +126,7 @@ type ApplicationAfterEditModeChangedData struct {
 type UserSettingsChangedData struct {
 	Version         int     `json:"version"`
 	UserPublicKey   string  `json:"userPublicKey"`
+	DisplayName     *string `json:"displayName,omitempty"`
 	AvatarStorageID *string `json:"avatarStorageId,omitempty"`
 }
 
