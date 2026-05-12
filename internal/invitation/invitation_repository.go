@@ -3,6 +3,7 @@ package invitation
 import (
 	"database/sql"
 	"fmt"
+	"time"
 )
 
 // InvitationRepository defines the interface for invitation data access
@@ -125,7 +126,7 @@ func (r *invitationRepository) RecordUse(inviteID, userPublicKey string, useID s
 		VALUES ($1, $2, $3, $4)
 	`
 
-	_, err := r.db.Exec(query, useID, inviteID, userPublicKey, 0)
+	_, err := r.db.Exec(query, useID, inviteID, userPublicKey, time.Now().Unix())
 	return err
 }
 

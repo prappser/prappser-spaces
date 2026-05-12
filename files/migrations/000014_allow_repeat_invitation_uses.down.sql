@@ -1,0 +1,1 @@
+ALTER TABLE invitation_uses ADD CONSTRAINT invitation_uses_invitation_id_user_public_key_key UNIQUE (invitation_id, user_public_key);

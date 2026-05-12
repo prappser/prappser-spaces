@@ -1,0 +1,1 @@
+ALTER TABLE invitation_uses DROP CONSTRAINT IF EXISTS invitation_uses_invitation_id_user_public_key_key;
