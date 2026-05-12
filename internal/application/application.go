@@ -52,10 +52,12 @@ const (
 )
 
 type Member struct {
-	ID            string     `json:"id,omitempty"`
-	ApplicationID string     `json:"applicationId"`
-	Role          MemberRole `json:"role"`
-	PublicKey     string     `json:"publicKey"`
+	ID                  string     `json:"id,omitempty"`
+	ApplicationID       string     `json:"applicationId"`
+	Role                MemberRole `json:"role"`
+	PublicKey           string     `json:"publicKey"`
+	UserDisplayName     *string    `json:"userDisplayName,omitempty"`
+	UserAvatarStorageID *string    `json:"userAvatarStorageId,omitempty"`
 }
 
 // AppVersionInfo holds version tracking data for an application.

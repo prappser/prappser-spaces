@@ -497,8 +497,10 @@ func (r *Repository) CreateMember(member *Member) error {
 }
 
 func (r *Repository) GetMembersByApplicationID(appID string) ([]*Member, error) {
-	query := `SELECT id, application_id, role, public_key
-			  FROM members WHERE application_id = $1 ORDER BY role`
+	query := `SELECT m.id, m.application_id, m.role, m.public_key, u.username, u.avatar_storage_id
+			  FROM members m
+			  LEFT JOIN users u ON u.public_key = m.public_key
+			  WHERE m.application_id = $1 ORDER BY m.role`
 
 	rows, err := r.db.Query(query, appID)
 	if err != nil {
@@ -510,18 +512,28 @@ func (r *Repository) GetMembersByApplicationID(appID string) ([]*Member, error) 
 	for rows.Next() {
 		member := &Member{}
 		var roleStr string
+		var username sql.NullString
+		var avatarStorageID sql.NullString
 
 		err := rows.Scan(
 			&member.ID,
 			&member.ApplicationID,
 			&roleStr,
 			&member.PublicKey,
+			&username,
+			&avatarStorageID,
 		)
 		if err != nil {
 			return nil, err
 		}
 
 		member.Role = MemberRole(roleStr)
+		if username.Valid {
+			member.UserDisplayName = &username.String
+		}
+		if avatarStorageID.Valid {
+			member.UserAvatarStorageID = &avatarStorageID.String
+		}
 
 		members = append(members, member)
 	}
