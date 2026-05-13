@@ -8,6 +8,7 @@ import (
 	"github.com/prappser/prappser-spaces/internal/health"
 	"github.com/prappser/prappser-spaces/internal/invitation"
 	"github.com/prappser/prappser-spaces/internal/middleware"
+	"github.com/prappser/prappser-spaces/internal/push"
 	"github.com/prappser/prappser-spaces/internal/setup"
 	"github.com/prappser/prappser-spaces/internal/space"
 	"github.com/prappser/prappser-spaces/internal/status"
@@ -17,7 +18,7 @@ import (
 	"github.com/valyala/fasthttp"
 )
 
-func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, statusEndpoints *status.StatusEndpoints, healthEndpoints *health.HealthEndpoints, userService *user.UserService, appEndpoints *application.ApplicationEndpoints, invitationEndpoints *invitation.InvitationEndpoints, eventEndpoints *event.EventEndpoints, setupEndpoints *setup.SetupEndpoints, storageEndpoints *storage.Endpoints, wsHandler *websocket.Handler, spaceEndpoints *space.SpaceEndpoints) fasthttp.RequestHandler {
+func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, statusEndpoints *status.StatusEndpoints, healthEndpoints *health.HealthEndpoints, userService *user.UserService, appEndpoints *application.ApplicationEndpoints, invitationEndpoints *invitation.InvitationEndpoints, eventEndpoints *event.EventEndpoints, setupEndpoints *setup.SetupEndpoints, storageEndpoints *storage.Endpoints, wsHandler *websocket.Handler, spaceEndpoints *space.SpaceEndpoints, pushEndpoints *push.PushEndpoints) fasthttp.RequestHandler {
 	authMiddleware := middleware.NewAuthMiddleware(userService)
 	corsMiddleware := middleware.NewCORSMiddleware(config.AllowedOrigins)
 
@@ -284,6 +285,39 @@ func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, status
 				if method == "DELETE" {
 					authMiddleware.RequireRole(spaceEndpoints.DeleteSpace, user.RoleOwner)(ctx)
 				} else {
+					ctx.Error("Method Not Allowed", fasthttp.StatusMethodNotAllowed)
+				}
+			} else {
+				ctx.Error("Not Found", fasthttp.StatusNotFound)
+			}
+
+		case path == "/push/vapid":
+			method := string(ctx.Method())
+			if method == "PUT" {
+				authMiddleware.RequireAuth(pushEndpoints.SetVapidKeys)(ctx)
+			} else {
+				ctx.Error("Method Not Allowed", fasthttp.StatusMethodNotAllowed)
+			}
+
+		case path == "/push/subscriptions":
+			method := string(ctx.Method())
+			if method == "POST" {
+				authMiddleware.RequireAuth(pushEndpoints.CreateSubscription)(ctx)
+			} else {
+				ctx.Error("Method Not Allowed", fasthttp.StatusMethodNotAllowed)
+			}
+
+		case strings.HasPrefix(path, "/push/subscriptions/"):
+			parts := strings.Split(path, "/")
+			if len(parts) == 4 {
+				ctx.SetUserValue("subscriptionId", parts[3])
+				method := string(ctx.Method())
+				switch method {
+				case "PATCH":
+					authMiddleware.RequireAuth(pushEndpoints.UpdateSubscription)(ctx)
+				case "DELETE":
+					authMiddleware.RequireAuth(pushEndpoints.DeleteSubscription)(ctx)
+				default:
 					ctx.Error("Method Not Allowed", fasthttp.StatusMethodNotAllowed)
 				}
 			} else {

@@ -17,17 +17,26 @@ type EventBroadcaster interface {
 	BroadcastToUser(userPublicKey string, event *Event)
 }
 
+// EventPusher delivers web push notifications to offline members after fanout.
+// Defined here to avoid an import cycle: push imports event, so event cannot import push.
+// push.PushService satisfies this interface by signature.
+type EventPusher interface {
+	Push(event *Event, recipientPublicKeys []string)
+}
+
 type EventService struct {
 	repo        *EventRepository
 	appRepo     application.ApplicationRepository
 	broadcaster EventBroadcaster
+	pusher      EventPusher // optional; nil disables web push
 }
 
-func NewEventService(repo *EventRepository, appRepo application.ApplicationRepository, broadcaster EventBroadcaster) *EventService {
+func NewEventService(repo *EventRepository, appRepo application.ApplicationRepository, broadcaster EventBroadcaster, pusher EventPusher) *EventService {
 	return &EventService{
 		repo:        repo,
 		appRepo:     appRepo,
 		broadcaster: broadcaster,
+		pusher:      pusher,
 	}
 }
 
@@ -328,24 +337,44 @@ func (s *EventService) produceUserScopedEvent(ctx context.Context, event *Event)
 	return event, nil
 }
 
-// broadcastEvent sends an event to all relevant WebSocket clients.
+// broadcastEvent sends an event to all relevant WebSocket clients and queues web push
+// notifications for offline members.
 // For application_deleted events, it additionally broadcasts to each member's user channel
 // so all devices receive the deletion regardless of which app they have focused.
 func (s *EventService) broadcastEvent(event *Event) {
-	if s.broadcaster == nil {
-		return
+	if s.broadcaster != nil {
+		s.broadcaster.BroadcastToApplication(event.ApplicationID, event)
 	}
-	s.broadcaster.BroadcastToApplication(event.ApplicationID, event)
 
-	if event.Type == EventTypeApplicationDeleted {
-		members, err := s.appRepo.GetMembersByApplicationID(event.ApplicationID)
+	// Fetch members once and share between the deletion fanout and push fanout.
+	// A failed fetch is non-fatal: log a warning, skip the member-dependent paths,
+	// and still deliver the app-channel WebSocket broadcast above.
+	var members []*application.Member
+	if event.ApplicationID != "" && (event.Type == EventTypeApplicationDeleted || s.pusher != nil) {
+		var err error
+		members, err = s.appRepo.GetMembersByApplicationID(event.ApplicationID)
 		if err != nil {
-			log.Warn().Err(err).Str("applicationId", event.ApplicationID).Msg("[EVENT] Failed to get members for deletion broadcast")
-		} else {
-			for _, member := range members {
-				s.broadcaster.BroadcastToUser(member.PublicKey, event)
+			log.Warn().Err(err).Str("applicationId", event.ApplicationID).Msg("[EVENT] Failed to get members for broadcast")
+		}
+	}
+
+	// application_deleted: also broadcast to each member's user channel so all
+	// devices receive the deletion regardless of which app they have open.
+	if event.Type == EventTypeApplicationDeleted && s.broadcaster != nil {
+		for _, member := range members {
+			s.broadcaster.BroadcastToUser(member.PublicKey, event)
+		}
+	}
+
+	// Web push: notify all members except the event creator.
+	if s.pusher != nil && event.ApplicationID != "" {
+		recipientKeys := make([]string, 0, len(members))
+		for _, member := range members {
+			if member.PublicKey != event.CreatorPublicKey {
+				recipientKeys = append(recipientKeys, member.PublicKey)
 			}
 		}
+		s.pusher.Push(event, recipientKeys)
 	}
 }
 
