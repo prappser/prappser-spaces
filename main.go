@@ -30,6 +30,7 @@ import (
 	"github.com/prappser/prappser-spaces/internal/health"
 	"github.com/prappser/prappser-spaces/internal/invitation"
 	"github.com/prappser/prappser-spaces/internal/keys"
+	"github.com/prappser/prappser-spaces/internal/push"
 	"github.com/prappser/prappser-spaces/internal/space"
 	"github.com/prappser/prappser-spaces/internal/storage"
 	"github.com/prappser/prappser-spaces/internal/setup"
@@ -150,7 +151,13 @@ func main() {
 	log.Info().Msg("WebSocket hub started")
 
 	eventRepository := event.NewEventRepository(db)
-	eventService := event.NewEventService(eventRepository, appRepository, wsHub)
+
+	pushRepo := push.NewPushRepository(db)
+	pushSender := push.NewHTTPWebpushSender()
+	pushService := push.NewPushService(pushRepo, pushSender)
+	pushEndpoints := push.NewPushEndpoints(pushService, pushRepo)
+
+	eventService := event.NewEventService(eventRepository, appRepository, wsHub, pushService)
 	eventEndpoints := event.NewEventEndpoints(eventService)
 
 	appService := application.NewApplicationService(appRepository)
@@ -195,7 +202,7 @@ func main() {
 
 	spaceEndpoints := space.NewSpaceEndpoints(spaceService, userRepository)
 
-	requestHandler := internal.NewRequestHandler(config, userEndpoints, statusEndpoints, healthEndpoints, userService, appEndpoints, invitationEndpoints, eventEndpoints, setupEndpoints, storageEndpoints, wsHandler, spaceEndpoints)
+	requestHandler := internal.NewRequestHandler(config, userEndpoints, statusEndpoints, healthEndpoints, userService, appEndpoints, invitationEndpoints, eventEndpoints, setupEndpoints, storageEndpoints, wsHandler, spaceEndpoints, pushEndpoints)
 
 	serverAddr := fmt.Sprintf(":%s", config.Port)
 	log.Info().Str("addr", serverAddr).Msg("Starting HTTP server")
