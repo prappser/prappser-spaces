@@ -42,16 +42,17 @@ func getTestDB(t *testing.T) *sql.DB {
 			updated_at        BIGINT NOT NULL
 		);
 		CREATE TABLE IF NOT EXISTS push_subscriptions (
-			id              TEXT PRIMARY KEY,
-			user_public_key TEXT NOT NULL REFERENCES users(public_key) ON DELETE CASCADE,
-			endpoint        TEXT NOT NULL UNIQUE,
-			p256dh          TEXT NOT NULL,
-			auth            TEXT NOT NULL,
-			device_label    TEXT,
-			categories      JSONB NOT NULL DEFAULT '{}'::jsonb,
-			created_at      BIGINT NOT NULL,
-			last_success_at BIGINT,
-			failure_count   INTEGER NOT NULL DEFAULT 0
+			id                   TEXT PRIMARY KEY,
+			user_public_key      TEXT NOT NULL REFERENCES users(public_key) ON DELETE CASCADE,
+			endpoint             TEXT NOT NULL UNIQUE,
+			p256dh               TEXT NOT NULL,
+			auth                 TEXT NOT NULL,
+			device_label         TEXT,
+			categories           JSONB NOT NULL DEFAULT '{}'::jsonb,
+			muted_application_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+			created_at           BIGINT NOT NULL,
+			last_success_at      BIGINT,
+			failure_count        INTEGER NOT NULL DEFAULT 0
 		);
 		CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user ON push_subscriptions(user_public_key);
 	`
@@ -148,14 +149,15 @@ func TestPushRepository_CreateAndGetSubscription_Integration(t *testing.T) {
 
 	label := "My Device"
 	sub := &Subscription{
-		ID:            "sub-integration-1",
-		UserPublicKey: "test-user-1",
-		Endpoint:      "https://push.example.com/integration-1",
-		P256dh:        "p256dh-value",
-		Auth:          "auth-value",
-		DeviceLabel:   &label,
-		Categories:    Categories{Member: true, Edit: false},
-		CreatedAt:     time.Now().Unix(),
+		ID:                  "sub-integration-1",
+		UserPublicKey:       "test-user-1",
+		Endpoint:            "https://push.example.com/integration-1",
+		P256dh:              "p256dh-value",
+		Auth:                "auth-value",
+		DeviceLabel:         &label,
+		Categories:          Categories{Member: true, Edit: false},
+		MutedApplicationIDs: []string{"muted-app-1"},
+		CreatedAt:           time.Now().Unix(),
 	}
 
 	// when
@@ -172,6 +174,7 @@ func TestPushRepository_CreateAndGetSubscription_Integration(t *testing.T) {
 	assert.False(t, subs[0].Categories.Edit)
 	assert.NotNil(t, subs[0].DeviceLabel)
 	assert.Equal(t, "My Device", *subs[0].DeviceLabel)
+	assert.Equal(t, []string{"muted-app-1"}, subs[0].MutedApplicationIDs)
 }
 
 func TestPushRepository_UpdateSubscription_Integration(t *testing.T) {
@@ -181,19 +184,21 @@ func TestPushRepository_UpdateSubscription_Integration(t *testing.T) {
 	repo := NewPushRepository(db)
 
 	sub := &Subscription{
-		ID:            "sub-integration-2",
-		UserPublicKey: "test-user-1",
-		Endpoint:      "https://push.example.com/integration-2",
-		P256dh:        "p256dh-old",
-		Auth:          "auth-old",
-		Categories:    Categories{Member: false, Edit: false},
-		CreatedAt:     time.Now().Unix(),
+		ID:                  "sub-integration-2",
+		UserPublicKey:       "test-user-1",
+		Endpoint:            "https://push.example.com/integration-2",
+		P256dh:              "p256dh-old",
+		Auth:                "auth-old",
+		Categories:          Categories{Member: false, Edit: false},
+		MutedApplicationIDs: []string{},
+		CreatedAt:           time.Now().Unix(),
 	}
 	assert.NoError(t, repo.CreateSubscription(sub))
 
 	// when: update
 	sub.P256dh = "p256dh-new"
 	sub.Categories = Categories{Member: true, Edit: true}
+	sub.MutedApplicationIDs = []string{"muted-app-2"}
 	err := repo.UpdateSubscription(sub)
 
 	// then
@@ -204,6 +209,7 @@ func TestPushRepository_UpdateSubscription_Integration(t *testing.T) {
 	assert.Equal(t, "p256dh-new", subs[0].P256dh)
 	assert.True(t, subs[0].Categories.Member)
 	assert.True(t, subs[0].Categories.Edit)
+	assert.Equal(t, []string{"muted-app-2"}, subs[0].MutedApplicationIDs)
 }
 
 func TestPushRepository_DeleteSubscription_Integration(t *testing.T) {
@@ -213,13 +219,14 @@ func TestPushRepository_DeleteSubscription_Integration(t *testing.T) {
 	repo := NewPushRepository(db)
 
 	sub := &Subscription{
-		ID:            "sub-integration-3",
-		UserPublicKey: "test-user-1",
-		Endpoint:      "https://push.example.com/integration-3",
-		P256dh:        "p256dh",
-		Auth:          "auth",
-		Categories:    Categories{},
-		CreatedAt:     time.Now().Unix(),
+		ID:                  "sub-integration-3",
+		UserPublicKey:       "test-user-1",
+		Endpoint:            "https://push.example.com/integration-3",
+		P256dh:              "p256dh",
+		Auth:                "auth",
+		Categories:          Categories{},
+		MutedApplicationIDs: []string{},
+		CreatedAt:           time.Now().Unix(),
 	}
 	assert.NoError(t, repo.CreateSubscription(sub))
 
@@ -240,13 +247,14 @@ func TestPushRepository_MarkSuccessAndIncrementFailure_Integration(t *testing.T)
 	repo := NewPushRepository(db)
 
 	sub := &Subscription{
-		ID:            "sub-integration-4",
-		UserPublicKey: "test-user-1",
-		Endpoint:      "https://push.example.com/integration-4",
-		P256dh:        "p256dh",
-		Auth:          "auth",
-		Categories:    Categories{},
-		CreatedAt:     time.Now().Unix(),
+		ID:                  "sub-integration-4",
+		UserPublicKey:       "test-user-1",
+		Endpoint:            "https://push.example.com/integration-4",
+		P256dh:              "p256dh",
+		Auth:                "auth",
+		Categories:          Categories{},
+		MutedApplicationIDs: []string{},
+		CreatedAt:           time.Now().Unix(),
 	}
 	assert.NoError(t, repo.CreateSubscription(sub))
 

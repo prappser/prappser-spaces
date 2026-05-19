@@ -34,16 +34,17 @@ func (c Categories) Has(name string) bool {
 
 // Subscription represents a browser PushSubscription registered by a user.
 type Subscription struct {
-	ID             string
-	UserPublicKey  string
-	Endpoint       string
-	P256dh         string
-	Auth           string
-	DeviceLabel    *string
-	Categories     Categories
-	CreatedAt      int64
-	LastSuccessAt  *int64
-	FailureCount   int
+	ID                  string
+	UserPublicKey       string
+	Endpoint            string
+	P256dh              string
+	Auth                string
+	DeviceLabel         *string
+	Categories          Categories
+	MutedApplicationIDs []string
+	CreatedAt           int64
+	LastSuccessAt       *int64
+	FailureCount        int
 }
 
 // SendResult is the outcome of a single web push delivery attempt.

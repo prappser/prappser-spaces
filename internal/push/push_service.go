@@ -2,6 +2,7 @@ package push
 
 import (
 	"encoding/json"
+	"slices"
 	"time"
 
 	"github.com/prappser/prappser-spaces/internal/event"
@@ -35,9 +36,11 @@ func (s *PushService) Push(ev *event.Event, recipientPublicKeys []string) {
 }
 
 func (s *PushService) fanout(ev *event.Event, recipientPublicKeys []string) {
-	// given: determine which category this event belongs to
-	category, ok := CategoryForEventType(string(ev.Type))
-	if !ok {
+	// Allowlist: events whose type has no push story return early.
+	// The category itself is no longer used to filter individual
+	// subscriptions (see Phase 4: per-application mute replaces
+	// per-category filtering).
+	if _, ok := CategoryForEventType(string(ev.Type)); !ok {
 		log.Debug().
 			Str("eventId", ev.ID).
 			Str("type", string(ev.Type)).
@@ -68,7 +71,8 @@ func (s *PushService) fanout(ev *event.Event, recipientPublicKeys []string) {
 
 	// then: deliver to each matching subscription
 	for _, sub := range subs {
-		if !sub.Categories.Has(category) {
+		// Skip subscriptions that have muted this application.
+		if ev.ApplicationID != "" && slices.Contains(sub.MutedApplicationIDs, ev.ApplicationID) {
 			continue
 		}
 

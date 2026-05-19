@@ -96,10 +96,10 @@ func TestSetVapidKeys_ShouldReturn401WhenNoUser(t *testing.T) {
 
 // ---- CreateSubscription ----
 
-func TestCreateSubscription_ShouldReturn201WithID(t *testing.T) {
+func TestCreateSubscription_ShouldReturn201WithMutedApplicationIDs(t *testing.T) {
 	// given
 	ep, repo := newTestEndpoints()
-	body := `{"endpoint":"https://push.example.com/1","p256dh":"p256","auth":"auth123","categories":{"member":true,"edit":false}}`
+	body := `{"endpoint":"https://push.example.com/1","p256dh":"p256","auth":"auth123","mutedApplicationIds":["app-x"]}`
 	ctx := newTestRequestCtx("POST", body)
 	setAuthUser(ctx, testUser("user-pk-1"))
 
@@ -115,8 +115,28 @@ func TestCreateSubscription_ShouldReturn201WithID(t *testing.T) {
 	id := resp["id"]
 	assert.NotEmpty(t, id)
 	assert.NotNil(t, repo.subscriptions[id])
-	assert.True(t, repo.subscriptions[id].Categories.Member)
-	assert.False(t, repo.subscriptions[id].Categories.Edit)
+	assert.Equal(t, []string{"app-x"}, repo.subscriptions[id].MutedApplicationIDs)
+}
+
+func TestCreateSubscription_ShouldDefaultMutedApplicationIDsToEmptySlice(t *testing.T) {
+	// given
+	ep, repo := newTestEndpoints()
+	body := `{"endpoint":"https://push.example.com/2","p256dh":"p256","auth":"auth123"}`
+	ctx := newTestRequestCtx("POST", body)
+	setAuthUser(ctx, testUser("user-pk-1"))
+
+	// when
+	ep.CreateSubscription(ctx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusCreated, ctx.Response.StatusCode())
+
+	var resp map[string]string
+	err := json.Unmarshal(ctx.Response.Body(), &resp)
+	assert.NoError(t, err)
+	id := resp["id"]
+	assert.NotEmpty(t, id)
+	assert.Equal(t, []string{}, repo.subscriptions[id].MutedApplicationIDs)
 }
 
 func TestCreateSubscription_ShouldReturn400WhenEndpointMissing(t *testing.T) {
@@ -149,19 +169,19 @@ func TestCreateSubscription_ShouldReturn401WhenNoUser(t *testing.T) {
 
 // ---- UpdateSubscription ----
 
-func TestUpdateSubscription_ShouldReturn200(t *testing.T) {
+func TestUpdateSubscription_ShouldReturn200WithMutedApplicationIDs(t *testing.T) {
 	// given
 	ep, repo := newTestEndpoints()
 	repo.subscriptions["sub-1"] = &Subscription{
-		ID:            "sub-1",
-		UserPublicKey: "user-pk-1",
-		Endpoint:      "https://push.example.com/old",
-		P256dh:        "old-p256",
-		Auth:          "old-auth",
-		Categories:    Categories{Member: false, Edit: false},
+		ID:                  "sub-1",
+		UserPublicKey:       "user-pk-1",
+		Endpoint:            "https://push.example.com/old",
+		P256dh:              "old-p256",
+		Auth:                "old-auth",
+		MutedApplicationIDs: []string{},
 	}
 
-	body := `{"endpoint":"https://push.example.com/new","categories":{"member":true,"edit":true}}`
+	body := `{"endpoint":"https://push.example.com/new","mutedApplicationIds":["app-y"]}`
 	ctx := newTestRequestCtx("PATCH", body)
 	ctx.SetUserValue("subscriptionId", "sub-1")
 	setAuthUser(ctx, testUser("user-pk-1"))
@@ -172,7 +192,7 @@ func TestUpdateSubscription_ShouldReturn200(t *testing.T) {
 	// then
 	assert.Equal(t, fasthttp.StatusOK, ctx.Response.StatusCode())
 	assert.Equal(t, "https://push.example.com/new", repo.subscriptions["sub-1"].Endpoint)
-	assert.True(t, repo.subscriptions["sub-1"].Categories.Member)
+	assert.Equal(t, []string{"app-y"}, repo.subscriptions["sub-1"].MutedApplicationIDs)
 }
 
 func TestUpdateSubscription_ShouldReturn404WhenNotOwned(t *testing.T) {
@@ -186,7 +206,7 @@ func TestUpdateSubscription_ShouldReturn404WhenNotOwned(t *testing.T) {
 		Auth:          "auth",
 	}
 
-	ctx := newTestRequestCtx("PATCH", `{"categories":{"member":true}}`)
+	ctx := newTestRequestCtx("PATCH", `{}`)
 	ctx.SetUserValue("subscriptionId", "sub-1")
 	setAuthUser(ctx, testUser("user-pk-1")) // different user
 
@@ -248,4 +268,3 @@ func TestDeleteSubscription_ShouldReturn401WhenNoUser(t *testing.T) {
 	// then
 	assert.Equal(t, fasthttp.StatusUnauthorized, ctx.Response.StatusCode())
 }
-

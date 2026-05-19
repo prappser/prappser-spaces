@@ -183,12 +183,12 @@ func TestPushService_Push_ShouldSendForMemberAddedEvent(t *testing.T) {
 		VapidPrivateKey: "priv",
 	}
 	repo.subscriptions["sub-1"] = &Subscription{
-		ID:            "sub-1",
-		UserPublicKey: "user-pk-1",
-		Endpoint:      "https://push.example.com/1",
-		P256dh:        "p256dh-value",
-		Auth:          "auth-value",
-		Categories:    Categories{Member: true, Edit: false},
+		ID:                  "sub-1",
+		UserPublicKey:       "user-pk-1",
+		Endpoint:            "https://push.example.com/1",
+		P256dh:              "p256dh-value",
+		Auth:                "auth-value",
+		MutedApplicationIDs: []string{},
 	}
 
 	ev := makeEvent(event.EventTypeMemberAdded, "creator-pk", "app-1")
@@ -203,7 +203,7 @@ func TestPushService_Push_ShouldSendForMemberAddedEvent(t *testing.T) {
 	assert.Equal(t, "sub-1", repo.markSuccessCalls[0].id)
 }
 
-func TestPushService_Push_ShouldSkipWhenEditCategoryFalse(t *testing.T) {
+func TestPushService_Push_ShouldSkipWhenApplicationMuted(t *testing.T) {
 	// given
 	repo := newMockPushRepository()
 	sender := newMockWebpushSender(SendResult{StatusCode: 201})
@@ -215,22 +215,52 @@ func TestPushService_Push_ShouldSkipWhenEditCategoryFalse(t *testing.T) {
 		VapidPrivateKey: "priv",
 	}
 	repo.subscriptions["sub-1"] = &Subscription{
-		ID:            "sub-1",
-		UserPublicKey: "user-pk-1",
-		Endpoint:      "https://push.example.com/1",
-		P256dh:        "p256dh-value",
-		Auth:          "auth-value",
-		Categories:    Categories{Member: false, Edit: false}, // edit disabled
+		ID:                  "sub-1",
+		UserPublicKey:       "user-pk-1",
+		Endpoint:            "https://push.example.com/1",
+		P256dh:              "p256dh-value",
+		Auth:                "auth-value",
+		MutedApplicationIDs: []string{"app-1"},
 	}
 
-	ev := makeEvent(event.EventTypeApplicationDataChanged, "creator-pk", "app-1")
+	ev := makeEvent(event.EventTypeMemberAdded, "creator-pk", "app-1")
 
 	// when
 	svc.Push(ev, []string{"user-pk-1"})
 
-	// then: no send because edit category is false
+	// then: no send because app-1 is muted
 	time.Sleep(100 * time.Millisecond)
 	assert.Equal(t, 0, sender.callCount())
+}
+
+func TestPushService_Push_ShouldSendWhenDifferentApplicationMuted(t *testing.T) {
+	// given
+	repo := newMockPushRepository()
+	sender := newMockWebpushSender(SendResult{StatusCode: 201})
+	svc := NewPushService(repo, sender)
+
+	repo.vapidKeys["user-pk-1"] = &VapidKey{
+		UserPublicKey:   "user-pk-1",
+		VapidPublicKey:  "pub",
+		VapidPrivateKey: "priv",
+	}
+	repo.subscriptions["sub-1"] = &Subscription{
+		ID:                  "sub-1",
+		UserPublicKey:       "user-pk-1",
+		Endpoint:            "https://push.example.com/1",
+		P256dh:              "p256dh-value",
+		Auth:                "auth-value",
+		MutedApplicationIDs: []string{"app-2"},
+	}
+
+	ev := makeEvent(event.EventTypeMemberAdded, "creator-pk", "app-1")
+
+	// when
+	svc.Push(ev, []string{"user-pk-1"})
+
+	// then: send proceeds because app-1 is not in muted list (only app-2 is)
+	assert.True(t, sender.waitForCalls(1, 2*time.Second), "expected 1 Send call")
+	assert.Equal(t, 1, sender.callCount())
 }
 
 func TestPushService_Push_ShouldDeleteSubscriptionOn410(t *testing.T) {
@@ -245,12 +275,12 @@ func TestPushService_Push_ShouldDeleteSubscriptionOn410(t *testing.T) {
 		VapidPrivateKey: "priv",
 	}
 	repo.subscriptions["sub-1"] = &Subscription{
-		ID:            "sub-1",
-		UserPublicKey: "user-pk-1",
-		Endpoint:      "https://push.example.com/1",
-		P256dh:        "p256dh-value",
-		Auth:          "auth-value",
-		Categories:    Categories{Member: true},
+		ID:                  "sub-1",
+		UserPublicKey:       "user-pk-1",
+		Endpoint:            "https://push.example.com/1",
+		P256dh:              "p256dh-value",
+		Auth:                "auth-value",
+		MutedApplicationIDs: []string{},
 	}
 
 	ev := makeEvent(event.EventTypeMemberAdded, "creator-pk", "app-1")
@@ -279,12 +309,12 @@ func TestPushService_Push_ShouldIncrementFailureOn429(t *testing.T) {
 		VapidPrivateKey: "priv",
 	}
 	repo.subscriptions["sub-1"] = &Subscription{
-		ID:            "sub-1",
-		UserPublicKey: "user-pk-1",
-		Endpoint:      "https://push.example.com/1",
-		P256dh:        "p256dh-value",
-		Auth:          "auth-value",
-		Categories:    Categories{Member: true},
+		ID:                  "sub-1",
+		UserPublicKey:       "user-pk-1",
+		Endpoint:            "https://push.example.com/1",
+		P256dh:              "p256dh-value",
+		Auth:                "auth-value",
+		MutedApplicationIDs: []string{},
 	}
 
 	ev := makeEvent(event.EventTypeMemberAdded, "creator-pk", "app-1")
@@ -303,32 +333,6 @@ func TestPushService_Push_ShouldIncrementFailureOn429(t *testing.T) {
 	assert.Len(t, deleteCalls, 0, "subscription must not be deleted on 429")
 }
 
-func TestPushService_Push_ShouldSkipWhenNoVapidKey(t *testing.T) {
-	// given
-	repo := newMockPushRepository()
-	sender := newMockWebpushSender(SendResult{StatusCode: 201})
-	svc := NewPushService(repo, sender)
-
-	// No VAPID key registered for this user
-	repo.subscriptions["sub-1"] = &Subscription{
-		ID:            "sub-1",
-		UserPublicKey: "user-pk-1",
-		Endpoint:      "https://push.example.com/1",
-		P256dh:        "p256dh-value",
-		Auth:          "auth-value",
-		Categories:    Categories{Member: true},
-	}
-
-	ev := makeEvent(event.EventTypeMemberAdded, "creator-pk", "app-1")
-
-	// when
-	svc.Push(ev, []string{"user-pk-1"})
-
-	// then: sender not called because there is no VAPID key
-	time.Sleep(100 * time.Millisecond)
-	assert.Equal(t, 0, sender.callCount())
-}
-
 func TestPushService_Push_ShouldSkipWhenEventTypeHasNoCategory(t *testing.T) {
 	// given
 	repo := newMockPushRepository()
@@ -341,21 +345,47 @@ func TestPushService_Push_ShouldSkipWhenEventTypeHasNoCategory(t *testing.T) {
 		VapidPrivateKey: "priv",
 	}
 	repo.subscriptions["sub-1"] = &Subscription{
-		ID:            "sub-1",
-		UserPublicKey: "user-pk-1",
-		Endpoint:      "https://push.example.com/1",
-		P256dh:        "p256dh-value",
-		Auth:          "auth-value",
-		Categories:    Categories{Member: true, Edit: true},
+		ID:                  "sub-1",
+		UserPublicKey:       "user-pk-1",
+		Endpoint:            "https://push.example.com/1",
+		P256dh:              "p256dh-value",
+		Auth:                "auth-value",
+		MutedApplicationIDs: []string{},
 	}
 
-	// application_created has no category mapping
+	// application_created has no push category - CategoryForEventType returns ("", false)
 	ev := makeEvent(event.EventTypeApplicationCreated, "creator-pk", "app-1")
 
 	// when
 	svc.Push(ev, []string{"user-pk-1"})
 
-	// then: sender not called because application_created has no push category
+	// then: sender not called because the event type has no push story
+	time.Sleep(100 * time.Millisecond)
+	assert.Equal(t, 0, sender.callCount())
+}
+
+func TestPushService_Push_ShouldSkipWhenNoVapidKey(t *testing.T) {
+	// given
+	repo := newMockPushRepository()
+	sender := newMockWebpushSender(SendResult{StatusCode: 201})
+	svc := NewPushService(repo, sender)
+
+	// No VAPID key registered for this user
+	repo.subscriptions["sub-1"] = &Subscription{
+		ID:                  "sub-1",
+		UserPublicKey:       "user-pk-1",
+		Endpoint:            "https://push.example.com/1",
+		P256dh:              "p256dh-value",
+		Auth:                "auth-value",
+		MutedApplicationIDs: []string{},
+	}
+
+	ev := makeEvent(event.EventTypeMemberAdded, "creator-pk", "app-1")
+
+	// when
+	svc.Push(ev, []string{"user-pk-1"})
+
+	// then: sender not called because there is no VAPID key
 	time.Sleep(100 * time.Millisecond)
 	assert.Equal(t, 0, sender.callCount())
 }

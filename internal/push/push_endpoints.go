@@ -75,11 +75,12 @@ func (pe *PushEndpoints) SetVapidKeys(ctx *fasthttp.RequestCtx) {
 
 // createSubscriptionRequest is the request body for POST /push/subscriptions.
 type createSubscriptionRequest struct {
-	Endpoint    string     `json:"endpoint"`
-	P256dh      string     `json:"p256dh"`
-	Auth        string     `json:"auth"`
-	DeviceLabel *string    `json:"deviceLabel,omitempty"`
-	Categories  Categories `json:"categories"`
+	Endpoint            string     `json:"endpoint"`
+	P256dh              string     `json:"p256dh"`
+	Auth                string     `json:"auth"`
+	DeviceLabel         *string    `json:"deviceLabel,omitempty"`
+	Categories          Categories `json:"categories"`
+	MutedApplicationIDs []string   `json:"mutedApplicationIds"`
 }
 
 // CreateSubscription handles POST /push/subscriptions.
@@ -109,15 +110,20 @@ func (pe *PushEndpoints) CreateSubscription(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
+	if req.MutedApplicationIDs == nil {
+		req.MutedApplicationIDs = []string{}
+	}
+
 	sub := &Subscription{
-		ID:            uuid.NewString(),
-		UserPublicKey: authenticatedUser.PublicKey,
-		Endpoint:      req.Endpoint,
-		P256dh:        req.P256dh,
-		Auth:          req.Auth,
-		DeviceLabel:   req.DeviceLabel,
-		Categories:    req.Categories,
-		CreatedAt:     time.Now().Unix(),
+		ID:                  uuid.NewString(),
+		UserPublicKey:       authenticatedUser.PublicKey,
+		Endpoint:            req.Endpoint,
+		P256dh:              req.P256dh,
+		Auth:                req.Auth,
+		DeviceLabel:         req.DeviceLabel,
+		Categories:          req.Categories,
+		MutedApplicationIDs: req.MutedApplicationIDs,
+		CreatedAt:           time.Now().Unix(),
 	}
 
 	if err := pe.repo.CreateSubscription(sub); err != nil {
@@ -134,10 +140,11 @@ func (pe *PushEndpoints) CreateSubscription(ctx *fasthttp.RequestCtx) {
 
 // updateSubscriptionRequest is the request body for PATCH /push/subscriptions/:id.
 type updateSubscriptionRequest struct {
-	Endpoint   string     `json:"endpoint"`
-	P256dh     string     `json:"p256dh"`
-	Auth       string     `json:"auth"`
-	Categories Categories `json:"categories"`
+	Endpoint            string     `json:"endpoint"`
+	P256dh              string     `json:"p256dh"`
+	Auth                string     `json:"auth"`
+	Categories          Categories `json:"categories"`
+	MutedApplicationIDs []string   `json:"mutedApplicationIds"`
 }
 
 // UpdateSubscription handles PATCH /push/subscriptions/:id.
@@ -177,6 +184,10 @@ func (pe *PushEndpoints) UpdateSubscription(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
+	if req.MutedApplicationIDs == nil {
+		req.MutedApplicationIDs = []string{}
+	}
+
 	// Apply partial updates: only overwrite fields that are present in the request.
 	if req.Endpoint != "" {
 		existing.Endpoint = req.Endpoint
@@ -188,6 +199,7 @@ func (pe *PushEndpoints) UpdateSubscription(ctx *fasthttp.RequestCtx) {
 		existing.Auth = req.Auth
 	}
 	existing.Categories = req.Categories
+	existing.MutedApplicationIDs = req.MutedApplicationIDs
 
 	if err := pe.repo.UpdateSubscription(existing); err != nil {
 		log.Error().Err(err).Str("subscriptionId", subscriptionID).Msg("[PUSH] Failed to update subscription")

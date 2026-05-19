@@ -67,10 +67,15 @@ func (r *pushRepository) CreateSubscription(s *Subscription) error {
 		return fmt.Errorf("failed to marshal categories: %w", err)
 	}
 
+	mutedJSON, err := json.Marshal(s.MutedApplicationIDs)
+	if err != nil {
+		return fmt.Errorf("failed to marshal muted_application_ids: %w", err)
+	}
+
 	query := `
 		INSERT INTO push_subscriptions
-		  (id, user_public_key, endpoint, p256dh, auth, device_label, categories, created_at, last_success_at, failure_count)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`
+		  (id, user_public_key, endpoint, p256dh, auth, device_label, categories, muted_application_ids, created_at, last_success_at, failure_count)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`
 
 	_, err = r.db.Exec(query,
 		s.ID,
@@ -80,6 +85,7 @@ func (r *pushRepository) CreateSubscription(s *Subscription) error {
 		s.Auth,
 		s.DeviceLabel,
 		string(categoriesJSON),
+		string(mutedJSON),
 		s.CreatedAt,
 		s.LastSuccessAt,
 		s.FailureCount,
@@ -98,19 +104,26 @@ func (r *pushRepository) UpdateSubscription(s *Subscription) error {
 		return fmt.Errorf("failed to marshal categories: %w", err)
 	}
 
+	mutedJSON, err := json.Marshal(s.MutedApplicationIDs)
+	if err != nil {
+		return fmt.Errorf("failed to marshal muted_application_ids: %w", err)
+	}
+
 	query := `
 		UPDATE push_subscriptions
-		SET endpoint      = $1,
-		    p256dh        = $2,
-		    auth          = $3,
-		    categories    = $4
-		WHERE id = $5 AND user_public_key = $6`
+		SET endpoint              = $1,
+		    p256dh                = $2,
+		    auth                  = $3,
+		    categories            = $4,
+		    muted_application_ids = $5
+		WHERE id = $6 AND user_public_key = $7`
 
 	result, err := r.db.Exec(query,
 		s.Endpoint,
 		s.P256dh,
 		s.Auth,
 		string(categoriesJSON),
+		string(mutedJSON),
 		s.ID,
 		s.UserPublicKey,
 	)
@@ -164,7 +177,7 @@ func (r *pushRepository) GetSubscriptionsForUsers(userPublicKeys []string) ([]*S
 
 	query := fmt.Sprintf(`
 		SELECT id, user_public_key, endpoint, p256dh, auth, device_label,
-		       categories, created_at, last_success_at, failure_count
+		       categories, muted_application_ids, created_at, last_success_at, failure_count
 		FROM push_subscriptions
 		WHERE user_public_key IN (%s)`, strings.Join(placeholders, ","))
 
@@ -178,6 +191,7 @@ func (r *pushRepository) GetSubscriptionsForUsers(userPublicKeys []string) ([]*S
 	for rows.Next() {
 		s := &Subscription{}
 		var categoriesJSON string
+		var mutedJSON string
 		var deviceLabel sql.NullString
 		var lastSuccessAt sql.NullInt64
 
@@ -189,6 +203,7 @@ func (r *pushRepository) GetSubscriptionsForUsers(userPublicKeys []string) ([]*S
 			&s.Auth,
 			&deviceLabel,
 			&categoriesJSON,
+			&mutedJSON,
 			&s.CreatedAt,
 			&lastSuccessAt,
 			&s.FailureCount,
@@ -208,6 +223,13 @@ func (r *pushRepository) GetSubscriptionsForUsers(userPublicKeys []string) ([]*S
 			return nil, fmt.Errorf("failed to unmarshal categories: %w", err)
 		}
 
+		if err := json.Unmarshal([]byte(mutedJSON), &s.MutedApplicationIDs); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal muted_application_ids: %w", err)
+		}
+		if s.MutedApplicationIDs == nil {
+			s.MutedApplicationIDs = []string{}
+		}
+
 		subs = append(subs, s)
 	}
 
@@ -223,12 +245,13 @@ func (r *pushRepository) GetSubscriptionsForUsers(userPublicKeys []string) ([]*S
 func (r *pushRepository) GetSubscriptionByID(id, userPublicKey string) (*Subscription, error) {
 	query := `
 		SELECT id, user_public_key, endpoint, p256dh, auth, device_label,
-		       categories, created_at, last_success_at, failure_count
+		       categories, muted_application_ids, created_at, last_success_at, failure_count
 		FROM push_subscriptions
 		WHERE id = $1 AND user_public_key = $2`
 
 	s := &Subscription{}
 	var categoriesJSON string
+	var mutedJSON string
 	var deviceLabel sql.NullString
 	var lastSuccessAt sql.NullInt64
 
@@ -240,6 +263,7 @@ func (r *pushRepository) GetSubscriptionByID(id, userPublicKey string) (*Subscri
 		&s.Auth,
 		&deviceLabel,
 		&categoriesJSON,
+		&mutedJSON,
 		&s.CreatedAt,
 		&lastSuccessAt,
 		&s.FailureCount,
@@ -260,6 +284,13 @@ func (r *pushRepository) GetSubscriptionByID(id, userPublicKey string) (*Subscri
 
 	if err := json.Unmarshal([]byte(categoriesJSON), &s.Categories); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal categories: %w", err)
+	}
+
+	if err := json.Unmarshal([]byte(mutedJSON), &s.MutedApplicationIDs); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal muted_application_ids: %w", err)
+	}
+	if s.MutedApplicationIDs == nil {
+		s.MutedApplicationIDs = []string{}
 	}
 
 	return s, nil
