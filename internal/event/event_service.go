@@ -21,7 +21,7 @@ type EventBroadcaster interface {
 // Defined here to avoid an import cycle: push imports event, so event cannot import push.
 // push.PushService satisfies this interface by signature.
 type EventPusher interface {
-	Push(event *Event, recipientPublicKeys []string)
+	Push(event *Event, appName string, recipientPublicKeys []string)
 }
 
 type EventService struct {
@@ -374,7 +374,20 @@ func (s *EventService) broadcastEvent(event *Event) {
 				recipientKeys = append(recipientKeys, member.PublicKey)
 			}
 		}
-		s.pusher.Push(event, recipientKeys)
+
+		if len(recipientKeys) > 0 {
+			// Look up the application name so the browser SW can title notifications.
+			// On error or nil result, fall back to empty string; the client falls back to "Prappser".
+			appName := ""
+			app, err := s.appRepo.GetApplicationByID(event.ApplicationID)
+			if err != nil {
+				log.Debug().Err(err).Str("applicationId", event.ApplicationID).Msg("[EVENT] Failed to get application name for push")
+			} else if app != nil {
+				appName = app.Name
+			}
+
+			s.pusher.Push(event, appName, recipientKeys)
+		}
 	}
 }
 
