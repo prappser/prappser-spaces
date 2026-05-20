@@ -14,7 +14,7 @@ import (
 type mockPushRepository struct {
 	mu            sync.Mutex
 	subscriptions map[string]*Subscription
-	vapidKeys     map[string]*VapidKey
+	spaceVapid    *SpaceVapid
 	markSuccessCalls []struct {
 		id string
 		ts int64
@@ -29,21 +29,20 @@ type mockPushRepository struct {
 func newMockPushRepository() *mockPushRepository {
 	return &mockPushRepository{
 		subscriptions: make(map[string]*Subscription),
-		vapidKeys:     make(map[string]*VapidKey),
 	}
 }
 
-func (m *mockPushRepository) UpsertVapidKey(key *VapidKey) error {
+func (m *mockPushRepository) UpsertSpaceVapid(v *SpaceVapid) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.vapidKeys[key.UserPublicKey] = key
+	m.spaceVapid = v
 	return nil
 }
 
-func (m *mockPushRepository) GetVapidKey(userPublicKey string) (*VapidKey, error) {
+func (m *mockPushRepository) GetSpaceVapid() (*SpaceVapid, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.vapidKeys[userPublicKey], nil
+	return m.spaceVapid, nil
 }
 
 func (m *mockPushRepository) CreateSubscription(s *Subscription) error {
@@ -118,6 +117,13 @@ func (m *mockPushRepository) IncrementFailure(id string) error {
 	return nil
 }
 
+func newMockSpaceVapidService(pub, priv string) *SpaceVapidService {
+	return &SpaceVapidService{
+		publicKey:  pub,
+		privateKey: priv,
+	}
+}
+
 // mockWebpushSender is a hand-written mock sender for unit tests.
 type mockWebpushSender struct {
 	mu     sync.Mutex
@@ -127,6 +133,7 @@ type mockWebpushSender struct {
 
 type sendCall struct {
 	sub     *Subscription
+	vapid   *SpaceVapid
 	payload []byte
 }
 
@@ -134,10 +141,10 @@ func newMockWebpushSender(result SendResult) *mockWebpushSender {
 	return &mockWebpushSender{result: result}
 }
 
-func (m *mockWebpushSender) Send(sub *Subscription, _ *VapidKey, payloadJSON []byte) SendResult {
+func (m *mockWebpushSender) Send(sub *Subscription, vapid *SpaceVapid, payloadJSON []byte) SendResult {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.calls = append(m.calls, sendCall{sub: sub, payload: payloadJSON})
+	m.calls = append(m.calls, sendCall{sub: sub, vapid: vapid, payload: payloadJSON})
 	return m.result
 }
 
@@ -175,13 +182,9 @@ func TestPushService_Push_ShouldSendForMemberAddedEvent(t *testing.T) {
 	// given
 	repo := newMockPushRepository()
 	sender := newMockWebpushSender(SendResult{StatusCode: 201})
-	svc := NewPushService(repo, sender)
+	vapidSvc := newMockSpaceVapidService("pub", "priv")
+	svc := NewPushService(repo, sender, vapidSvc)
 
-	repo.vapidKeys["user-pk-1"] = &VapidKey{
-		UserPublicKey:   "user-pk-1",
-		VapidPublicKey:  "pub",
-		VapidPrivateKey: "priv",
-	}
 	repo.subscriptions["sub-1"] = &Subscription{
 		ID:                  "sub-1",
 		UserPublicKey:       "user-pk-1",
@@ -207,13 +210,9 @@ func TestPushService_Push_ShouldSkipWhenApplicationMuted(t *testing.T) {
 	// given
 	repo := newMockPushRepository()
 	sender := newMockWebpushSender(SendResult{StatusCode: 201})
-	svc := NewPushService(repo, sender)
+	vapidSvc := newMockSpaceVapidService("pub", "priv")
+	svc := NewPushService(repo, sender, vapidSvc)
 
-	repo.vapidKeys["user-pk-1"] = &VapidKey{
-		UserPublicKey:   "user-pk-1",
-		VapidPublicKey:  "pub",
-		VapidPrivateKey: "priv",
-	}
 	repo.subscriptions["sub-1"] = &Subscription{
 		ID:                  "sub-1",
 		UserPublicKey:       "user-pk-1",
@@ -237,13 +236,9 @@ func TestPushService_Push_ShouldSendWhenDifferentApplicationMuted(t *testing.T) 
 	// given
 	repo := newMockPushRepository()
 	sender := newMockWebpushSender(SendResult{StatusCode: 201})
-	svc := NewPushService(repo, sender)
+	vapidSvc := newMockSpaceVapidService("pub", "priv")
+	svc := NewPushService(repo, sender, vapidSvc)
 
-	repo.vapidKeys["user-pk-1"] = &VapidKey{
-		UserPublicKey:   "user-pk-1",
-		VapidPublicKey:  "pub",
-		VapidPrivateKey: "priv",
-	}
 	repo.subscriptions["sub-1"] = &Subscription{
 		ID:                  "sub-1",
 		UserPublicKey:       "user-pk-1",
@@ -267,13 +262,9 @@ func TestPushService_Push_ShouldDeleteSubscriptionOn410(t *testing.T) {
 	// given
 	repo := newMockPushRepository()
 	sender := newMockWebpushSender(SendResult{StatusCode: 410})
-	svc := NewPushService(repo, sender)
+	vapidSvc := newMockSpaceVapidService("pub", "priv")
+	svc := NewPushService(repo, sender, vapidSvc)
 
-	repo.vapidKeys["user-pk-1"] = &VapidKey{
-		UserPublicKey:   "user-pk-1",
-		VapidPublicKey:  "pub",
-		VapidPrivateKey: "priv",
-	}
 	repo.subscriptions["sub-1"] = &Subscription{
 		ID:                  "sub-1",
 		UserPublicKey:       "user-pk-1",
@@ -301,13 +292,9 @@ func TestPushService_Push_ShouldIncrementFailureOn429(t *testing.T) {
 	// given
 	repo := newMockPushRepository()
 	sender := newMockWebpushSender(SendResult{StatusCode: 429})
-	svc := NewPushService(repo, sender)
+	vapidSvc := newMockSpaceVapidService("pub", "priv")
+	svc := NewPushService(repo, sender, vapidSvc)
 
-	repo.vapidKeys["user-pk-1"] = &VapidKey{
-		UserPublicKey:   "user-pk-1",
-		VapidPublicKey:  "pub",
-		VapidPrivateKey: "priv",
-	}
 	repo.subscriptions["sub-1"] = &Subscription{
 		ID:                  "sub-1",
 		UserPublicKey:       "user-pk-1",
@@ -337,13 +324,9 @@ func TestPushService_Push_ShouldSkipWhenEventTypeHasNoCategory(t *testing.T) {
 	// given
 	repo := newMockPushRepository()
 	sender := newMockWebpushSender(SendResult{StatusCode: 201})
-	svc := NewPushService(repo, sender)
+	vapidSvc := newMockSpaceVapidService("pub", "priv")
+	svc := NewPushService(repo, sender, vapidSvc)
 
-	repo.vapidKeys["user-pk-1"] = &VapidKey{
-		UserPublicKey:   "user-pk-1",
-		VapidPublicKey:  "pub",
-		VapidPrivateKey: "priv",
-	}
 	repo.subscriptions["sub-1"] = &Subscription{
 		ID:                  "sub-1",
 		UserPublicKey:       "user-pk-1",
@@ -364,28 +347,43 @@ func TestPushService_Push_ShouldSkipWhenEventTypeHasNoCategory(t *testing.T) {
 	assert.Equal(t, 0, sender.callCount())
 }
 
-func TestPushService_Push_ShouldSkipWhenNoVapidKey(t *testing.T) {
+func TestPushService_Push_ShouldUseSpaceVapidForAllRecipients(t *testing.T) {
 	// given
 	repo := newMockPushRepository()
 	sender := newMockWebpushSender(SendResult{StatusCode: 201})
-	svc := NewPushService(repo, sender)
+	vapidSvc := newMockSpaceVapidService("space-pub-key", "space-priv-key")
+	svc := NewPushService(repo, sender, vapidSvc)
 
-	// No VAPID key registered for this user
 	repo.subscriptions["sub-1"] = &Subscription{
 		ID:                  "sub-1",
 		UserPublicKey:       "user-pk-1",
 		Endpoint:            "https://push.example.com/1",
-		P256dh:              "p256dh-value",
-		Auth:                "auth-value",
+		P256dh:              "p256dh-1",
+		Auth:                "auth-1",
+		MutedApplicationIDs: []string{},
+	}
+	repo.subscriptions["sub-2"] = &Subscription{
+		ID:                  "sub-2",
+		UserPublicKey:       "user-pk-2",
+		Endpoint:            "https://push.example.com/2",
+		P256dh:              "p256dh-2",
+		Auth:                "auth-2",
 		MutedApplicationIDs: []string{},
 	}
 
 	ev := makeEvent(event.EventTypeMemberAdded, "creator-pk", "app-1")
 
 	// when
-	svc.Push(ev, "", "", []string{"user-pk-1"})
+	svc.Push(ev, "", "", []string{"user-pk-1", "user-pk-2"})
 
-	// then: sender not called because there is no VAPID key
-	time.Sleep(100 * time.Millisecond)
-	assert.Equal(t, 0, sender.callCount())
+	// then: both deliveries used the same space VAPID keys
+	assert.True(t, sender.waitForCalls(2, 2*time.Second), "expected 2 Send calls")
+	sender.mu.Lock()
+	calls := sender.calls
+	sender.mu.Unlock()
+	assert.Len(t, calls, 2)
+	for _, c := range calls {
+		assert.Equal(t, "space-pub-key", c.vapid.VapidPublicKey)
+		assert.Equal(t, "space-priv-key", c.vapid.VapidPrivateKey)
+	}
 }

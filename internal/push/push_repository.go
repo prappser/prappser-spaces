@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// pushRepository handles all database operations for push_vapid_keys and push_subscriptions.
+// pushRepository handles all database operations for space_vapid and push_subscriptions.
 // It implements the PushRepository interface defined in push.go.
 type pushRepository struct {
 	db *sql.DB
@@ -18,45 +18,45 @@ func NewPushRepository(db *sql.DB) PushRepository {
 	return &pushRepository{db: db}
 }
 
-// UpsertVapidKey inserts or updates a user's VAPID keypair.
-func (r *pushRepository) UpsertVapidKey(key *VapidKey) error {
+// UpsertSpaceVapid inserts or updates the singleton space VAPID keypair (id = 1).
+func (r *pushRepository) UpsertSpaceVapid(v *SpaceVapid) error {
 	query := `
-		INSERT INTO push_vapid_keys (user_public_key, vapid_public_key, vapid_private_key, updated_at)
-		VALUES ($1, $2, $3, $4)
-		ON CONFLICT (user_public_key) DO UPDATE
+		INSERT INTO space_vapid (id, vapid_public_key, vapid_private_key, created_at, updated_at)
+		VALUES (1, $1, $2, $3, $4)
+		ON CONFLICT (id) DO UPDATE
 		  SET vapid_public_key  = EXCLUDED.vapid_public_key,
 		      vapid_private_key = EXCLUDED.vapid_private_key,
 		      updated_at        = EXCLUDED.updated_at`
 
-	_, err := r.db.Exec(query, key.UserPublicKey, key.VapidPublicKey, key.VapidPrivateKey, key.UpdatedAt)
+	_, err := r.db.Exec(query, v.VapidPublicKey, v.VapidPrivateKey, v.CreatedAt, v.UpdatedAt)
 	if err != nil {
-		return fmt.Errorf("failed to upsert vapid key: %w", err)
+		return fmt.Errorf("failed to upsert space vapid: %w", err)
 	}
 	return nil
 }
 
-// GetVapidKey returns the VAPID keypair for the given user public key.
-// Returns nil, nil when no keypair has been registered.
-func (r *pushRepository) GetVapidKey(userPublicKey string) (*VapidKey, error) {
+// GetSpaceVapid returns the singleton space VAPID keypair.
+// Returns nil, nil when no row has been persisted yet.
+func (r *pushRepository) GetSpaceVapid() (*SpaceVapid, error) {
 	query := `
-		SELECT user_public_key, vapid_public_key, vapid_private_key, updated_at
-		FROM push_vapid_keys
-		WHERE user_public_key = $1`
+		SELECT vapid_public_key, vapid_private_key, created_at, updated_at
+		FROM space_vapid
+		WHERE id = 1`
 
-	key := &VapidKey{}
-	err := r.db.QueryRow(query, userPublicKey).Scan(
-		&key.UserPublicKey,
-		&key.VapidPublicKey,
-		&key.VapidPrivateKey,
-		&key.UpdatedAt,
+	v := &SpaceVapid{}
+	err := r.db.QueryRow(query).Scan(
+		&v.VapidPublicKey,
+		&v.VapidPrivateKey,
+		&v.CreatedAt,
+		&v.UpdatedAt,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("failed to get vapid key: %w", err)
+		return nil, fmt.Errorf("failed to get space vapid: %w", err)
 	}
-	return key, nil
+	return v, nil
 }
 
 // CreateSubscription persists a new push subscription.

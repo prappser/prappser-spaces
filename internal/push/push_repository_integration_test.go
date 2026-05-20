@@ -35,10 +35,11 @@ func getTestDB(t *testing.T) *sql.DB {
 			role       TEXT NOT NULL,
 			created_at BIGINT NOT NULL
 		);
-		CREATE TABLE IF NOT EXISTS push_vapid_keys (
-			user_public_key  TEXT PRIMARY KEY REFERENCES users(public_key) ON DELETE CASCADE,
+		CREATE TABLE IF NOT EXISTS space_vapid (
+			id                SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
 			vapid_public_key  TEXT NOT NULL,
 			vapid_private_key TEXT NOT NULL,
+			created_at        BIGINT NOT NULL,
 			updated_at        BIGINT NOT NULL
 		);
 		CREATE TABLE IF NOT EXISTS push_subscriptions (
@@ -64,8 +65,8 @@ func getTestDB(t *testing.T) *sql.DB {
 	if _, err := db.Exec("DELETE FROM push_subscriptions"); err != nil {
 		t.Fatalf("Failed to clean push_subscriptions: %v", err)
 	}
-	if _, err := db.Exec("DELETE FROM push_vapid_keys"); err != nil {
-		t.Fatalf("Failed to clean push_vapid_keys: %v", err)
+	if _, err := db.Exec("DELETE FROM space_vapid"); err != nil {
+		t.Fatalf("Failed to clean space_vapid: %v", err)
 	}
 	if _, err := db.Exec("DELETE FROM users WHERE public_key LIKE 'test-%'"); err != nil {
 		t.Fatalf("Failed to clean users: %v", err)
@@ -82,63 +83,84 @@ func getTestDB(t *testing.T) *sql.DB {
 	return db
 }
 
-func TestPushRepository_UpsertAndGetVapidKey_Integration(t *testing.T) {
+func TestPushRepository_UpsertAndGetSpaceVapid_Integration(t *testing.T) {
 	// given
 	db := getTestDB(t)
 	defer db.Close()
 	repo := NewPushRepository(db)
 
-	key := &VapidKey{
-		UserPublicKey:   "test-user-1",
+	now := time.Now().Unix()
+	v := &SpaceVapid{
 		VapidPublicKey:  "vapid-pub-key",
 		VapidPrivateKey: "vapid-priv-key",
-		UpdatedAt:       time.Now().Unix(),
+		CreatedAt:       now,
+		UpdatedAt:       now,
 	}
 
 	// when: upsert
-	err := repo.UpsertVapidKey(key)
+	err := repo.UpsertSpaceVapid(v)
 
 	// then
 	assert.NoError(t, err)
 
-	got, err := repo.GetVapidKey("test-user-1")
+	got, err := repo.GetSpaceVapid()
 	assert.NoError(t, err)
 	assert.NotNil(t, got)
 	assert.Equal(t, "vapid-pub-key", got.VapidPublicKey)
 	assert.Equal(t, "vapid-priv-key", got.VapidPrivateKey)
+	assert.Equal(t, now, got.CreatedAt)
 }
 
-func TestPushRepository_UpsertVapidKey_ShouldUpdateOnConflict_Integration(t *testing.T) {
+func TestPushRepository_UpsertSpaceVapid_ShouldUpdateOnConflict_Integration(t *testing.T) {
 	// given
 	db := getTestDB(t)
 	defer db.Close()
 	repo := NewPushRepository(db)
 
-	first := &VapidKey{UserPublicKey: "test-user-1", VapidPublicKey: "pub-v1", VapidPrivateKey: "priv-v1", UpdatedAt: time.Now().Unix()}
-	second := &VapidKey{UserPublicKey: "test-user-1", VapidPublicKey: "pub-v2", VapidPrivateKey: "priv-v2", UpdatedAt: time.Now().Unix()}
+	now := time.Now().Unix()
+	first := &SpaceVapid{VapidPublicKey: "pub-v1", VapidPrivateKey: "priv-v1", CreatedAt: now, UpdatedAt: now}
+	second := &SpaceVapid{VapidPublicKey: "pub-v2", VapidPrivateKey: "priv-v2", CreatedAt: now, UpdatedAt: now + 1}
 
 	// when: upsert twice
-	assert.NoError(t, repo.UpsertVapidKey(first))
-	assert.NoError(t, repo.UpsertVapidKey(second))
+	assert.NoError(t, repo.UpsertSpaceVapid(first))
+	assert.NoError(t, repo.UpsertSpaceVapid(second))
 
 	// then: second values win
-	got, err := repo.GetVapidKey("test-user-1")
+	got, err := repo.GetSpaceVapid()
 	assert.NoError(t, err)
 	assert.Equal(t, "pub-v2", got.VapidPublicKey)
+	assert.Equal(t, now+1, got.UpdatedAt)
 }
 
-func TestPushRepository_GetVapidKey_ShouldReturnNilWhenNotFound_Integration(t *testing.T) {
+func TestPushRepository_GetSpaceVapid_ShouldReturnNilWhenNotFound_Integration(t *testing.T) {
 	// given
 	db := getTestDB(t)
 	defer db.Close()
 	repo := NewPushRepository(db)
 
 	// when
-	got, err := repo.GetVapidKey("nonexistent-key")
+	got, err := repo.GetSpaceVapid()
 
 	// then
 	assert.NoError(t, err)
 	assert.Nil(t, got)
+}
+
+func TestPushRepository_UpsertSpaceVapid_ShouldRejectIdNotOne_Integration(t *testing.T) {
+	// given
+	db := getTestDB(t)
+	defer db.Close()
+
+	now := time.Now().Unix()
+
+	// when: attempt to insert with id = 2 directly (bypasses repository to test DB constraint)
+	_, err := db.Exec(
+		`INSERT INTO space_vapid (id, vapid_public_key, vapid_private_key, created_at, updated_at) VALUES ($1, $2, $3, $4, $5)`,
+		2, "pub", "priv", now, now,
+	)
+
+	// then: CHECK (id = 1) violation
+	assert.Error(t, err)
 }
 
 func TestPushRepository_CreateAndGetSubscription_Integration(t *testing.T) {
