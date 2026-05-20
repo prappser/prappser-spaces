@@ -194,7 +194,7 @@ func TestPushService_Push_ShouldSendForMemberAddedEvent(t *testing.T) {
 	ev := makeEvent(event.EventTypeMemberAdded, "creator-pk", "app-1")
 
 	// when
-	svc.Push(ev, "", []string{"user-pk-1"})
+	svc.Push(ev, "", "", []string{"user-pk-1"})
 
 	// then
 	assert.True(t, sender.waitForCalls(1, 2*time.Second), "expected 1 Send call")
@@ -226,7 +226,7 @@ func TestPushService_Push_ShouldSkipWhenApplicationMuted(t *testing.T) {
 	ev := makeEvent(event.EventTypeMemberAdded, "creator-pk", "app-1")
 
 	// when
-	svc.Push(ev, "", []string{"user-pk-1"})
+	svc.Push(ev, "", "", []string{"user-pk-1"})
 
 	// then: no send because app-1 is muted
 	time.Sleep(100 * time.Millisecond)
@@ -256,7 +256,7 @@ func TestPushService_Push_ShouldSendWhenDifferentApplicationMuted(t *testing.T) 
 	ev := makeEvent(event.EventTypeMemberAdded, "creator-pk", "app-1")
 
 	// when
-	svc.Push(ev, "", []string{"user-pk-1"})
+	svc.Push(ev, "", "", []string{"user-pk-1"})
 
 	// then: send proceeds because app-1 is not in muted list (only app-2 is)
 	assert.True(t, sender.waitForCalls(1, 2*time.Second), "expected 1 Send call")
@@ -286,7 +286,7 @@ func TestPushService_Push_ShouldDeleteSubscriptionOn410(t *testing.T) {
 	ev := makeEvent(event.EventTypeMemberAdded, "creator-pk", "app-1")
 
 	// when
-	svc.Push(ev, "", []string{"user-pk-1"})
+	svc.Push(ev, "", "", []string{"user-pk-1"})
 
 	// then: sender called and subscription deleted
 	assert.True(t, sender.waitForCalls(1, 2*time.Second), "expected 1 Send call")
@@ -320,7 +320,7 @@ func TestPushService_Push_ShouldIncrementFailureOn429(t *testing.T) {
 	ev := makeEvent(event.EventTypeMemberAdded, "creator-pk", "app-1")
 
 	// when
-	svc.Push(ev, "", []string{"user-pk-1"})
+	svc.Push(ev, "", "", []string{"user-pk-1"})
 
 	// then: failure incremented, subscription NOT deleted
 	assert.True(t, sender.waitForCalls(1, 2*time.Second), "expected 1 Send call")
@@ -357,7 +357,7 @@ func TestPushService_Push_ShouldSkipWhenEventTypeHasNoCategory(t *testing.T) {
 	ev := makeEvent(event.EventTypeApplicationCreated, "creator-pk", "app-1")
 
 	// when
-	svc.Push(ev, "", []string{"user-pk-1"})
+	svc.Push(ev, "", "", []string{"user-pk-1"})
 
 	// then: sender not called because the event type has no push story
 	time.Sleep(100 * time.Millisecond)
@@ -383,7 +383,7 @@ func TestPushService_Push_ShouldSkipWhenNoVapidKey(t *testing.T) {
 	ev := makeEvent(event.EventTypeMemberAdded, "creator-pk", "app-1")
 
 	// when
-	svc.Push(ev, "", []string{"user-pk-1"})
+	svc.Push(ev, "", "", []string{"user-pk-1"})
 
 	// then: sender not called because there is no VAPID key
 	time.Sleep(100 * time.Millisecond)

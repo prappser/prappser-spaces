@@ -21,7 +21,7 @@ type EventBroadcaster interface {
 // Defined here to avoid an import cycle: push imports event, so event cannot import push.
 // push.PushService satisfies this interface by signature.
 type EventPusher interface {
-	Push(event *Event, appName string, recipientPublicKeys []string)
+	Push(event *Event, appName string, creatorDisplayName string, recipientPublicKeys []string)
 }
 
 type EventService struct {
@@ -386,7 +386,17 @@ func (s *EventService) broadcastEvent(event *Event) {
 				appName = app.Name
 			}
 
-			s.pusher.Push(event, appName, recipientKeys)
+			// Resolve the actor's display name from the already-fetched members slice.
+			// No additional DB call needed. Empty string if not found or name is nil.
+			creatorDisplayName := ""
+			for _, m := range members {
+				if m.PublicKey == event.CreatorPublicKey && m.UserDisplayName != nil {
+					creatorDisplayName = *m.UserDisplayName
+					break
+				}
+			}
+
+			s.pusher.Push(event, appName, creatorDisplayName, recipientKeys)
 		}
 	}
 }

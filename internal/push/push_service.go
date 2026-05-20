@@ -27,15 +27,15 @@ func NewPushService(repo PushRepository, sender WebpushSender) *PushService {
 // Phase 2: one push per matching subscription per event.
 // The "cap to 5 then collapse to summary" logic for catchup/rejoin batches is a
 // future feature (Phase 5) and is intentionally not implemented here.
-func (s *PushService) Push(ev *event.Event, appName string, recipientPublicKeys []string) {
+func (s *PushService) Push(ev *event.Event, appName string, creatorDisplayName string, recipientPublicKeys []string) {
 	if len(recipientPublicKeys) == 0 {
 		return
 	}
 
-	go s.fanout(ev, appName, recipientPublicKeys)
+	go s.fanout(ev, appName, creatorDisplayName, recipientPublicKeys)
 }
 
-func (s *PushService) fanout(ev *event.Event, appName string, recipientPublicKeys []string) {
+func (s *PushService) fanout(ev *event.Event, appName string, creatorDisplayName string, recipientPublicKeys []string) {
 	// Allowlist: events whose type has no push story return early.
 	// The category itself is no longer used to filter individual
 	// subscriptions (see Phase 4: per-application mute replaces
@@ -59,7 +59,7 @@ func (s *PushService) fanout(ev *event.Event, appName string, recipientPublicKey
 	}
 
 	// Build the push payload once - same JSON for every subscriber.
-	payload, err := buildPayload(ev, appName)
+	payload, err := buildPayload(ev, appName, creatorDisplayName)
 	if err != nil {
 		log.Warn().Err(err).Str("eventId", ev.ID).Msg("[PUSH] Failed to build payload")
 		return
@@ -155,22 +155,24 @@ func (s *PushService) deliver(sub *Subscription, vapid *VapidKey, payload []byte
 
 // pushPayload is the wire shape sent to the browser - matches the WebSocket event wire format.
 type pushPayload struct {
-	EventID         string                 `json:"eventId"`
-	Type            string                 `json:"type"`
-	ApplicationID   string                 `json:"applicationId"`
-	ApplicationName string                 `json:"applicationName,omitempty"`
-	Data            map[string]interface{} `json:"data"`
-	Timestamp       int64                  `json:"timestamp"`
+	EventID              string                 `json:"eventId"`
+	Type                 string                 `json:"type"`
+	ApplicationID        string                 `json:"applicationId"`
+	ApplicationName      string                 `json:"applicationName,omitempty"`
+	CreatorDisplayName   string                 `json:"creatorDisplayName,omitempty"`
+	Data                 map[string]interface{} `json:"data"`
+	Timestamp            int64                  `json:"timestamp"`
 }
 
-func buildPayload(ev *event.Event, appName string) ([]byte, error) {
+func buildPayload(ev *event.Event, appName string, creatorDisplayName string) ([]byte, error) {
 	p := pushPayload{
-		EventID:         ev.ID,
-		Type:            string(ev.Type),
-		ApplicationID:   ev.ApplicationID,
-		ApplicationName: appName,
-		Data:            ev.Data,
-		Timestamp:       ev.CreatedAt,
+		EventID:            ev.ID,
+		Type:               string(ev.Type),
+		ApplicationID:      ev.ApplicationID,
+		ApplicationName:    appName,
+		CreatorDisplayName: creatorDisplayName,
+		Data:               ev.Data,
+		Timestamp:          ev.CreatedAt,
 	}
 	return json.Marshal(p)
 }
