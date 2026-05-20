@@ -153,9 +153,13 @@ func main() {
 	eventRepository := event.NewEventRepository(db)
 
 	pushRepo := push.NewPushRepository(db)
+	pushVapidService := push.NewSpaceVapidService(pushRepo)
+	if err := pushVapidService.Initialize(context.Background()); err != nil {
+		log.Fatal().Err(err).Msg("Failed to initialize space VAPID keys")
+	}
 	pushSender := push.NewHTTPWebpushSender()
-	pushService := push.NewPushService(pushRepo, pushSender)
-	pushEndpoints := push.NewPushEndpoints(pushService, pushRepo)
+	pushService := push.NewPushService(pushRepo, pushSender, pushVapidService)
+	pushEndpoints := push.NewPushEndpoints(pushService, pushRepo, pushVapidService)
 
 	eventService := event.NewEventService(eventRepository, appRepository, wsHub, pushService)
 	eventEndpoints := event.NewEventEndpoints(eventService)

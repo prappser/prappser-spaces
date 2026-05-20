@@ -21,7 +21,7 @@ func NewHTTPWebpushSender() *HTTPWebpushSender {
 // Send delivers payloadJSON to the given subscription using VAPID authentication.
 // A 10-second per-call context timeout is applied automatically.
 // The response body is drained and closed before returning.
-func (s *HTTPWebpushSender) Send(sub *Subscription, vapid *VapidKey, payloadJSON []byte) SendResult {
+func (s *HTTPWebpushSender) Send(sub *Subscription, vapid *SpaceVapid, payloadJSON []byte) SendResult {
 	sendCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 

@@ -11,13 +11,14 @@ import (
 
 // PushService fans out web push notifications to subscribers after an event is accepted.
 type PushService struct {
-	repo   PushRepository
-	sender WebpushSender
+	repo         PushRepository
+	sender       WebpushSender
+	vapidService *SpaceVapidService
 }
 
-// NewPushService creates a PushService with the given repository and sender.
-func NewPushService(repo PushRepository, sender WebpushSender) *PushService {
-	return &PushService{repo: repo, sender: sender}
+// NewPushService creates a PushService with the given repository, sender, and VAPID service.
+func NewPushService(repo PushRepository, sender WebpushSender, vapidService *SpaceVapidService) *PushService {
+	return &PushService{repo: repo, sender: sender, vapidService: vapidService}
 }
 
 // Push delivers a web push notification for ev to each recipient in recipientPublicKeys.
@@ -65,9 +66,10 @@ func (s *PushService) fanout(ev *event.Event, appName string, creatorDisplayName
 		return
 	}
 
-	// Cache VAPID keys per owner to avoid repeated DB round-trips when one user
-	// has multiple subscriptions.
-	vapidCache := make(map[string]*VapidKey)
+	vapid := &SpaceVapid{
+		VapidPublicKey:  s.vapidService.PublicKey(),
+		VapidPrivateKey: s.vapidService.PrivateKey(),
+	}
 
 	// then: deliver to each matching subscription
 	for _, sub := range subs {
@@ -76,32 +78,12 @@ func (s *PushService) fanout(ev *event.Event, appName string, creatorDisplayName
 			continue
 		}
 
-		vapid, cached := vapidCache[sub.UserPublicKey]
-		if !cached {
-			vapid, err = s.repo.GetVapidKey(sub.UserPublicKey)
-			if err != nil {
-				log.Warn().Err(err).
-					Str("userPublicKey", sub.UserPublicKey).
-					Msg("[PUSH] Failed to fetch VAPID key")
-				continue
-			}
-			vapidCache[sub.UserPublicKey] = vapid
-		}
-
-		if vapid == nil {
-			log.Debug().
-				Str("userPublicKey", sub.UserPublicKey).
-				Str("subscriptionId", sub.ID).
-				Msg("[PUSH] No VAPID key for user - skipping subscription")
-			continue
-		}
-
 		s.deliver(sub, vapid, payload)
 	}
 }
 
 // deliver sends one push and updates subscription health fields based on the result.
-func (s *PushService) deliver(sub *Subscription, vapid *VapidKey, payload []byte) {
+func (s *PushService) deliver(sub *Subscription, vapid *SpaceVapid, payload []byte) {
 	result := s.sender.Send(sub, vapid, payload)
 
 	if result.Err != nil {

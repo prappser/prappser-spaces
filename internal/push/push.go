@@ -4,12 +4,13 @@ import (
 	"github.com/prappser/prappser-spaces/internal/event"
 )
 
-// VapidKey holds a user's VAPID keypair for signing web push messages.
-type VapidKey struct {
-	UserPublicKey  string
-	VapidPublicKey string
+// SpaceVapid holds the space-level VAPID keypair for signing web push messages.
+// The singleton row always has id = 1 (enforced by a CHECK constraint in the DB).
+type SpaceVapid struct {
+	VapidPublicKey  string
 	VapidPrivateKey string
-	UpdatedAt      int64
+	CreatedAt       int64
+	UpdatedAt       int64
 }
 
 // Categories controls which buckets of events trigger a push for a subscription.
@@ -61,14 +62,14 @@ type SendResult struct {
 // No context parameter: HTTPWebpushSender builds its own 10-second timeout context internally,
 // so the parameter was unused and misleading.
 type WebpushSender interface {
-	Send(sub *Subscription, vapid *VapidKey, payloadJSON []byte) SendResult
+	Send(sub *Subscription, vapid *SpaceVapid, payloadJSON []byte) SendResult
 }
 
-// PushRepository is the data-access interface for push_vapid_keys and push_subscriptions.
+// PushRepository is the data-access interface for space_vapid and push_subscriptions.
 // The concrete implementation is in push_repository.go.
 type PushRepository interface {
-	UpsertVapidKey(key *VapidKey) error
-	GetVapidKey(userPublicKey string) (*VapidKey, error)
+	UpsertSpaceVapid(v *SpaceVapid) error
+	GetSpaceVapid() (*SpaceVapid, error)
 	CreateSubscription(s *Subscription) error
 	UpdateSubscription(s *Subscription) error
 	DeleteSubscription(id, userPublicKey string) error

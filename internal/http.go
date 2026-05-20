@@ -291,10 +291,10 @@ func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, status
 				ctx.Error("Not Found", fasthttp.StatusNotFound)
 			}
 
-		case path == "/push/vapid":
+		case path == "/push/vapid-public-key":
 			method := string(ctx.Method())
-			if method == "PUT" {
-				authMiddleware.RequireAuth(pushEndpoints.SetVapidKeys)(ctx)
+			if method == "GET" {
+				pushEndpoints.GetVapidPublicKey(ctx)
 			} else {
 				ctx.Error("Method Not Allowed", fasthttp.StatusMethodNotAllowed)
 			}

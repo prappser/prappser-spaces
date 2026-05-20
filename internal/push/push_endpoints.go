@@ -10,67 +10,25 @@ import (
 	"github.com/valyala/fasthttp"
 )
 
-// PushEndpoints exposes HTTP handlers for VAPID key management and subscription CRUD.
+// PushEndpoints exposes HTTP handlers for VAPID public key retrieval and subscription CRUD.
 type PushEndpoints struct {
-	service *PushService
-	repo    PushRepository
+	service      *PushService
+	repo         PushRepository
+	vapidService *SpaceVapidService
 }
 
 // NewPushEndpoints creates a new PushEndpoints.
-func NewPushEndpoints(service *PushService, repo PushRepository) *PushEndpoints {
-	return &PushEndpoints{service: service, repo: repo}
+func NewPushEndpoints(service *PushService, repo PushRepository, vapidService *SpaceVapidService) *PushEndpoints {
+	return &PushEndpoints{service: service, repo: repo, vapidService: vapidService}
 }
 
-// setVapidKeysRequest is the request body for PUT /push/vapid.
-type setVapidKeysRequest struct {
-	PublicKey  string `json:"publicKey"`
-	PrivateKey string `json:"privateKey"`
-}
-
-// SetVapidKeys handles PUT /push/vapid.
-// Upserts the authenticated user's VAPID keypair.
-func (pe *PushEndpoints) SetVapidKeys(ctx *fasthttp.RequestCtx) {
-	authenticatedUser, ok := ctx.UserValue("user").(*user.User)
-	if !ok || authenticatedUser == nil {
-		log.Error().Msg("[PUSH] Failed to get authenticated user from context")
-		ctx.Error("Unauthorized", fasthttp.StatusUnauthorized)
-		return
-	}
-
-	var req setVapidKeysRequest
-	if err := json.Unmarshal(ctx.PostBody(), &req); err != nil {
-		log.Error().Err(err).Msg("[PUSH] Failed to parse vapid key request body")
-		ctx.SetStatusCode(fasthttp.StatusBadRequest)
-		ctx.SetContentType("application/json")
-		json.NewEncoder(ctx).Encode(map[string]string{"error": "invalid request body"})
-		return
-	}
-
-	if req.PublicKey == "" || req.PrivateKey == "" {
-		log.Error().Msg("[PUSH] Missing publicKey or privateKey in vapid request")
-		ctx.SetStatusCode(fasthttp.StatusBadRequest)
-		ctx.SetContentType("application/json")
-		json.NewEncoder(ctx).Encode(map[string]string{"error": "publicKey and privateKey are required"})
-		return
-	}
-
-	key := &VapidKey{
-		UserPublicKey:   authenticatedUser.PublicKey,
-		VapidPublicKey:  req.PublicKey,
-		VapidPrivateKey: req.PrivateKey,
-		UpdatedAt:       time.Now().Unix(),
-	}
-
-	if err := pe.repo.UpsertVapidKey(key); err != nil {
-		log.Error().Err(err).Msg("[PUSH] Failed to upsert vapid key")
-		ctx.Error("Failed to save VAPID keys", fasthttp.StatusInternalServerError)
-		return
-	}
-
-	log.Debug().Str("userPublicKey", authenticatedUser.PublicKey).Msg("[PUSH] VAPID keys upserted")
+// GetVapidPublicKey handles GET /push/vapid-public-key.
+// Returns the space VAPID public key. No authentication required.
+func (pe *PushEndpoints) GetVapidPublicKey(ctx *fasthttp.RequestCtx) {
+	log.Debug().Msg("[PUSH] GetVapidPublicKey called")
 	ctx.SetStatusCode(fasthttp.StatusOK)
 	ctx.SetContentType("application/json")
-	json.NewEncoder(ctx).Encode(map[string]string{"status": "ok"})
+	json.NewEncoder(ctx).Encode(map[string]string{"publicKey": pe.vapidService.PublicKey()})
 }
 
 // createSubscriptionRequest is the request body for POST /push/subscriptions.

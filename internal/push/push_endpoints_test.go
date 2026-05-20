@@ -30,68 +30,44 @@ func testUser(publicKey string) *user.User {
 	return &user.User{PublicKey: publicKey, Username: "testuser", Role: "user"}
 }
 
-// stubRepo wraps mockPushRepository and wires it into PushEndpoints.
+// newTestEndpoints wires a mock repo and mock VAPID service into PushEndpoints.
 func newTestEndpoints() (*PushEndpoints, *mockPushRepository) {
 	repo := newMockPushRepository()
-	svc := NewPushService(repo, newMockWebpushSender(SendResult{StatusCode: 201}))
-	ep := NewPushEndpoints(svc, repo)
+	vapidSvc := newMockSpaceVapidService("test-pub-key", "test-priv-key")
+	svc := NewPushService(repo, newMockWebpushSender(SendResult{StatusCode: 201}), vapidSvc)
+	ep := NewPushEndpoints(svc, repo, vapidSvc)
 	return ep, repo
 }
 
-// ---- SetVapidKeys ----
+// ---- GetVapidPublicKey ----
 
-func TestSetVapidKeys_ShouldUpsertKeys(t *testing.T) {
+func TestGetVapidPublicKey_ShouldReturn200WithPublicKey(t *testing.T) {
 	// given
-	ep, repo := newTestEndpoints()
-	ctx := newTestRequestCtx("PUT", `{"publicKey":"pub123","privateKey":"priv123"}`)
-	setAuthUser(ctx, testUser("user-pk-1"))
+	ep, _ := newTestEndpoints()
+	ctx := newTestRequestCtx("GET", "")
 
 	// when
-	ep.SetVapidKeys(ctx)
+	ep.GetVapidPublicKey(ctx)
 
 	// then
 	assert.Equal(t, fasthttp.StatusOK, ctx.Response.StatusCode())
-	assert.NotNil(t, repo.vapidKeys["user-pk-1"])
-	assert.Equal(t, "pub123", repo.vapidKeys["user-pk-1"].VapidPublicKey)
+	var resp map[string]string
+	err := json.Unmarshal(ctx.Response.Body(), &resp)
+	assert.NoError(t, err)
+	assert.Equal(t, "test-pub-key", resp["publicKey"])
 }
 
-func TestSetVapidKeys_ShouldReturn400WhenMissingPublicKey(t *testing.T) {
+func TestGetVapidPublicKey_ShouldNotRequireAuth(t *testing.T) {
 	// given
 	ep, _ := newTestEndpoints()
-	ctx := newTestRequestCtx("PUT", `{"privateKey":"priv123"}`)
-	setAuthUser(ctx, testUser("user-pk-1"))
+	ctx := newTestRequestCtx("GET", "")
+	// no user injected — unauthenticated request
 
 	// when
-	ep.SetVapidKeys(ctx)
+	ep.GetVapidPublicKey(ctx)
 
-	// then
-	assert.Equal(t, fasthttp.StatusBadRequest, ctx.Response.StatusCode())
-}
-
-func TestSetVapidKeys_ShouldReturn400WhenMissingPrivateKey(t *testing.T) {
-	// given
-	ep, _ := newTestEndpoints()
-	ctx := newTestRequestCtx("PUT", `{"publicKey":"pub123"}`)
-	setAuthUser(ctx, testUser("user-pk-1"))
-
-	// when
-	ep.SetVapidKeys(ctx)
-
-	// then
-	assert.Equal(t, fasthttp.StatusBadRequest, ctx.Response.StatusCode())
-}
-
-func TestSetVapidKeys_ShouldReturn401WhenNoUser(t *testing.T) {
-	// given
-	ep, _ := newTestEndpoints()
-	ctx := newTestRequestCtx("PUT", `{"publicKey":"pub","privateKey":"priv"}`)
-	// no user injected
-
-	// when
-	ep.SetVapidKeys(ctx)
-
-	// then
-	assert.Equal(t, fasthttp.StatusUnauthorized, ctx.Response.StatusCode())
+	// then: 200 OK without any auth header
+	assert.Equal(t, fasthttp.StatusOK, ctx.Response.StatusCode())
 }
 
 // ---- CreateSubscription ----
