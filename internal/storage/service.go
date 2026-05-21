@@ -403,6 +403,64 @@ func (s *Service) CompleteChunkedUpload(ctx context.Context, storageID string, b
 	return stored, nil
 }
 
+// CleanupStalePendingUploads deletes storage rows with status='pending' that
+// were created more than 1 hour ago, along with their orphaned chunk rows.
+func (s *Service) CleanupStalePendingUploads(ctx context.Context) error {
+	cutoff := time.Now().Add(-1 * time.Hour).Unix()
+	n, err := s.repo.DeleteStalePending(cutoff)
+	if err != nil {
+		return err
+	}
+	log.Info().Int("deletedCount", n).Msg("[STORAGE] Stale pending upload cleanup completed")
+	return nil
+}
+
+// PendingCleanupScheduler runs CleanupStalePendingUploads on a fixed interval.
+type PendingCleanupScheduler struct {
+	service  *Service
+	interval time.Duration
+	ticker   *time.Ticker
+	done     chan bool
+}
+
+// NewPendingCleanupScheduler creates a scheduler that will run cleanup every interval.
+func NewPendingCleanupScheduler(service *Service, interval time.Duration) *PendingCleanupScheduler {
+	return &PendingCleanupScheduler{
+		service:  service,
+		interval: interval,
+		done:     make(chan bool),
+	}
+}
+
+// Start begins the cleanup loop in a background goroutine.
+func (p *PendingCleanupScheduler) Start() {
+	p.ticker = time.NewTicker(p.interval)
+	log.Info().Dur("interval", p.interval).Msg("[STORAGE] Pending upload cleanup scheduler started")
+	go p.loop()
+}
+
+func (p *PendingCleanupScheduler) loop() {
+	for {
+		select {
+		case <-p.ticker.C:
+			if err := p.service.CleanupStalePendingUploads(context.Background()); err != nil {
+				log.Error().Err(err).Msg("[STORAGE] Stale pending upload cleanup failed")
+			}
+		case <-p.done:
+			p.ticker.Stop()
+			return
+		}
+	}
+}
+
+// Stop halts the cleanup scheduler.
+func (p *PendingCleanupScheduler) Stop() {
+	log.Info().Msg("[STORAGE] Stopping pending upload cleanup scheduler")
+	if p.ticker != nil {
+		p.done <- true
+	}
+}
+
 func buildStoragePath(appID *string, storageID, filename, contentType string, now time.Time) string {
 	year := now.Format("2006")
 	month := now.Format("01")

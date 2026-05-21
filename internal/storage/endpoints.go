@@ -3,6 +3,7 @@ package storage
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -23,15 +24,35 @@ type EventService interface {
 	ProduceEvent(ctx context.Context, e *event.Event) (*event.Event, error)
 }
 
+// storageService is the narrow interface Endpoints needs from *Service.
+// The concrete *Service satisfies it; tests inject a mock.
+type storageService interface {
+	Upload(ctx context.Context, appID *string, uploaderPublicKey string, spaceID *string, req *UploadRequest, data io.Reader, baseURL string) (*Storage, error)
+	Get(ctx context.Context, id string, baseURL string) (*Storage, error)
+	GetData(ctx context.Context, id string) (io.ReadCloser, *Storage, error)
+	GetThumbnail(ctx context.Context, id string) (io.ReadCloser, *Storage, error)
+	Delete(ctx context.Context, id, requestorPublicKey string) error
+	InitChunkedUpload(ctx context.Context, appID *string, uploaderPublicKey string, spaceID *string, req *ChunkedUploadInitRequest) (*ChunkedUploadInitResponse, error)
+	UploadChunk(ctx context.Context, storageID string, chunkIndex int, data io.Reader) error
+	CompleteChunkedUpload(ctx context.Context, storageID string, baseURL string) (*Storage, error)
+	CleanupApplicationStorage(ctx context.Context, appID string) error
+}
+
+// appMemberChecker is the narrow interface Endpoints needs from *application.Repository.
+type appMemberChecker interface {
+	IsMember(appID, publicKey string) (bool, error)
+	GetApplicationsByMemberPublicKey(publicKey string) ([]*application.Application, error)
+}
+
 type Endpoints struct {
-	service             *Service
-	appRepo             *application.Repository
+	service             storageService
+	appRepo             appMemberChecker
 	eventService        EventService
 	userRepo            user.UserRepository
 	externalURLOverride string
 }
 
-func NewEndpoints(service *Service, appRepo *application.Repository, eventService EventService, userRepo user.UserRepository, externalURLOverride string) *Endpoints {
+func NewEndpoints(service storageService, appRepo appMemberChecker, eventService EventService, userRepo user.UserRepository, externalURLOverride string) *Endpoints {
 	return &Endpoints{
 		service:             service,
 		appRepo:             appRepo,
@@ -415,6 +436,10 @@ func (e *Endpoints) GetFile(ctx *fasthttp.RequestCtx) {
 	reader, stored, err := e.service.GetData(ctx, storageID)
 	if err != nil {
 		log.Error().Err(err).Str("storageId", storageID).Msg("[STORAGE] GetData failed")
+		if errors.Is(err, ErrBlobNotFound) {
+			ctx.Error("file not found", fasthttp.StatusNotFound)
+			return
+		}
 		ctx.Error("Failed to retrieve file", fasthttp.StatusInternalServerError)
 		return
 	}
@@ -551,6 +576,11 @@ func (e *Endpoints) getStorageAndCheckAccess(ctx *fasthttp.RequestCtx) (stored *
 
 	stored, err := e.service.Get(ctx, storageID, "")
 	if err != nil {
+		ctx.Error("Storage not found", fasthttp.StatusNotFound)
+		return nil, "", false
+	}
+
+	if stored.Status != string(StorageStatusReady) {
 		ctx.Error("Storage not found", fasthttp.StatusNotFound)
 		return nil, "", false
 	}

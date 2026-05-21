@@ -56,7 +56,7 @@ func (s *LocalStorage) Get(ctx context.Context, path string) (io.ReadCloser, err
 	file, err := os.Open(fullPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("file not found: %s", path)
+			return nil, fmt.Errorf("%w: %s", ErrBlobNotFound, path)
 		}
 		return nil, err
 	}

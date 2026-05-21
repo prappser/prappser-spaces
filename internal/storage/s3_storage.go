@@ -60,7 +60,7 @@ func (s *S3Storage) Get(ctx context.Context, path string) (io.ReadCloser, error)
 	if err != nil {
 		errResponse := minio.ToErrorResponse(err)
 		if errResponse.Code == "NoSuchKey" {
-			return nil, fmt.Errorf("file not found: %s", path)
+			return nil, fmt.Errorf("%w: %s", ErrBlobNotFound, path)
 		}
 		return nil, err
 	}

@@ -2,8 +2,13 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"io"
 )
+
+// ErrBlobNotFound is returned by StorageBackend.Get when the blob does not exist
+// on the storage medium (e.g. file deleted from disk, S3 key missing).
+var ErrBlobNotFound = errors.New("blob not found")
 
 type StorageBackend interface {
 	Store(ctx context.Context, path string, reader io.Reader) error
