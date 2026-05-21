@@ -69,7 +69,7 @@ func (cm *CORSMiddleware) setCORSHeaders(ctx *fasthttp.RequestCtx, origin string
 		ctx.Response.Header.Set("Access-Control-Allow-Origin", "*")
 	}
 
-	ctx.Response.Header.Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+	ctx.Response.Header.Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 	ctx.Response.Header.Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
 	ctx.Response.Header.Set("Access-Control-Expose-Headers", "Authorization, Content-Type")
 	ctx.Response.Header.Set("Access-Control-Max-Age", "86400")
