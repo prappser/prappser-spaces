@@ -414,6 +414,7 @@ func (e *Endpoints) GetFile(ctx *fasthttp.RequestCtx) {
 	storageID := stored.ID
 	reader, stored, err := e.service.GetData(ctx, storageID)
 	if err != nil {
+		log.Error().Err(err).Str("storageId", storageID).Msg("[STORAGE] GetData failed")
 		ctx.Error("Failed to retrieve file", fasthttp.StatusInternalServerError)
 		return
 	}
