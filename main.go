@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	_ "github.com/lib/pq"
 	"github.com/prappser/prappser-spaces/internal"
@@ -201,6 +202,10 @@ func main() {
 	storageService := storage.NewService(storageRepo, storageBackend, config.Storage.MaxFileSize)
 	storageEndpoints := storage.NewEndpoints(storageService, appRepository, eventService, userRepository, config.ExternalURL)
 	log.Info().Str("storageType", config.Storage.StorageType).Msg("Storage service initialized")
+
+	storagePendingCleanup := storage.NewPendingCleanupScheduler(storageService, 15*time.Minute)
+	storagePendingCleanup.Start()
+	log.Info().Msg("Storage pending upload cleanup scheduler started")
 
 	wsHandler := websocket.NewHandler(wsHub, userService)
 

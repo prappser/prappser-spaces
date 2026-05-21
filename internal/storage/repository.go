@@ -217,6 +217,60 @@ func (r *Repository) DeleteChunks(storageID string) error {
 	return err
 }
 
+// DeleteStalePending deletes storage rows with status='pending' older than
+// olderThanSeconds seconds (Unix timestamp cutoff). It first deletes orphaned
+// storage_chunks rows because storage_chunks has no FK cascade back to storage.
+// Returns the number of storage rows deleted.
+//
+// SQL executed (both inside a single transaction):
+//
+//	DELETE FROM storage_chunks
+//	WHERE storage_id IN (
+//	    SELECT id FROM storage
+//	    WHERE status = 'pending' AND created_at < $1
+//	)
+//
+//	DELETE FROM storage
+//	WHERE status = 'pending' AND created_at < $1
+//
+// NOTE: the unit test (TestCleanupPending_MockWiring) covers service wiring only,
+// not these SQL statements. Add an integration test if the SQL is ever changed.
+func (r *Repository) DeleteStalePending(olderThanSeconds int64) (int, error) {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	// Delete chunks for stale pending rows first (no FK cascade on storage_chunks).
+	_, err = tx.Exec(`
+		DELETE FROM storage_chunks
+		WHERE storage_id IN (
+			SELECT id FROM storage
+			WHERE status = 'pending' AND created_at < $1
+		)`, olderThanSeconds)
+	if err != nil {
+		return 0, err
+	}
+
+	result, err := tx.Exec(`
+		DELETE FROM storage
+		WHERE status = 'pending' AND created_at < $1`, olderThanSeconds)
+	if err != nil {
+		return 0, err
+	}
+
+	n, err := result.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return int(n), nil
+}
+
 func (r *Repository) GetTotalUsedBytes() (int64, error) {
 	var total sql.NullInt64
 	err := r.db.QueryRow(`SELECT COALESCE(SUM(size_bytes), 0) FROM storage`).Scan(&total)
