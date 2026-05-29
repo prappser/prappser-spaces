@@ -201,7 +201,7 @@ func main() {
 
 	storageService := storage.NewService(storageRepo, storageBackend, config.Storage.MaxFileSize)
 	storageEndpoints := storage.NewEndpoints(storageService, appRepository, eventService, userRepository, config.ExternalURL)
-	log.Info().Str("storageType", config.Storage.StorageType).Msg("Storage service initialized")
+	log.Info().Str("storageType", config.Storage.StorageType).Str("localPath", config.Storage.LocalPath).Msg("Storage service initialized")
 
 	storagePendingCleanup := storage.NewPendingCleanupScheduler(storageService, 15*time.Minute)
 	storagePendingCleanup.Start()

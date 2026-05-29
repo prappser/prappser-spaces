@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/rs/zerolog/log"
 )
 
 type LocalStorage struct {
@@ -19,9 +21,25 @@ func NewLocalStorage(config *BackendConfig) (*LocalStorage, error) {
 		basePath = "./storage"
 	}
 
+	absPath, _ := filepath.Abs(basePath)
+	_, statErr := os.Stat(basePath)
+	existedBefore := statErr == nil
+
 	if err := os.MkdirAll(basePath, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create storage directory: %w", err)
 	}
+
+	// existedBeforeStartup=false + topLevelEntries=0 after redeploy indicates ephemeral (non-persistent) disk
+	entryCount := -1
+	if entries, err := os.ReadDir(basePath); err == nil {
+		entryCount = len(entries)
+	}
+	log.Info().
+		Str("basePath", basePath).
+		Str("absolutePath", absPath).
+		Bool("existedBeforeStartup", existedBefore).
+		Int("topLevelEntries", entryCount).
+		Msg("[STORAGE] Local storage backend initialized")
 
 	return &LocalStorage{
 		basePath: basePath,
@@ -42,10 +60,12 @@ func (s *LocalStorage) Store(ctx context.Context, path string, reader io.Reader)
 	}
 	defer file.Close()
 
-	if _, err := io.Copy(file, reader); err != nil {
+	n, err := io.Copy(file, reader)
+	if err != nil {
 		os.Remove(fullPath)
 		return err
 	}
+	log.Info().Str("fullPath", fullPath).Int64("bytes", n).Msg("[STORAGE] Local blob stored")
 
 	return nil
 }
@@ -56,6 +76,12 @@ func (s *LocalStorage) Get(ctx context.Context, path string) (io.ReadCloser, err
 	file, err := os.Open(fullPath)
 	if err != nil {
 		if os.IsNotExist(err) {
+			_, baseErr := os.Stat(s.basePath)
+			log.Warn().
+				Str("requestedPath", path).
+				Str("fullPath", fullPath).
+				Bool("basePathExists", baseErr == nil).
+				Msg("[STORAGE] Local blob not found")
 			return nil, fmt.Errorf("%w: %s", ErrBlobNotFound, path)
 		}
 		return nil, err
