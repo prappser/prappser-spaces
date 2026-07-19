@@ -79,7 +79,10 @@ which builds and pushes `ghcr.io/prappser/prappser-spaces:latest` (plus a
 `com.centurylinklabs.watchtower.enable=true` label, recreates just that
 container when a new `latest` image is available. Caddy and Postgres are
 never touched by watchtower. On restart, the app runs any new migrations
-before serving traffic.
+before serving traffic. `DOCKER_API_VERSION` is pinned to `1.44` on the
+watchtower service because its bundled docker client otherwise defaults to
+an API version below the minimum Docker Engine 29 requires, which crash-loops
+watchtower on hosts running Engine 29+.
 
 ## Cloudflare variants
 
