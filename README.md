@@ -84,6 +84,10 @@ docker run \
 
 Set `HOSTING_PROVIDER=zeabur` and `EXTERNAL_URL` to your subdomain name. For example, `myserver` resolves to `https://myserver.zeabur.app`.
 
+## Hosting
+
+Prappser Spaces can be hosted three ways: a managed [Zeabur](docs/hosting/zeabur.md) template, a [Railway](docs/hosting/railway.md) deploy driven from the Prappser app, or a [self-hosted](docs/hosting/selfhost.md) Docker Compose stack with Caddy and watchtower. See [docs/hosting/README.md](docs/hosting/README.md) for a comparison and the requirements common to all three.
+
 ## License
 
 Prappser Spaces is licensed under the [GNU Affero General Public License v3.0](https://www.gnu.org/licenses/agpl-3.0).

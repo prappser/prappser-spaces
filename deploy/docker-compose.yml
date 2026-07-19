@@ -1,0 +1,70 @@
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: prappser
+      POSTGRES_USER: prappser
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U prappser -d prappser"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  prappser-spaces:
+    image: ghcr.io/prappser/prappser-spaces:latest
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Only this container carries the watchtower label, so watchtower
+    # updates the app on new pushes but never touches caddy/postgres.
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
+    environment:
+      DATABASE_URL: postgres://prappser:${POSTGRES_PASSWORD}@postgres:5432/prappser?sslmode=disable
+      MASTER_PASSWORD: ${MASTER_PASSWORD}
+      PORT: "4545"
+      EXTERNAL_URL: https://${DOMAIN}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://prappser.app}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      STORAGE_TYPE: local
+      STORAGE_PATH: /app/storage
+      STORAGE_MAX_FILE_SIZE_MB: "50"
+      STORAGE_CHUNK_SIZE_MB: "5"
+    volumes:
+      - app_storage:/app/storage
+
+  watchtower:
+    image: containrrr/watchtower
+    restart: unless-stopped
+    environment:
+      WATCHTOWER_LABEL_ENABLE: "true"
+      WATCHTOWER_CLEANUP: "true"
+      WATCHTOWER_POLL_INTERVAL: ${WATCHTOWER_POLL_INTERVAL:-300}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Mounts docker login creds so watchtower can pull the private GHCR image.
+      # Compose does plain string substitution, so "~" never expands here -
+      # use $HOME (substituted from the shell env) instead.
+      - ${DOCKER_CONFIG_PATH:-$HOME/.docker/config.json}:/config.json:ro
+
+volumes:
+  caddy_data:
+  caddy_config:
+  pg_data:
+  app_storage:
