@@ -132,11 +132,23 @@ func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, status
 				ctx.Error("Not Found", fasthttp.StatusNotFound)
 			}
 
-		case strings.HasPrefix(path, "/invites/") && strings.HasSuffix(path, "/info"):
+		case path == "/invites/check":
+			method := string(ctx.Method())
+			if method == "POST" {
+				invitationEndpoints.CheckInvitation(ctx)
+			} else {
+				ctx.Error("Method Not Allowed", fasthttp.StatusMethodNotAllowed)
+			}
+		case strings.HasPrefix(path, "/invites/") && strings.HasSuffix(path, "/icon"):
 			parts := strings.Split(path, "/")
-			if len(parts) == 4 && parts[3] == "info" {
+			if len(parts) == 4 && parts[3] == "icon" {
 				ctx.SetUserValue("token", parts[2])
-				invitationEndpoints.GetInviteInfo(ctx)
+				method := string(ctx.Method())
+				if method == "GET" {
+					invitationEndpoints.GetInviteIcon(ctx)
+				} else {
+					ctx.Error("Method Not Allowed", fasthttp.StatusMethodNotAllowed)
+				}
 			} else {
 				ctx.Error("Not Found", fasthttp.StatusNotFound)
 			}
@@ -153,12 +165,18 @@ func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, status
 			} else {
 				ctx.Error("Not Found", fasthttp.StatusNotFound)
 			}
-		case path == "/invites/check":
-			method := string(ctx.Method())
-			if method == "POST" {
-				invitationEndpoints.CheckInvitation(ctx)
+		case strings.HasPrefix(path, "/invites/"):
+			parts := strings.Split(path, "/")
+			if len(parts) == 3 && parts[2] != "" {
+				ctx.SetUserValue("token", parts[2])
+				method := string(ctx.Method())
+				if method == "GET" {
+					invitationEndpoints.GetInviteInfo(ctx)
+				} else {
+					ctx.Error("Method Not Allowed", fasthttp.StatusMethodNotAllowed)
+				}
 			} else {
-				ctx.Error("Method Not Allowed", fasthttp.StatusMethodNotAllowed)
+				ctx.Error("Not Found", fasthttp.StatusNotFound)
 			}
 
 		case path == "/events":

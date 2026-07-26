@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -135,10 +136,10 @@ func (s *InvitationService) GenerateToken(inviteID, spaceURL string, expiresAt *
 
 	// Create token with custom claims
 	mapClaims := jwt.MapClaims{
-		"id":        inviteID,
+		"id":       inviteID,
 		"spaceUrl": spaceURL,
-		"iat":       issuedAt,
-		"nbf":       notBefore,
+		"iat":      issuedAt,
+		"nbf":      notBefore,
 	}
 	// Only include exp claim if it's not nil (JWT requires exp to be numeric if present)
 	if expiresAt != nil {
@@ -301,6 +302,52 @@ func (s *InvitationService) GetInviteInfo(tokenString string) (*InviteInfo, erro
 		Msg("[INVITE] GetInviteInfo complete")
 
 	return info, nil
+}
+
+// GetInviteIconStorageID resolves the storage ID for an invite's application icon (no auth required),
+// along with the invite's application ID so callers can verify the storage object actually belongs
+// to that application. The JWT's own expiry is still enforced by ValidateToken; only the invite's
+// max-uses/revocation-style checks are deliberately skipped here - the icon is not sensitive, and the
+// join dialog already surfaces an error state for expired/exhausted invites via
+// GetInviteInfo/CheckInvitationUsage.
+func (s *InvitationService) GetInviteIconStorageID(tokenString string) (storageID string, applicationID string, err error) {
+	log.Debug().Msg("[INVITE] GetInviteIconStorageID called")
+
+	claims, err := s.ValidateToken(tokenString)
+	if err != nil {
+		log.Debug().Err(err).Msg("[INVITE] Token validation failed")
+		return "", "", fmt.Errorf("invalid token: %w", err)
+	}
+	log.Debug().
+		Str("inviteId", claims.InviteID).
+		Msg("[INVITE] Token validated")
+
+	invite, err := s.repo.GetByID(claims.InviteID)
+	if err != nil {
+		log.Debug().
+			Str("inviteId", claims.InviteID).
+			Err(err).
+			Msg("[INVITE] Invite not found in database")
+		return "", "", fmt.Errorf("invite not found: %w", err)
+	}
+
+	app, err := s.appRepo.GetApplicationByID(invite.ApplicationID)
+	if err != nil || app == nil {
+		log.Debug().
+			Str("appId", invite.ApplicationID).
+			Err(err).
+			Msg("[INVITE] Application fetch failed")
+		return "", "", fmt.Errorf("application not found: %w", err)
+	}
+
+	if app.Icon == nil || !strings.HasPrefix(*app.Icon, "storage:") {
+		log.Debug().
+			Str("appId", invite.ApplicationID).
+			Msg("[INVITE] Application has no custom storage icon")
+		return "", "", fmt.Errorf("application has no custom icon")
+	}
+
+	return strings.TrimPrefix(*app.Icon, "storage:"), invite.ApplicationID, nil
 }
 
 // CheckInvitationUsage checks if an invitation can be used by a specific user

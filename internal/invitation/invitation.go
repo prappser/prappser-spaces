@@ -18,20 +18,20 @@ type Invitation struct {
 
 // InvitationUse tracks when a user joins via an invitation
 type InvitationUse struct {
-	ID             string `json:"id"`
-	InvitationID   string `json:"invitationId"`
-	UserPublicKey  string `json:"userPublicKey"`
-	UsedAt         int64  `json:"usedAt"`
+	ID            string `json:"id"`
+	InvitationID  string `json:"invitationId"`
+	UserPublicKey string `json:"userPublicKey"`
+	UsedAt        int64  `json:"usedAt"`
 }
 
 // InvitationResponse is returned when creating an invitation
 type InvitationResponse struct {
-	ID        string  `json:"id"`
-	Token     string  `json:"token"`
-	URL       string  `json:"url"`
-	DeepLink  string  `json:"deepLink"`
-	ExpiresAt *int64  `json:"expiresAt,omitempty"`
-	CreatedAt int64   `json:"createdAt"`
+	ID        string `json:"id"`
+	Token     string `json:"token"`
+	URL       string `json:"url"`
+	DeepLink  string `json:"deepLink"`
+	ExpiresAt *int64 `json:"expiresAt,omitempty"`
+	CreatedAt int64  `json:"createdAt"`
 }
 
 // InvitationOptions contains options for creating an invitation
@@ -68,7 +68,7 @@ type CheckInvitationResult struct {
 // InviteTokenClaims represents JWT claims for invitation tokens
 type InviteTokenClaims struct {
 	InviteID  string `json:"id"`
-	SpaceURL string `json:"spaceUrl"`
+	SpaceURL  string `json:"spaceUrl"`
 	IssuedAt  int64  `json:"iat"`
 	ExpiresAt *int64 `json:"exp,omitempty"`
 }
