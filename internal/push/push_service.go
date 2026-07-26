@@ -137,19 +137,21 @@ func (s *PushService) deliver(sub *Subscription, vapid *SpaceVapid, payload []by
 
 // pushPayload is the wire shape sent to the browser - matches the WebSocket event wire format.
 type pushPayload struct {
-	EventID              string                 `json:"eventId"`
-	Type                 string                 `json:"type"`
-	ApplicationID        string                 `json:"applicationId"`
-	ApplicationName      string                 `json:"applicationName,omitempty"`
-	CreatorDisplayName   string                 `json:"creatorDisplayName,omitempty"`
-	Data                 map[string]interface{} `json:"data"`
-	Timestamp            int64                  `json:"timestamp"`
+	EventID            string                 `json:"eventId"`
+	Type               string                 `json:"type"`
+	CreatorPublicKey   string                 `json:"creatorPublicKey"`
+	ApplicationID      string                 `json:"applicationId"`
+	ApplicationName    string                 `json:"applicationName,omitempty"`
+	CreatorDisplayName string                 `json:"creatorDisplayName,omitempty"`
+	Data               map[string]interface{} `json:"data"`
+	Timestamp          int64                  `json:"timestamp"`
 }
 
 func buildPayload(ev *event.Event, appName string, creatorDisplayName string) ([]byte, error) {
 	p := pushPayload{
 		EventID:            ev.ID,
 		Type:               string(ev.Type),
+		CreatorPublicKey:   ev.CreatorPublicKey,
 		ApplicationID:      ev.ApplicationID,
 		ApplicationName:    appName,
 		CreatorDisplayName: creatorDisplayName,

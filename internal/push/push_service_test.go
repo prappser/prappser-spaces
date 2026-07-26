@@ -1,6 +1,7 @@
 package push
 
 import (
+	"encoding/json"
 	"fmt"
 	"sync"
 	"testing"
@@ -12,14 +13,14 @@ import (
 
 // mockPushRepository is a hand-written in-memory repository for unit tests.
 type mockPushRepository struct {
-	mu            sync.Mutex
-	subscriptions map[string]*Subscription
-	spaceVapid    *SpaceVapid
+	mu               sync.Mutex
+	subscriptions    map[string]*Subscription
+	spaceVapid       *SpaceVapid
 	markSuccessCalls []struct {
 		id string
 		ts int64
 	}
-	incrementFailureCalls []string
+	incrementFailureCalls   []string
 	deleteSubscriptionCalls []struct {
 		id            string
 		userPublicKey string
@@ -386,4 +387,73 @@ func TestPushService_Push_ShouldUseSpaceVapidForAllRecipients(t *testing.T) {
 		assert.Equal(t, "space-pub-key", c.vapid.VapidPublicKey)
 		assert.Equal(t, "space-priv-key", c.vapid.VapidPrivateKey)
 	}
+}
+
+func TestBuildPayload_ShouldProduceExactKeySetIncludingCreatorPublicKey(t *testing.T) {
+	// given
+	ev := makeEvent(event.EventTypeMemberAdded, "creator-pk", "app-1")
+
+	// when
+	payloadJSON, err := buildPayload(ev, "My App", "Creator Name")
+
+	// then
+	assert.NoError(t, err)
+
+	var decoded map[string]interface{}
+	assert.NoError(t, json.Unmarshal(payloadJSON, &decoded))
+
+	expectedKeys := []string{
+		"eventId",
+		"type",
+		"creatorPublicKey",
+		"applicationId",
+		"applicationName",
+		"creatorDisplayName",
+		"data",
+		"timestamp",
+	}
+	actualKeys := make([]string, 0, len(decoded))
+	for k := range decoded {
+		actualKeys = append(actualKeys, k)
+	}
+	assert.ElementsMatch(t, expectedKeys, actualKeys)
+
+	assert.Equal(t, "evt-1", decoded["eventId"])
+	assert.Equal(t, "member_added", decoded["type"])
+	assert.Equal(t, "creator-pk", decoded["creatorPublicKey"])
+	assert.Equal(t, "app-1", decoded["applicationId"])
+	assert.Equal(t, "My App", decoded["applicationName"])
+	assert.Equal(t, "Creator Name", decoded["creatorDisplayName"])
+}
+
+func TestPushService_Push_ShouldDeliverCreatorPublicKeyInPayload(t *testing.T) {
+	// given
+	repo := newMockPushRepository()
+	sender := newMockWebpushSender(SendResult{StatusCode: 201})
+	vapidSvc := newMockSpaceVapidService("pub", "priv")
+	svc := NewPushService(repo, sender, vapidSvc)
+
+	repo.subscriptions["sub-1"] = &Subscription{
+		ID:                  "sub-1",
+		UserPublicKey:       "user-pk-1",
+		Endpoint:            "https://push.example.com/1",
+		P256dh:              "p256dh-value",
+		Auth:                "auth-value",
+		MutedApplicationIDs: []string{},
+	}
+
+	ev := makeEvent(event.EventTypeMemberAdded, "creator-pk-123", "app-1")
+
+	// when
+	svc.Push(ev, "My App", "Creator Name", []string{"user-pk-1"})
+
+	// then: the bytes actually delivered to the transport carry creatorPublicKey
+	assert.True(t, sender.waitForCalls(1, 2*time.Second), "expected 1 Send call")
+	sender.mu.Lock()
+	deliveredPayload := sender.calls[0].payload
+	sender.mu.Unlock()
+
+	var decoded map[string]interface{}
+	assert.NoError(t, json.Unmarshal(deliveredPayload, &decoded))
+	assert.Equal(t, "creator-pk-123", decoded["creatorPublicKey"])
 }

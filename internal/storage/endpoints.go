@@ -257,7 +257,6 @@ func (e *Endpoints) UploadUserAvatar(ctx *fasthttp.RequestCtx) {
 
 	// Fan out UserSettingsChanged to every app the user is a member of so member-list UIs refresh.
 	// Best-effort: errors are logged but do not fail the response.
-	// TODO: when a displayName-update endpoint is added, emit UserSettingsChanged here too.
 	apps, err := e.appRepo.GetApplicationsByMemberPublicKey(publicKey)
 	if err != nil {
 		log.Warn().Err(err).Str("publicKey", publicKey).Msg("[STORAGE] Failed to look up member apps for UserSettingsChanged fan-out")

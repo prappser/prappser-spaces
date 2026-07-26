@@ -39,6 +39,7 @@ type UserRepository interface {
 	GetUserByUsername(username string) (*User, error)
 	UpdateUserRole(publicKey string, role string) error
 	UpdateAvatarStorageID(publicKey string, avatarStorageID *string) error
+	UpdateUsername(publicKey, username string) error
 }
 
 // SpaceCreator creates a default space for new owners.
