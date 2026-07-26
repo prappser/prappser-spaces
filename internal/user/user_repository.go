@@ -92,3 +92,21 @@ func (r *userRepository) UpdateAvatarStorageID(publicKey string, avatarStorageID
 	}
 	return nil
 }
+
+func (r *userRepository) UpdateUsername(publicKey, username string) error {
+	result, err := r.db.Exec(
+		"UPDATE users SET username = $1 WHERE public_key = $2",
+		username, publicKey,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update username: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to check rows affected: %w", err)
+	}
+	if rows == 0 {
+		return fmt.Errorf("user with public key %s not found", publicKey)
+	}
+	return nil
+}

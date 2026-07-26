@@ -8,6 +8,7 @@ import (
 	"github.com/prappser/prappser-spaces/internal/health"
 	"github.com/prappser/prappser-spaces/internal/invitation"
 	"github.com/prappser/prappser-spaces/internal/middleware"
+	"github.com/prappser/prappser-spaces/internal/profile"
 	"github.com/prappser/prappser-spaces/internal/push"
 	"github.com/prappser/prappser-spaces/internal/setup"
 	"github.com/prappser/prappser-spaces/internal/space"
@@ -18,7 +19,7 @@ import (
 	"github.com/valyala/fasthttp"
 )
 
-func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, statusEndpoints *status.StatusEndpoints, healthEndpoints *health.HealthEndpoints, userService *user.UserService, appEndpoints *application.ApplicationEndpoints, invitationEndpoints *invitation.InvitationEndpoints, eventEndpoints *event.EventEndpoints, setupEndpoints *setup.SetupEndpoints, storageEndpoints *storage.Endpoints, wsHandler *websocket.Handler, spaceEndpoints *space.SpaceEndpoints, pushEndpoints *push.PushEndpoints) fasthttp.RequestHandler {
+func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, statusEndpoints *status.StatusEndpoints, healthEndpoints *health.HealthEndpoints, userService *user.UserService, appEndpoints *application.ApplicationEndpoints, invitationEndpoints *invitation.InvitationEndpoints, eventEndpoints *event.EventEndpoints, setupEndpoints *setup.SetupEndpoints, storageEndpoints *storage.Endpoints, wsHandler *websocket.Handler, spaceEndpoints *space.SpaceEndpoints, pushEndpoints *push.PushEndpoints, profileEndpoints *profile.ProfileEndpoints) fasthttp.RequestHandler {
 	authMiddleware := middleware.NewAuthMiddleware(userService)
 	corsMiddleware := middleware.NewCORSMiddleware(config.AllowedOrigins)
 
@@ -42,9 +43,12 @@ func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, status
 			userEndpoints.UserAuth(ctx)
 		case path == "/users/me":
 			method := string(ctx.Method())
-			if method == "GET" {
+			switch method {
+			case "GET":
 				authMiddleware.RequireAuth(userEndpoints.GetProfile)(ctx)
-			} else {
+			case "PATCH":
+				authMiddleware.RequireAuth(profileEndpoints.UpdateProfile)(ctx)
+			default:
 				ctx.Error("Method Not Allowed", fasthttp.StatusMethodNotAllowed)
 			}
 		case path == "/users/me/avatar":
