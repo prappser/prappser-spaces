@@ -32,10 +32,10 @@ import (
 	"github.com/prappser/prappser-spaces/internal/invitation"
 	"github.com/prappser/prappser-spaces/internal/keys"
 	"github.com/prappser/prappser-spaces/internal/push"
-	"github.com/prappser/prappser-spaces/internal/space"
-	"github.com/prappser/prappser-spaces/internal/storage"
 	"github.com/prappser/prappser-spaces/internal/setup"
+	"github.com/prappser/prappser-spaces/internal/space"
 	"github.com/prappser/prappser-spaces/internal/status"
+	"github.com/prappser/prappser-spaces/internal/storage"
 	"github.com/prappser/prappser-spaces/internal/user"
 	"github.com/prappser/prappser-spaces/internal/websocket"
 	"github.com/rs/zerolog"
@@ -176,7 +176,6 @@ func main() {
 
 	invitationRepository := invitation.NewInvitationRepository(db)
 	invitationService := invitation.NewInvitationService(invitationRepository, privateKey, publicKey, appRepository, db, userRepository, eventService)
-	invitationEndpoints := invitation.NewInvitationEndpoints(invitationService, config.ExternalURL)
 
 	setupEndpoints := setup.NewSetupEndpoints(db)
 
@@ -200,6 +199,7 @@ func main() {
 	}
 
 	storageService := storage.NewService(storageRepo, storageBackend, config.Storage.MaxFileSize)
+	invitationEndpoints := invitation.NewInvitationEndpoints(invitationService, storageService, config.ExternalURL)
 	storageEndpoints := storage.NewEndpoints(storageService, appRepository, eventService, userRepository, config.ExternalURL)
 	log.Info().Str("storageType", config.Storage.StorageType).Str("localPath", config.Storage.LocalPath).Msg("Storage service initialized")
 

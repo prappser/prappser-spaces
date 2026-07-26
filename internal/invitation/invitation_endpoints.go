@@ -1,21 +1,40 @@
 package invitation
 
 import (
+	"context"
+	"io"
+	"strconv"
+
 	"github.com/goccy/go-json"
 	"github.com/prappser/prappser-spaces/internal/httputil"
+	"github.com/prappser/prappser-spaces/internal/storage"
 	"github.com/prappser/prappser-spaces/internal/user"
 	"github.com/rs/zerolog/log"
 	"github.com/valyala/fasthttp"
 )
 
+// inviteIconResolver is the narrow interface Endpoints needs from *InvitationService.
+type inviteIconResolver interface {
+	GetInviteIconStorageID(token string) (storageID string, applicationID string, err error)
+}
+
+// iconStorageReader is the narrow interface Endpoints needs from *storage.Service.
+type iconStorageReader interface {
+	GetData(ctx context.Context, id string) (io.ReadCloser, *storage.Storage, error)
+}
+
 type InvitationEndpoints struct {
 	invitationService   *InvitationService
+	iconResolver        inviteIconResolver
+	iconReader          iconStorageReader
 	externalURLOverride string
 }
 
-func NewInvitationEndpoints(invitationService *InvitationService, externalURLOverride string) *InvitationEndpoints {
+func NewInvitationEndpoints(invitationService *InvitationService, storageService iconStorageReader, externalURLOverride string) *InvitationEndpoints {
 	return &InvitationEndpoints{
 		invitationService:   invitationService,
+		iconResolver:        invitationService,
+		iconReader:          storageService,
 		externalURLOverride: externalURLOverride,
 	}
 }
@@ -83,7 +102,7 @@ func (ie *InvitationEndpoints) CreateInvite(ctx *fasthttp.RequestCtx) {
 	json.NewEncoder(ctx).Encode(response)
 }
 
-// GetInviteInfo handles GET /invites/{token}/info
+// GetInviteInfo handles GET /invites/{token}
 // This is a public endpoint (no auth required)
 func (ie *InvitationEndpoints) GetInviteInfo(ctx *fasthttp.RequestCtx) {
 	// Extract token from path
@@ -125,6 +144,65 @@ func (ie *InvitationEndpoints) GetInviteInfo(ctx *fasthttp.RequestCtx) {
 	ctx.SetStatusCode(fasthttp.StatusOK)
 	ctx.SetContentType("application/json")
 	json.NewEncoder(ctx).Encode(info)
+}
+
+// GetInviteIcon handles GET /invites/{token}/icon
+// This is a public endpoint (no auth required) gated only by a valid invite token.
+// The icon is not sensitive, so this deliberately does not check expiry or max-uses.
+func (ie *InvitationEndpoints) GetInviteIcon(ctx *fasthttp.RequestCtx) {
+	token, _ := ctx.UserValue("token").(string)
+	if token == "" {
+		ctx.Error("Token is required", fasthttp.StatusBadRequest)
+		return
+	}
+
+	storageID, applicationID, err := ie.iconResolver.GetInviteIconStorageID(token)
+	if err != nil {
+		log.Debug().Err(err).Msg("[INVITE] Failed to resolve invite icon storage ID")
+		ctx.Error("Icon not found", fasthttp.StatusNotFound)
+		return
+	}
+
+	reader, stored, err := ie.iconReader.GetData(ctx, storageID)
+	if err != nil {
+		log.Debug().Err(err).Str("storageId", storageID).Msg("[INVITE] Failed to load invite icon data")
+		ctx.Error("Icon not found", fasthttp.StatusNotFound)
+		return
+	}
+	defer reader.Close()
+
+	if stored.Status != string(storage.StorageStatusReady) {
+		ctx.Error("Icon not found", fasthttp.StatusNotFound)
+		return
+	}
+
+	// Storage.ApplicationID is nil for space-scoped uploads (avatars, and app icons uploaded during
+	// initial app registration, which have no app context yet). Only reject when the storage object
+	// is explicitly tied to a DIFFERENT application than the invite - this catches the IDOR where an
+	// attacker points their own app's Icon field at a victim's app-scoped storage ID.
+	// Residual gap: a storage object with a nil ApplicationID can still be cross-referenced by another
+	// application's Icon field. That's a deliberate trade-off - tightening it would 404 the common
+	// case of registration-time icons, which are uploaded with no app context at all.
+	if stored.ApplicationID != nil && *stored.ApplicationID != applicationID {
+		log.Warn().
+			Str("storageId", storageID).
+			Str("storageApplicationId", *stored.ApplicationID).
+			Str("inviteApplicationId", applicationID).
+			Msg("[INVITE] Rejected invite icon request: storage object belongs to a different application")
+		ctx.Error("Icon not found", fasthttp.StatusNotFound)
+		return
+	}
+
+	ctx.SetContentType(stored.ContentType)
+	ctx.Response.Header.Set("Content-Length", strconv.FormatInt(stored.SizeBytes, 10))
+	// Bytes are immutable per storageId, so this is safe to cache for a while. The token in the URL is
+	// a bearer credential (same one accepted by /invites/{token}/join), so keep this private to avoid
+	// inviting shared proxies/CDNs to retain a credential-bearing URL.
+	ctx.Response.Header.Set("Cache-Control", "private, max-age=3600")
+
+	if _, err := io.Copy(ctx, reader); err != nil {
+		log.Error().Err(err).Str("storageId", storageID).Msg("[INVITE] Failed to stream invite icon")
+	}
 }
 
 // CheckInvitationRequest represents the request body for checking invitation usage
