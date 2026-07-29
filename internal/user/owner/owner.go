@@ -3,7 +3,6 @@ package owner
 import (
 	"crypto/ed25519"
 	"encoding/base64"
-	"encoding/hex"
 	"fmt"
 	"strings"
 	"time"
@@ -12,7 +11,12 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/lestrrat-go/jwx/v3/jwa"
 	"github.com/lestrrat-go/jwx/v3/jwe"
+	"github.com/prappser/prappser-spaces/internal/keys"
 )
+
+// jweSaltHeaderParam is the custom JWE protected-header field carrying the
+// per-message Argon2id salt used to derive the direct-encryption key.
+const jweSaltHeaderParam = "salt"
 
 // JWE/JWS claims for owner registration
 type RegisterJWEClaims struct {
@@ -36,13 +40,30 @@ func ExtractJWEFromAuthorizationHeader(authHeader string) (string, error) {
 	return parts[1], nil
 }
 
-// DecryptJWE decrypts the JWE using the master password hash
-func DecryptJWE(encryptedJWE string, masterPasswordMD5Hash string) (*RegisterJWEClaims, error) {
-	decodedKey, err := hex.DecodeString(masterPasswordMD5Hash)
+// DecryptJWE decrypts the JWE using a key derived from the plaintext master
+// password and the salt carried in the JWE's protected header.
+func DecryptJWE(encryptedJWE string, masterPassword string) (*RegisterJWEClaims, error) {
+	msg, err := jwe.Parse([]byte(encryptedJWE))
 	if err != nil {
-		return nil, fmt.Errorf("invalid hex key: %w", err)
+		return nil, fmt.Errorf("failed to parse JWE: %w", err)
 	}
-	decrypted, err := jwe.Decrypt([]byte(encryptedJWE), jwe.WithKey(jwa.DIRECT(), decodedKey))
+
+	var saltB64 string
+	if err := msg.ProtectedHeaders().Get(jweSaltHeaderParam, &saltB64); err != nil {
+		return nil, fmt.Errorf("missing salt header: %w", err)
+	}
+
+	salt, err := base64.StdEncoding.DecodeString(saltB64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid salt encoding: %w", err)
+	}
+	if len(salt) != keys.SaltSize {
+		return nil, fmt.Errorf("invalid salt length: expected %d, got %d", keys.SaltSize, len(salt))
+	}
+
+	aesKey := keys.DeriveKey(masterPassword, salt)
+
+	decrypted, err := jwe.Decrypt([]byte(encryptedJWE), jwe.WithKey(jwa.DIRECT(), aesKey))
 	if err != nil {
 		return nil, fmt.Errorf("failed to decrypt JWE: %v", err)
 	}

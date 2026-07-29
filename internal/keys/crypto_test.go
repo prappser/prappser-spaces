@@ -6,6 +6,26 @@ import (
 	"testing"
 )
 
+func TestDeriveKey_IsDeterministicForSameSaltAndDiffersForDifferentSalt(t *testing.T) {
+	salt1 := make([]byte, SaltSize)
+	salt2 := make([]byte, SaltSize)
+	salt2[0] = 1 // guaranteed different from the all-zero salt1
+
+	key1a := DeriveKey("password", salt1)
+	key1b := DeriveKey("password", salt1)
+	key2 := DeriveKey("password", salt2)
+
+	if len(key1a) != KeySize {
+		t.Errorf("key size: got %d, want %d", len(key1a), KeySize)
+	}
+	if !bytes.Equal(key1a, key1b) {
+		t.Error("DeriveKey should be deterministic for the same password and salt")
+	}
+	if bytes.Equal(key1a, key2) {
+		t.Error("DeriveKey should produce different keys for different salts")
+	}
+}
+
 func TestGenerateEd25519KeyPair(t *testing.T) {
 	priv, pub, err := GenerateEd25519KeyPair()
 	if err != nil {

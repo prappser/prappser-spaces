@@ -1,8 +1,6 @@
 package internal
 
 import (
-	"crypto/md5"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -13,12 +11,13 @@ import (
 )
 
 type Config struct {
-	Users          user.Config
-	Storage        StorageConfig
-	Port           string
-	ExternalURL    string
-	AllowedOrigins []string
-	MasterPassword string
+	Users             user.Config
+	Storage           StorageConfig
+	Port              string
+	ExternalURL       string
+	AllowedOrigins    []string
+	MasterPassword    string
+	TrustProxyHeaders bool
 }
 
 type StorageConfig struct {
@@ -88,7 +87,7 @@ func maskSecret(s string) string {
 func (c *Config) String() string {
 	masked := *c
 	masked.MasterPassword = maskSecret(c.MasterPassword)
-	masked.Users.MasterPasswordMD5Hash = maskSecret(c.Users.MasterPasswordMD5Hash)
+	masked.Users.MasterPassword = maskSecret(c.Users.MasterPassword)
 	masked.Storage.S3AccessKey = maskSecret(c.Storage.S3AccessKey)
 	masked.Storage.S3SecretKey = maskSecret(c.Storage.S3SecretKey)
 	b, err := json.MarshalIndent(masked, "", "  ")
@@ -138,8 +137,7 @@ func LoadConfig() (*Config, error) {
 	}
 
 	// User config
-	hash := md5.Sum([]byte(envMasterPassword))
-	config.Users.MasterPasswordMD5Hash = hex.EncodeToString(hash[:])
+	config.Users.MasterPassword = envMasterPassword
 
 	config.Users.JWTExpirationHours = defaultJWTExpirationHours
 	if envJWTExpirationHours != "" {
@@ -171,6 +169,11 @@ func LoadConfig() (*Config, error) {
 	config.Storage.S3SecretKey = os.Getenv("STORAGE_S3_SECRET_KEY")
 	config.Storage.S3Region = getEnvOrDefault("STORAGE_S3_REGION", "us-east-1")
 	config.Storage.S3UseSSL = os.Getenv("STORAGE_S3_USE_SSL") != "false"
+
+	// Trust X-Forwarded-For for client-IP rate limiting. Defaults to true
+	// since production runs behind Railway's proxy; set TRUST_PROXY=false
+	// for local dev / direct exposure where the header is attacker-controlled.
+	config.TrustProxyHeaders = os.Getenv("TRUST_PROXY") != "false"
 
 	maxFileSizeMBStr := os.Getenv("STORAGE_MAX_FILE_SIZE_MB")
 	if maxFileSizeMBStr != "" {

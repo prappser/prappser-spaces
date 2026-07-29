@@ -2,7 +2,9 @@ package internal
 
 import (
 	"strings"
+	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/prappser/prappser-spaces/internal/application"
 	"github.com/prappser/prappser-spaces/internal/event"
 	"github.com/prappser/prappser-spaces/internal/health"
@@ -19,9 +21,45 @@ import (
 	"github.com/valyala/fasthttp"
 )
 
+const (
+	ipRateLimitPerMinute         = 30
+	identifierRateLimitPerMinute = 10
+)
+
+// challengePublicKeyKey extracts the publicKey query param used by
+// GET /users/challenge, for per-identifier rate limiting.
+func challengePublicKeyKey(ctx *fasthttp.RequestCtx) string {
+	return string(ctx.QueryArgs().Peek("publicKey"))
+}
+
+// authPublicKeyKey extracts the publicKey claim from the (unverified) JWS
+// bearer token used by POST /users/auth, for per-identifier rate limiting.
+// This mirrors the claim extraction in user.verifyUserAuthJWS - cheap since
+// no signature verification happens here.
+func authPublicKeyKey(ctx *fasthttp.RequestCtx) string {
+	authHeader := string(ctx.Request.Header.Peek("Authorization"))
+	parts := strings.SplitN(authHeader, " ", 2)
+	if len(parts) != 2 || parts[0] != "Bearer" {
+		return ""
+	}
+
+	token, _, err := jwt.NewParser().ParseUnverified(parts[1], jwt.MapClaims{})
+	if err != nil {
+		return ""
+	}
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return ""
+	}
+	publicKey, _ := claims["publicKey"].(string)
+	return publicKey
+}
+
 func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, statusEndpoints *status.StatusEndpoints, healthEndpoints *health.HealthEndpoints, userService *user.UserService, appEndpoints *application.ApplicationEndpoints, invitationEndpoints *invitation.InvitationEndpoints, eventEndpoints *event.EventEndpoints, setupEndpoints *setup.SetupEndpoints, storageEndpoints *storage.Endpoints, wsHandler *websocket.Handler, spaceEndpoints *space.SpaceEndpoints, pushEndpoints *push.PushEndpoints, profileEndpoints *profile.ProfileEndpoints) fasthttp.RequestHandler {
 	authMiddleware := middleware.NewAuthMiddleware(userService)
 	corsMiddleware := middleware.NewCORSMiddleware(config.AllowedOrigins)
+	ipRateLimiter := middleware.NewRateLimiter(ipRateLimitPerMinute, time.Minute, config.TrustProxyHeaders)
+	identifierRateLimiter := middleware.NewRateLimiter(identifierRateLimitPerMinute, time.Minute, config.TrustProxyHeaders)
 
 	handler := func(ctx *fasthttp.RequestCtx) {
 		path := string(ctx.Path())
@@ -36,11 +74,11 @@ func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, status
 			}
 
 		case path == "/users/owners/register":
-			userEndpoints.OwnerRegister(ctx)
+			ipRateLimiter.LimitByIP(userEndpoints.OwnerRegister)(ctx)
 		case path == "/users/challenge":
-			userEndpoints.GetChallenge(ctx)
+			ipRateLimiter.LimitByIP(identifierRateLimiter.LimitByKey(userEndpoints.GetChallenge, challengePublicKeyKey))(ctx)
 		case path == "/users/auth":
-			userEndpoints.UserAuth(ctx)
+			ipRateLimiter.LimitByIP(identifierRateLimiter.LimitByKey(userEndpoints.UserAuth, authPublicKeyKey))(ctx)
 		case path == "/users/me":
 			method := string(ctx.Method())
 			switch method {

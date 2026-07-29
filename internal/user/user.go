@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/goccy/go-json"
@@ -54,12 +55,15 @@ type UserEndpoints struct {
 	publicKey      ed25519.PublicKey
 	userService    *UserService
 	spaceCreator   SpaceCreator
-	// Add challenge storage for verification
-	challenges map[string]challengeInfo
+	// challenges holds the pending-login challenge storage for verification.
+	// UserEndpoints methods use value receivers, so this must be a pointer
+	// field - a plain sync.Mutex field would be copied per call and its lock
+	// would never actually protect the shared map.
+	challenges *challengeStore
 }
 
 type Config struct {
-	MasterPasswordMD5Hash   string
+	MasterPassword          string
 	RegistrationTokenTTLSec int32
 	JWTExpirationHours      int
 	ChallengeTTLSec         int
@@ -96,6 +100,65 @@ type challengeInfo struct {
 	expiresAt time.Time
 }
 
+// challengeStore is a mutex-guarded map of in-flight login challenges, keyed
+// by user public key. It must always be held behind a pointer (see the
+// comment on UserEndpoints.challenges).
+type challengeStore struct {
+	mu   sync.Mutex
+	data map[string]challengeInfo
+}
+
+func newChallengeStore() *challengeStore {
+	return &challengeStore{data: make(map[string]challengeInfo)}
+}
+
+func (s *challengeStore) store(publicKey string, info challengeInfo) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.data[publicKey] = info
+	// ponytail: opportunistic O(n) sweep on every store keeps the map from
+	// growing unbounded without a background goroutine; fine at this scale,
+	// switch to a ticking janitor if the challenge volume ever makes this sweep matter.
+	now := timeNowFunc()
+	for key, entry := range s.data {
+		if entry.expiresAt.Before(now) {
+			delete(s.data, key)
+		}
+	}
+}
+
+func (s *challengeStore) get(publicKey string) (challengeInfo, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	info, ok := s.data[publicKey]
+	return info, ok
+}
+
+func (s *challengeStore) delete(publicKey string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.data, publicKey)
+}
+
+// consume atomically retrieves and removes a challenge under a single lock
+// acquisition, so a challenge can be redeemed exactly once even if two
+// requests race to verify the same signed JWS concurrently - a separate
+// get() then delete() (two lock acquisitions) would let both see the
+// challenge as present and both succeed. exists reports whether a challenge
+// was found at all; expired reports whether it had already passed its TTL
+// (only meaningful when exists is true). Either way the entry is gone after
+// this call.
+func (s *challengeStore) consume(publicKey string) (info challengeInfo, exists bool, expired bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	info, exists = s.data[publicKey]
+	if !exists {
+		return challengeInfo{}, false, false
+	}
+	delete(s.data, publicKey)
+	return info, true, info.expiresAt.Before(timeNowFunc())
+}
+
 var timeNowFunc = time.Now
 
 func NewEndpoints(userRepository UserRepository, config Config, privateKey ed25519.PrivateKey, publicKey ed25519.PublicKey, userService *UserService, spaceCreator SpaceCreator) *UserEndpoints {
@@ -106,7 +169,7 @@ func NewEndpoints(userRepository UserRepository, config Config, privateKey ed255
 		publicKey:      publicKey,
 		userService:    userService,
 		spaceCreator:   spaceCreator,
-		challenges:     make(map[string]challengeInfo),
+		challenges:     newChallengeStore(),
 	}
 }
 
@@ -126,7 +189,7 @@ func (ue UserEndpoints) OwnerRegister(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	registerJWEClaims, err := owner.DecryptJWE(jwe, ue.config.MasterPasswordMD5Hash)
+	registerJWEClaims, err := owner.DecryptJWE(jwe, ue.config.MasterPassword)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to decrypt JWE")
 		ctx.Error("Failed to decrypt JWE", fasthttp.StatusUnauthorized)
@@ -224,20 +287,15 @@ func (ue UserEndpoints) GetChallenge(ctx *fasthttp.RequestCtx) {
 	publicKeyStr := string(publicKey)
 	log.Debug().Str("publicKey", publicKeyStr).Int("publicKeyLen", len(publicKeyStr)).Msg("[CHALLENGE] Challenge requested for user (full key)")
 
-	// Check if user exists
+	// Check if user exists. Internal DB errors are a real 500; a missing
+	// user is NOT reported as such below - see the not-found branch, which
+	// keeps the response shape identical to avoid a user-enumeration oracle.
 	user, err := ue.userRepository.GetUserByPublicKey(publicKeyStr)
 	if err != nil {
 		log.Error().Err(err).Str("publicKey", publicKeyStr[:min(50, len(publicKeyStr))]+"...").Msg("[CHALLENGE] Failed to get user")
 		ctx.Error("Internal server error", fasthttp.StatusInternalServerError)
 		return
 	}
-	if user == nil {
-		log.Error().Str("publicKey", publicKeyStr[:min(50, len(publicKeyStr))]+"...").Msg("[CHALLENGE] User not found")
-		ctx.Error("User not found", fasthttp.StatusNotFound)
-		return
-	}
-
-	log.Debug().Str("username", user.Username).Str("publicKey", publicKeyStr[:min(50, len(publicKeyStr))]+"...").Msg("[CHALLENGE] User found, generating challenge")
 
 	// Generate random challenge
 	challenge, err := generateChallenge()
@@ -249,13 +307,28 @@ func (ue UserEndpoints) GetChallenge(ctx *fasthttp.RequestCtx) {
 
 	expiresAt := time.Now().Add(time.Duration(ue.config.ChallengeTTLSec) * time.Second)
 
-	// Store challenge for verification (keyed by publicKey)
-	ue.challenges[publicKeyStr] = challengeInfo{
-		challenge: challenge,
-		expiresAt: expiresAt,
-	}
+	if user == nil {
+		// Do not store the challenge: it can never be used to complete
+		// auth, since UserAuth looks it up by publicKey and none exists.
+		// Response shape (200, random challenge, real expiresAt/spacePublicKey)
+		// matches the found case so callers can't distinguish "no such user"
+		// from "challenge issued" by status code or body shape.
+		// Residual timing gap: this branch skips challengeStore.store()'s
+		// lock+map-write+prune sweep that the found branch does below. Not
+		// dummy-worked, since the DB lookup above and generateChallenge()
+		// dominate the total latency either way - the store() delta is noise
+		// next to that, not worth the complexity of a fake write to match it.
+		log.Debug().Str("publicKey", publicKeyStr[:min(50, len(publicKeyStr))]+"...").Msg("[CHALLENGE] User not found, issuing decoy challenge")
+	} else {
+		log.Debug().Str("username", user.Username).Str("publicKey", publicKeyStr[:min(50, len(publicKeyStr))]+"...").Msg("[CHALLENGE] User found, generating challenge")
 
-	log.Debug().Str("publicKey", publicKeyStr[:min(50, len(publicKeyStr))]+"...").Time("expiresAt", expiresAt).Msg("[CHALLENGE] Challenge generated and stored")
+		ue.challenges.store(publicKeyStr, challengeInfo{
+			challenge: challenge,
+			expiresAt: expiresAt,
+		})
+
+		log.Debug().Str("publicKey", publicKeyStr[:min(50, len(publicKeyStr))]+"...").Time("expiresAt", expiresAt).Msg("[CHALLENGE] Challenge generated and stored")
+	}
 
 	// Convert space's Ed25519 public key to base64
 	spacePublicKeyString := base64.StdEncoding.EncodeToString(ue.publicKey)
@@ -323,8 +396,8 @@ func (ue UserEndpoints) UserAuth(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	// Clean up used challenge (keyed by publicKey)
-	delete(ue.challenges, claims.PublicKey)
+	// Challenge is already consumed (deleted) by verifyUserAuthJWS's atomic
+	// consume() call above - no separate cleanup needed here.
 
 	log.Debug().Str("username", user.Username).Msg("[AUTH] Authentication successful")
 
@@ -445,8 +518,11 @@ func (ue UserEndpoints) verifyUserAuthJWS(signedJWT string, ttlSec int) (*userAu
 
 	log.Debug().Str("publicKey", publicKeyPrefix).Msg("[VERIFY] JWT signature verified, checking challenge")
 
-	// 5. Verify that the challenge matches what was issued (keyed by publicKey)
-	storedChallenge, exists := ue.challenges[claims.PublicKey]
+	// 5. Verify that the challenge matches what was issued (keyed by publicKey).
+	// consume() retrieves and deletes it in one lock acquisition, so the
+	// challenge is redeemed exactly once - two concurrent replays of the same
+	// signed JWS can't both see it as present and both mint a JWT.
+	storedChallenge, exists, expired := ue.challenges.consume(claims.PublicKey)
 	if !exists {
 		log.Error().Str("publicKey", publicKeyPrefix).Msg("[VERIFY] No challenge found for user")
 		return nil, fmt.Errorf("no challenge found for user")
@@ -458,9 +534,8 @@ func (ue UserEndpoints) verifyUserAuthJWS(signedJWT string, ttlSec int) (*userAu
 	}
 
 	// Check if challenge has expired
-	if storedChallenge.expiresAt.Before(timeNow) {
+	if expired {
 		log.Error().Str("publicKey", publicKeyPrefix).Msg("[VERIFY] Challenge has expired")
-		delete(ue.challenges, claims.PublicKey)
 		return nil, fmt.Errorf("challenge has expired")
 	}
 
