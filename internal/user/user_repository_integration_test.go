@@ -27,6 +27,10 @@ func getTestDB(t *testing.T) *sql.DB {
 		t.Fatalf("Failed to ping database: %v", err)
 	}
 
+	// user_devices and push_subscriptions are included here (not just users)
+	// because RevokeDevice's push_subscriptions cleanup is a raw DELETE
+	// against that table (see device_repository.go) - the device
+	// repository integration tests below need it present.
 	schema := `
 		CREATE TABLE IF NOT EXISTS users (
 			public_key        TEXT PRIMARY KEY,
@@ -35,12 +39,37 @@ func getTestDB(t *testing.T) *sql.DB {
 			created_at        BIGINT NOT NULL,
 			avatar_storage_id TEXT
 		);
+		CREATE TABLE IF NOT EXISTS user_devices (
+			device_public_key TEXT PRIMARY KEY,
+			user_public_key   TEXT NOT NULL REFERENCES users(public_key) ON DELETE CASCADE,
+			device_name       TEXT,
+			created_at        BIGINT NOT NULL,
+			last_seen_at      BIGINT,
+			revoked_at        BIGINT
+		);
+		CREATE TABLE IF NOT EXISTS push_subscriptions (
+			id                    TEXT PRIMARY KEY,
+			device_public_key     TEXT NOT NULL REFERENCES user_devices(device_public_key) ON DELETE CASCADE,
+			endpoint              TEXT NOT NULL UNIQUE,
+			p256dh                TEXT NOT NULL,
+			auth                  TEXT NOT NULL,
+			categories            JSONB NOT NULL DEFAULT '{}'::jsonb,
+			muted_application_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+			created_at            BIGINT NOT NULL,
+			failure_count         INTEGER NOT NULL DEFAULT 0
+		);
 	`
 	if _, err := db.Exec(schema); err != nil {
 		t.Fatalf("Failed to create test schema: %v", err)
 	}
 
 	// Clean slate before each test.
+	if _, err := db.Exec("DELETE FROM push_subscriptions"); err != nil {
+		t.Fatalf("Failed to clean push_subscriptions: %v", err)
+	}
+	if _, err := db.Exec("DELETE FROM user_devices WHERE device_public_key LIKE 'test-%'"); err != nil {
+		t.Fatalf("Failed to clean user_devices: %v", err)
+	}
 	if _, err := db.Exec("DELETE FROM users WHERE public_key LIKE 'test-%'"); err != nil {
 		t.Fatalf("Failed to clean users: %v", err)
 	}

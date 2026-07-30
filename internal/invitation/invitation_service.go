@@ -268,7 +268,7 @@ func (s *InvitationService) GetInviteInfo(tokenString string) (*InviteInfo, erro
 
 	// Fetch actual creator username
 	log.Debug().
-		Str("publicKey", invite.CreatedByPublicKey[:20]+"...").
+		Str("publicKey", invite.CreatedByPublicKey[:min(20, len(invite.CreatedByPublicKey))]+"...").
 		Msg("[INVITE] Fetching creator details")
 	creatorUsername := "Unknown User"
 	creator, err := s.userRepository.GetUserByPublicKey(invite.CreatedByPublicKey)
@@ -449,11 +449,13 @@ type JoinResult struct {
 	LastEventID   string `json:"lastEventId,omitempty"`
 }
 
-// Join handles the complete join flow with transaction
-func (s *InvitationService) Join(tokenString, userPublicKey, userName string) (*JoinResult, error) {
+// Join handles the complete join flow with transaction. devicePublicKey is
+// optional; when empty it defaults to userPublicKey (device #1's key equals
+// the account key).
+func (s *InvitationService) Join(tokenString, userPublicKey, userName, devicePublicKey string) (*JoinResult, error) {
 	log.Debug().
 		Str("username", userName).
-		Str("publicKey", userPublicKey[:20]+"...").
+		Str("publicKey", userPublicKey[:min(20, len(userPublicKey))]+"...").
 		Msg("[INVITE] Join attempt started")
 
 	// Validate token
@@ -499,9 +501,10 @@ func (s *InvitationService) Join(tokenString, userPublicKey, userName string) (*
 	}
 
 	// Create user if doesn't exist (for member authentication)
-	log.Debug().Str("publicKey", userPublicKey[:20]+"...").Str("username", userName).Msg("[JOIN_SERVICE] Checking if user exists")
+	log.Debug().Str("publicKey", userPublicKey[:min(20, len(userPublicKey))]+"...").Str("username", userName).Msg("[JOIN_SERVICE] Checking if user exists")
 	existingUser, err := s.userRepository.GetUserByPublicKey(userPublicKey)
-	if err != nil || existingUser == nil {
+	isNewAccount := err != nil || existingUser == nil
+	if isNewAccount {
 		log.Debug().Str("username", userName).Msg("[JOIN_SERVICE] User not found, creating member user")
 
 		// Validate public key is not empty
@@ -533,6 +536,24 @@ func (s *InvitationService) Join(tokenString, userPublicKey, userName string) (*
 		log.Debug().Str("username", userName).Msg("[JOIN_SERVICE] User already exists")
 	}
 
+	// Join is PUBLIC and unauthenticated - it never proves possession of
+	// userPublicKey's private key. A client-supplied devicePublicKey is only
+	// honored on the new-account branch, where it names the caller's own
+	// brand-new account and device together. For an EXISTING account, a
+	// caller presenting any valid invite token could otherwise bind an
+	// arbitrary device key to someone else's account and mint JWTs as them -
+	// so existing accounts always get device #1 (their own key) regardless
+	// of what the request claims, and adding further devices to an existing
+	// account must go through the delegation flow in RegisterDevice.
+	joiningDevicePublicKey := userPublicKey
+	if isNewAccount && devicePublicKey != "" {
+		joiningDevicePublicKey = devicePublicKey
+	}
+	if err := s.userRepository.EnsureDevice(joiningDevicePublicKey, userPublicKey, nil, time.Now().Unix()); err != nil {
+		log.Error().Err(err).Str("username", userName).Msg("[JOIN_SERVICE] Failed to ensure device")
+		return nil, fmt.Errorf("failed to ensure device: %w", err)
+	}
+
 	// Check if user is already a member (idempotent)
 	isMember, err := s.appRepo.IsMember(invite.ApplicationID, userPublicKey)
 	if err != nil {
@@ -543,7 +564,7 @@ func (s *InvitationService) Join(tokenString, userPublicKey, userName string) (*
 		// User is already a member - return success with existing data (idempotent)
 		log.Debug().
 			Str("applicationId", invite.ApplicationID).
-			Str("userPublicKey", userPublicKey[:20]+"...").
+			Str("userPublicKey", userPublicKey[:min(20, len(userPublicKey))]+"...").
 			Msg("[JOIN_SERVICE] User is already a member, returning success (idempotent)")
 
 		member, err := s.appRepo.GetMemberByPublicKey(invite.ApplicationID, userPublicKey)
@@ -605,7 +626,7 @@ func (s *InvitationService) Join(tokenString, userPublicKey, userName string) (*
 
 	log.Debug().
 		Str("applicationId", invite.ApplicationID).
-		Str("userPublicKey", userPublicKey[:20]+"...").
+		Str("userPublicKey", userPublicKey[:min(20, len(userPublicKey))]+"...").
 		Msg("[INVITE] member_added event produced and executed")
 
 	// Begin transaction for invitation usage tracking
@@ -635,7 +656,7 @@ func (s *InvitationService) Join(tokenString, userPublicKey, userName string) (*
 		Str("inviteId", invite.ID).
 		Str("applicationId", invite.ApplicationID).
 		Str("username", userName).
-		Str("userPublicKey", userPublicKey[:20]+"...").
+		Str("userPublicKey", userPublicKey[:min(20, len(userPublicKey))]+"...").
 		Str("role", invite.Role).
 		Msg("[INVITE] Join successful - new member added")
 

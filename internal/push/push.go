@@ -33,10 +33,10 @@ func (c Categories) Has(name string) bool {
 	}
 }
 
-// Subscription represents a browser PushSubscription registered by a user.
+// Subscription represents a browser PushSubscription registered by a device.
 type Subscription struct {
 	ID                  string
-	UserPublicKey       string
+	DevicePublicKey     string
 	Endpoint            string
 	P256dh              string
 	Auth                string
@@ -72,9 +72,11 @@ type PushRepository interface {
 	GetSpaceVapid() (*SpaceVapid, error)
 	CreateSubscription(s *Subscription) error
 	UpdateSubscription(s *Subscription) error
-	DeleteSubscription(id, userPublicKey string) error
+	DeleteSubscription(id, devicePublicKey string) error
+	// GetSubscriptionsForUsers takes ACCOUNT keys (not device keys) and joins
+	// through user_devices to every non-revoked device of those accounts.
 	GetSubscriptionsForUsers(userPublicKeys []string) ([]*Subscription, error)
-	GetSubscriptionByID(id, userPublicKey string) (*Subscription, error)
+	GetSubscriptionByID(id, devicePublicKey string) (*Subscription, error)
 	MarkSuccess(id string, ts int64) error
 	IncrementFailure(id string) error
 }

@@ -18,7 +18,7 @@ type mockUserRepository struct {
 
 func newMockUserRepository() *mockUserRepository {
 	return &mockUserRepository{
-		users:           make(map[string]*User),
+		users: make(map[string]*User),
 		updateRoleCalls: []struct {
 			publicKey string
 			role      string
@@ -62,6 +62,18 @@ func (m *mockUserRepository) UpdateUserRole(publicKey string, role string) error
 		return fmt.Errorf("user not found")
 	}
 	user.Role = role
+	return nil
+}
+
+func (m *mockUserRepository) EnsureDevice(devicePublicKey, userPublicKey string, deviceName *string, createdAt int64) error {
+	return nil
+}
+func (m *mockUserRepository) GetDevice(devicePublicKey string) (*Device, error) { return nil, nil }
+func (m *mockUserRepository) ListDevices(userPublicKey string) ([]*Device, error) {
+	return nil, nil
+}
+func (m *mockUserRepository) RevokeDevice(devicePublicKey string, ts int64) error { return nil }
+func (m *mockUserRepository) TouchDeviceLastSeen(devicePublicKey string, ts int64) error {
 	return nil
 }
 

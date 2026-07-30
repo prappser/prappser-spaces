@@ -74,12 +74,12 @@ func (r *pushRepository) CreateSubscription(s *Subscription) error {
 
 	query := `
 		INSERT INTO push_subscriptions
-		  (id, user_public_key, endpoint, p256dh, auth, device_label, categories, muted_application_ids, created_at, last_success_at, failure_count)
+		  (id, device_public_key, endpoint, p256dh, auth, device_label, categories, muted_application_ids, created_at, last_success_at, failure_count)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`
 
 	_, err = r.db.Exec(query,
 		s.ID,
-		s.UserPublicKey,
+		s.DevicePublicKey,
 		s.Endpoint,
 		s.P256dh,
 		s.Auth,
@@ -97,7 +97,7 @@ func (r *pushRepository) CreateSubscription(s *Subscription) error {
 }
 
 // UpdateSubscription updates mutable fields of a subscription.
-// The WHERE clause includes user_public_key as an ownership guard.
+// The WHERE clause includes device_public_key as an ownership guard.
 func (r *pushRepository) UpdateSubscription(s *Subscription) error {
 	categoriesJSON, err := json.Marshal(s.Categories)
 	if err != nil {
@@ -116,7 +116,7 @@ func (r *pushRepository) UpdateSubscription(s *Subscription) error {
 		    auth                  = $3,
 		    categories            = $4,
 		    muted_application_ids = $5
-		WHERE id = $6 AND user_public_key = $7`
+		WHERE id = $6 AND device_public_key = $7`
 
 	result, err := r.db.Exec(query,
 		s.Endpoint,
@@ -125,7 +125,7 @@ func (r *pushRepository) UpdateSubscription(s *Subscription) error {
 		string(categoriesJSON),
 		string(mutedJSON),
 		s.ID,
-		s.UserPublicKey,
+		s.DevicePublicKey,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update subscription: %w", err)
@@ -140,12 +140,12 @@ func (r *pushRepository) UpdateSubscription(s *Subscription) error {
 	return nil
 }
 
-// DeleteSubscription removes a subscription by id, scoped to the owning user.
+// DeleteSubscription removes a subscription by id, scoped to the owning device.
 // Returns an error if no row was deleted (not owned or not found).
-func (r *pushRepository) DeleteSubscription(id, userPublicKey string) error {
+func (r *pushRepository) DeleteSubscription(id, devicePublicKey string) error {
 	result, err := r.db.Exec(
-		`DELETE FROM push_subscriptions WHERE id = $1 AND user_public_key = $2`,
-		id, userPublicKey,
+		`DELETE FROM push_subscriptions WHERE id = $1 AND device_public_key = $2`,
+		id, devicePublicKey,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to delete subscription: %w", err)
@@ -160,7 +160,8 @@ func (r *pushRepository) DeleteSubscription(id, userPublicKey string) error {
 	return nil
 }
 
-// GetSubscriptionsForUsers returns all push subscriptions owned by any of the given user public keys.
+// GetSubscriptionsForUsers returns all push subscriptions owned by any
+// non-revoked device belonging to any of the given ACCOUNT public keys.
 // Returns an empty slice when userPublicKeys is empty.
 func (r *pushRepository) GetSubscriptionsForUsers(userPublicKeys []string) ([]*Subscription, error) {
 	if len(userPublicKeys) == 0 {
@@ -176,10 +177,11 @@ func (r *pushRepository) GetSubscriptionsForUsers(userPublicKeys []string) ([]*S
 	}
 
 	query := fmt.Sprintf(`
-		SELECT id, user_public_key, endpoint, p256dh, auth, device_label,
-		       categories, muted_application_ids, created_at, last_success_at, failure_count
-		FROM push_subscriptions
-		WHERE user_public_key IN (%s)`, strings.Join(placeholders, ","))
+		SELECT ps.id, ps.device_public_key, ps.endpoint, ps.p256dh, ps.auth, ps.device_label,
+		       ps.categories, ps.muted_application_ids, ps.created_at, ps.last_success_at, ps.failure_count
+		FROM push_subscriptions ps
+		JOIN user_devices ud ON ud.device_public_key = ps.device_public_key
+		WHERE ud.user_public_key IN (%s) AND ud.revoked_at IS NULL`, strings.Join(placeholders, ","))
 
 	rows, err := r.db.Query(query, args...)
 	if err != nil {
@@ -197,7 +199,7 @@ func (r *pushRepository) GetSubscriptionsForUsers(userPublicKeys []string) ([]*S
 
 		err := rows.Scan(
 			&s.ID,
-			&s.UserPublicKey,
+			&s.DevicePublicKey,
 			&s.Endpoint,
 			&s.P256dh,
 			&s.Auth,
@@ -240,14 +242,14 @@ func (r *pushRepository) GetSubscriptionsForUsers(userPublicKeys []string) ([]*S
 	return subs, nil
 }
 
-// GetSubscriptionByID returns a single subscription by id, scoped to the owning user.
-// Returns nil, nil when not found or not owned by userPublicKey.
-func (r *pushRepository) GetSubscriptionByID(id, userPublicKey string) (*Subscription, error) {
+// GetSubscriptionByID returns a single subscription by id, scoped to the owning device.
+// Returns nil, nil when not found or not owned by devicePublicKey.
+func (r *pushRepository) GetSubscriptionByID(id, devicePublicKey string) (*Subscription, error) {
 	query := `
-		SELECT id, user_public_key, endpoint, p256dh, auth, device_label,
+		SELECT id, device_public_key, endpoint, p256dh, auth, device_label,
 		       categories, muted_application_ids, created_at, last_success_at, failure_count
 		FROM push_subscriptions
-		WHERE id = $1 AND user_public_key = $2`
+		WHERE id = $1 AND device_public_key = $2`
 
 	s := &Subscription{}
 	var categoriesJSON string
@@ -255,9 +257,9 @@ func (r *pushRepository) GetSubscriptionByID(id, userPublicKey string) (*Subscri
 	var deviceLabel sql.NullString
 	var lastSuccessAt sql.NullInt64
 
-	err := r.db.QueryRow(query, id, userPublicKey).Scan(
+	err := r.db.QueryRow(query, id, devicePublicKey).Scan(
 		&s.ID,
-		&s.UserPublicKey,
+		&s.DevicePublicKey,
 		&s.Endpoint,
 		&s.P256dh,
 		&s.Auth,

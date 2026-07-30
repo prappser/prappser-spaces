@@ -26,8 +26,10 @@ func setAuthUser(ctx *fasthttp.RequestCtx, u *user.User) {
 	ctx.SetUserValue("user", u)
 }
 
+// testUser sets DevicePublicKey equal to PublicKey, matching how legacy
+// tokens (and device #1) resolve: device #1's key equals the account key.
 func testUser(publicKey string) *user.User {
-	return &user.User{PublicKey: publicKey, Username: "testuser", Role: "user"}
+	return &user.User{PublicKey: publicKey, DevicePublicKey: publicKey, Username: "testuser", Role: "user"}
 }
 
 // newTestEndpoints wires a mock repo and mock VAPID service into PushEndpoints.
@@ -150,7 +152,7 @@ func TestUpdateSubscription_ShouldReturn200WithMutedApplicationIDs(t *testing.T)
 	ep, repo := newTestEndpoints()
 	repo.subscriptions["sub-1"] = &Subscription{
 		ID:                  "sub-1",
-		UserPublicKey:       "user-pk-1",
+		DevicePublicKey:     "user-pk-1",
 		Endpoint:            "https://push.example.com/old",
 		P256dh:              "old-p256",
 		Auth:                "old-auth",
@@ -175,11 +177,11 @@ func TestUpdateSubscription_ShouldReturn404WhenNotOwned(t *testing.T) {
 	// given
 	ep, repo := newTestEndpoints()
 	repo.subscriptions["sub-1"] = &Subscription{
-		ID:            "sub-1",
-		UserPublicKey: "other-user",
-		Endpoint:      "https://push.example.com/1",
-		P256dh:        "p256",
-		Auth:          "auth",
+		ID:              "sub-1",
+		DevicePublicKey: "other-user",
+		Endpoint:        "https://push.example.com/1",
+		P256dh:          "p256",
+		Auth:            "auth",
 	}
 
 	ctx := newTestRequestCtx("PATCH", `{}`)
@@ -199,11 +201,11 @@ func TestDeleteSubscription_ShouldReturn204(t *testing.T) {
 	// given
 	ep, repo := newTestEndpoints()
 	repo.subscriptions["sub-1"] = &Subscription{
-		ID:            "sub-1",
-		UserPublicKey: "user-pk-1",
-		Endpoint:      "https://push.example.com/1",
-		P256dh:        "p256",
-		Auth:          "auth",
+		ID:              "sub-1",
+		DevicePublicKey: "user-pk-1",
+		Endpoint:        "https://push.example.com/1",
+		P256dh:          "p256",
+		Auth:            "auth",
 	}
 
 	ctx := newTestRequestCtx("DELETE", "")
