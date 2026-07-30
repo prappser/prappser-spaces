@@ -64,20 +64,30 @@ func (s *jtiStore) markUsed(jti string, expiresAt time.Time) bool {
 }
 
 // DeviceEndpoints exposes HTTP handlers for the device roster: registering a
-// new device via delegation, listing an account's devices, and revoking one.
+// new device via delegation or password credentials, listing an account's
+// devices, and revoking one.
 type DeviceEndpoints struct {
 	userRepository UserRepository
 	usedJTIs       *jtiStore
+	// verifierKey is the HKDF-derived key used to verify password
+	// credentials on the password enrollment path (see resolveEnrollCredential
+	// and password.go's verifyAuthSecret). Shared with PasswordEndpoints,
+	// both derived once from the space keypair in main.go.
+	verifierKey []byte
 }
 
 // NewDeviceEndpoints creates a new DeviceEndpoints.
-func NewDeviceEndpoints(userRepository UserRepository) *DeviceEndpoints {
-	return &DeviceEndpoints{userRepository: userRepository, usedJTIs: newJTIStore()}
+func NewDeviceEndpoints(userRepository UserRepository, verifierKey []byte) *DeviceEndpoints {
+	return &DeviceEndpoints{userRepository: userRepository, usedJTIs: newJTIStore(), verifierKey: verifierKey}
 }
 
 // registerDeviceRequest is the request body for POST /users/devices.
+// Exactly one credential kind must be present: Delegation, or
+// Identifier+AuthSecret (see resolveEnrollCredential).
 type registerDeviceRequest struct {
-	Delegation      string `json:"delegation"`
+	Delegation      string `json:"delegation,omitempty"`
+	Identifier      string `json:"identifier,omitempty"`
+	AuthSecret      string `json:"authSecret,omitempty"`
 	DevicePublicKey string `json:"devicePublicKey"`
 	DeviceName      string `json:"deviceName,omitempty"`
 }
@@ -102,15 +112,14 @@ func (de *DeviceEndpoints) RegisterDevice(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	if req.Delegation == "" || req.DevicePublicKey == "" {
-		ctx.Error("delegation and devicePublicKey are required", fasthttp.StatusBadRequest)
+	if req.DevicePublicKey == "" {
+		ctx.Error("devicePublicKey is required", fasthttp.StatusBadRequest)
 		return
 	}
 
-	signerDevice, err := de.verifyDelegation(req.Delegation)
+	accountPublicKey, statusCode, err := de.resolveEnrollCredential(&req)
 	if err != nil {
-		log.Debug().Err(err).Msg("[DEVICE] Delegation verification failed")
-		ctx.Error("invalid delegation", fasthttp.StatusUnauthorized)
+		ctx.Error(err.Error(), statusCode)
 		return
 	}
 
@@ -127,7 +136,7 @@ func (de *DeviceEndpoints) RegisterDevice(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	statusCode := fasthttp.StatusCreated
+	responseStatusCode := fasthttp.StatusCreated
 	now := time.Now().Unix()
 	createdAt := now
 
@@ -136,12 +145,12 @@ func (de *DeviceEndpoints) RegisterDevice(ctx *fasthttp.RequestCtx) {
 			ctx.Error("device revoked", fasthttp.StatusConflict)
 			return
 		}
-		if existing.UserPublicKey != signerDevice.UserPublicKey {
+		if existing.UserPublicKey != accountPublicKey {
 			ctx.Error("device public key already registered under a different account", fasthttp.StatusConflict)
 			return
 		}
 		// Idempotent retry: same account, still live.
-		statusCode = fasthttp.StatusOK
+		responseStatusCode = fasthttp.StatusOK
 		createdAt = existing.CreatedAt
 	}
 
@@ -149,13 +158,13 @@ func (de *DeviceEndpoints) RegisterDevice(ctx *fasthttp.RequestCtx) {
 	if req.DeviceName != "" {
 		deviceName = &req.DeviceName
 	}
-	if err := de.userRepository.EnsureDevice(req.DevicePublicKey, signerDevice.UserPublicKey, deviceName, now); err != nil {
+	if err := de.userRepository.EnsureDevice(req.DevicePublicKey, accountPublicKey, deviceName, now); err != nil {
 		log.Error().Err(err).Msg("[DEVICE] Failed to ensure device")
 		ctx.Error("internal server error", fasthttp.StatusInternalServerError)
 		return
 	}
 
-	account, err := de.userRepository.GetUserByPublicKey(signerDevice.UserPublicKey)
+	account, err := de.userRepository.GetUserByPublicKey(accountPublicKey)
 	if err != nil || account == nil {
 		log.Error().Err(err).Msg("[DEVICE] Failed to fetch account for registered device")
 		ctx.Error("internal server error", fasthttp.StatusInternalServerError)
@@ -163,7 +172,7 @@ func (de *DeviceEndpoints) RegisterDevice(ctx *fasthttp.RequestCtx) {
 	}
 
 	log.Debug().Str("devicePublicKey", req.DevicePublicKey).Msg("[DEVICE] Device registered")
-	ctx.SetStatusCode(statusCode)
+	ctx.SetStatusCode(responseStatusCode)
 	ctx.SetContentType("application/json")
 	json.NewEncoder(ctx).Encode(registerDeviceResponse{
 		UserPublicKey:   account.PublicKey,
@@ -172,6 +181,59 @@ func (de *DeviceEndpoints) RegisterDevice(ctx *fasthttp.RequestCtx) {
 		DevicePublicKey: req.DevicePublicKey,
 		CreatedAt:       createdAt,
 	})
+}
+
+// resolveEnrollCredential resolves the account public key a device
+// registration should attach to, from exactly one of two credential kinds:
+// a delegation JWS (an existing device vouching for the new one), or an
+// identifier+authSecret password credential. statusCode and err.Error() are
+// only meaningful when err is non-nil, and are exactly what RegisterDevice
+// should respond with.
+func (de *DeviceEndpoints) resolveEnrollCredential(req *registerDeviceRequest) (accountPublicKey string, statusCode int, err error) {
+	delegationPresent := req.Delegation != ""
+	identifierPresent := req.Identifier != ""
+	authSecretPresent := req.AuthSecret != ""
+	passwordPresent := identifierPresent || authSecretPresent
+
+	if delegationPresent && passwordPresent {
+		return "", fasthttp.StatusBadRequest, fmt.Errorf("provide either delegation or identifier+authSecret, not both")
+	}
+	if !delegationPresent && !passwordPresent {
+		return "", fasthttp.StatusBadRequest, fmt.Errorf("delegation or identifier+authSecret is required")
+	}
+	if passwordPresent && (!identifierPresent || !authSecretPresent) {
+		return "", fasthttp.StatusBadRequest, fmt.Errorf("identifier and authSecret are both required")
+	}
+
+	if delegationPresent {
+		signerDevice, verifyErr := de.verifyDelegation(req.Delegation)
+		if verifyErr != nil {
+			log.Debug().Err(verifyErr).Msg("[DEVICE] Delegation verification failed")
+			return "", fasthttp.StatusUnauthorized, fmt.Errorf("invalid delegation")
+		}
+		return signerDevice.UserPublicKey, 0, nil
+	}
+
+	identifier, normErr := NormalizeIdentifier(req.Identifier)
+	if normErr != nil {
+		return "", fasthttp.StatusBadRequest, fmt.Errorf("identifier is invalid")
+	}
+
+	userPublicKey, verifier, lookupErr := de.userRepository.GetPasswordCredential(identifier)
+	if lookupErr != nil {
+		log.Error().Err(lookupErr).Msg("[DEVICE] Failed to look up password credential")
+		return "", fasthttp.StatusInternalServerError, fmt.Errorf("internal server error")
+	}
+	// Miss, empty verifier, or mismatch all collapse to the same generic
+	// error - the body must be byte-identical for an unknown identifier and
+	// a wrong password (see password_endpoints.go's GetSalt for the same
+	// anti-enumeration rationale).
+	if userPublicKey == "" || verifier == "" || !verifyAuthSecret(de.verifierKey, verifier, req.AuthSecret) {
+		log.Debug().Msg("[DEVICE] Password credential check failed")
+		return "", fasthttp.StatusUnauthorized, fmt.Errorf("invalid credentials")
+	}
+
+	return userPublicKey, 0, nil
 }
 
 // verifyDelegation validates a delegation JWS and returns the signer's

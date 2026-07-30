@@ -214,9 +214,15 @@ func main() {
 
 	profileEndpoints := profile.NewProfileEndpoints(userRepository, appRepository, eventService)
 
-	deviceEndpoints := user.NewDeviceEndpoints(userRepository)
+	// Password-login secrets (salt derivation + verifier HMAC key) are
+	// derived from the space keypair, not stored independently - rotating
+	// the space keypair invalidates every password credential (see
+	// user.DerivePasswordSecrets).
+	saltSecret, verifierKey := user.DerivePasswordSecrets(privateKey.Seed())
+	deviceEndpoints := user.NewDeviceEndpoints(userRepository, verifierKey)
+	passwordEndpoints := user.NewPasswordEndpoints(userRepository, saltSecret, verifierKey)
 
-	requestHandler := internal.NewRequestHandler(config, userEndpoints, statusEndpoints, healthEndpoints, userService, appEndpoints, invitationEndpoints, eventEndpoints, setupEndpoints, storageEndpoints, wsHandler, spaceEndpoints, pushEndpoints, profileEndpoints, deviceEndpoints)
+	requestHandler := internal.NewRequestHandler(config, userEndpoints, statusEndpoints, healthEndpoints, userService, appEndpoints, invitationEndpoints, eventEndpoints, setupEndpoints, storageEndpoints, wsHandler, spaceEndpoints, pushEndpoints, profileEndpoints, deviceEndpoints, passwordEndpoints)
 
 	serverAddr := fmt.Sprintf(":%s", config.Port)
 	log.Info().Str("addr", serverAddr).Msg("Starting HTTP server")

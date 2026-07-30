@@ -34,6 +34,12 @@ func (noopUserRepository) RevokeDevice(devicePublicKey string, ts int64) error {
 func (noopUserRepository) TouchDeviceLastSeen(devicePublicKey string, ts int64) error {
 	return nil
 }
+func (noopUserRepository) SetPasswordCredentials(publicKey, identifier, passwordVerifier string) error {
+	return nil
+}
+func (noopUserRepository) GetPasswordCredential(identifier string) (string, string, error) {
+	return "", "", nil
+}
 
 // newTestRequestHandler builds the real NewRequestHandler with only
 // userEndpoints wired for real; every other endpoint dependency is nil,
@@ -45,7 +51,7 @@ func newTestRequestHandler(t *testing.T) fasthttp.RequestHandler {
 	assert.NoError(t, err)
 	userEndpoints := user.NewEndpoints(noopUserRepository{}, user.Config{ChallengeTTLSec: 300}, priv, pub, nil, nil)
 	cfg := &Config{TrustProxyHeaders: true}
-	return NewRequestHandler(cfg, userEndpoints, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	return NewRequestHandler(cfg, userEndpoints, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 }
 
 func newAuthRouteRequestCtx(path string) *fasthttp.RequestCtx {

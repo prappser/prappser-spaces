@@ -37,8 +37,11 @@ func getTestDB(t *testing.T) *sql.DB {
 			username          TEXT NOT NULL,
 			role              TEXT NOT NULL,
 			created_at        BIGINT NOT NULL,
-			avatar_storage_id TEXT
+			avatar_storage_id TEXT,
+			identifier        TEXT,
+			password_verifier TEXT
 		);
+		CREATE UNIQUE INDEX IF NOT EXISTS users_identifier_lower_idx ON users (lower(identifier));
 		CREATE TABLE IF NOT EXISTS user_devices (
 			device_public_key TEXT PRIMARY KEY,
 			user_public_key   TEXT NOT NULL REFERENCES users(public_key) ON DELETE CASCADE,
@@ -113,4 +116,65 @@ func TestUserRepository_UpdateUsername_ShouldErrorForUnknownPublicKey_Integratio
 
 	// then
 	assert.Error(t, err)
+}
+
+func TestUserRepository_SetPasswordCredentials_ShouldRoundTripWithGetPasswordCredential_Integration(t *testing.T) {
+	// given
+	db := getTestDB(t)
+	defer db.Close()
+	repo := NewUserRepository(db)
+
+	if _, err := db.Exec(
+		"INSERT INTO users (public_key, username, role, created_at) VALUES ($1,$2,$3,$4)",
+		"test-user-1", "Alice", "user", time.Now().Unix(),
+	); err != nil {
+		t.Fatalf("Failed to insert test user: %v", err)
+	}
+
+	// when
+	err := repo.SetPasswordCredentials("test-user-1", "test-alice", "hmac-sha256$dGVzdC12ZXJpZmllcg==")
+
+	// then
+	assert.NoError(t, err)
+	userPublicKey, verifier, err := repo.GetPasswordCredential("test-alice")
+	assert.NoError(t, err)
+	assert.Equal(t, "test-user-1", userPublicKey)
+	assert.Equal(t, "hmac-sha256$dGVzdC12ZXJpZmllcg==", verifier)
+}
+
+func TestUserRepository_GetPasswordCredential_ShouldReturnEmptyForUnknownIdentifier_Integration(t *testing.T) {
+	// given
+	db := getTestDB(t)
+	defer db.Close()
+	repo := NewUserRepository(db)
+
+	// when
+	userPublicKey, verifier, err := repo.GetPasswordCredential("test-does-not-exist")
+
+	// then
+	assert.NoError(t, err)
+	assert.Empty(t, userPublicKey)
+	assert.Empty(t, verifier)
+}
+
+func TestUserRepository_SetPasswordCredentials_ShouldReturnErrIdentifierTakenForDuplicateCaseInsensitive_Integration(t *testing.T) {
+	// given
+	db := getTestDB(t)
+	defer db.Close()
+	repo := NewUserRepository(db)
+
+	if _, err := db.Exec(
+		"INSERT INTO users (public_key, username, role, created_at) VALUES ($1,$2,$3,$4), ($5,$6,$7,$8)",
+		"test-user-1", "Alice", "user", time.Now().Unix(),
+		"test-user-2", "Bob", "user", time.Now().Unix(),
+	); err != nil {
+		t.Fatalf("Failed to insert test users: %v", err)
+	}
+	assert.NoError(t, repo.SetPasswordCredentials("test-user-1", "test-shared", "hmac-sha256$AAAA"))
+
+	// when - a different account claims the same identifier, differing only by case
+	err := repo.SetPasswordCredentials("test-user-2", "TEST-SHARED", "hmac-sha256$BBBB")
+
+	// then
+	assert.ErrorIs(t, err, ErrIdentifierTaken)
 }
