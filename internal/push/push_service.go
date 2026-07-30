@@ -110,7 +110,7 @@ func (s *PushService) deliver(sub *Subscription, vapid *SpaceVapid, payload []by
 			Int("statusCode", result.StatusCode).
 			Str("subscriptionId", sub.ID).
 			Msg("[PUSH] Subscription expired - deleting")
-		if err := s.repo.DeleteSubscription(sub.ID, sub.UserPublicKey); err != nil {
+		if err := s.repo.DeleteSubscription(sub.ID, sub.DevicePublicKey); err != nil {
 			log.Warn().Err(err).Str("subscriptionId", sub.ID).Msg("[PUSH] Failed to delete expired subscription")
 		}
 

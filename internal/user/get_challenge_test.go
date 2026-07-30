@@ -19,6 +19,9 @@ import (
 type getChallengeTestRepo struct {
 	users    map[string]*User
 	failWith error
+	// revoked marks a device (keyed by its public key, same key space as
+	// users here) as revoked in GetDevice.
+	revoked map[string]bool
 }
 
 func (r *getChallengeTestRepo) CreateUser(u *User) error { return nil }
@@ -36,6 +39,30 @@ func (r *getChallengeTestRepo) UpdateAvatarStorageID(publicKey string, avatarSto
 	return nil
 }
 func (r *getChallengeTestRepo) UpdateUsername(publicKey, username string) error { return nil }
+
+func (r *getChallengeTestRepo) EnsureDevice(devicePublicKey, userPublicKey string, deviceName *string, createdAt int64) error {
+	return nil
+}
+func (r *getChallengeTestRepo) GetDevice(devicePublicKey string) (*Device, error) {
+	if r.failWith != nil {
+		return nil, r.failWith
+	}
+	u, ok := r.users[devicePublicKey]
+	if !ok {
+		return nil, nil
+	}
+	d := &Device{DevicePublicKey: devicePublicKey, UserPublicKey: u.PublicKey}
+	if r.revoked[devicePublicKey] {
+		revokedAt := int64(1)
+		d.RevokedAt = &revokedAt
+	}
+	return d, nil
+}
+func (r *getChallengeTestRepo) ListDevices(userPublicKey string) ([]*Device, error) { return nil, nil }
+func (r *getChallengeTestRepo) RevokeDevice(devicePublicKey string, ts int64) error { return nil }
+func (r *getChallengeTestRepo) TouchDeviceLastSeen(devicePublicKey string, ts int64) error {
+	return nil
+}
 
 func newGetChallengeTestEndpoints(repo UserRepository) *UserEndpoints {
 	pub, priv, _ := ed25519.GenerateKey(rand.Reader)
@@ -72,8 +99,14 @@ func TestGetChallenge_ShouldReturnAndStoreChallengeForExistingUser(t *testing.T)
 	assert.Equal(t, resp.Challenge, stored.challenge)
 }
 
-func TestGetChallenge_ShouldReturnDecoyChallengeForUnknownUserWithoutStoringIt(t *testing.T) {
-	// given - no users in the repo
+// TestGetChallenge_ShouldReturn404ForUnknownDeviceWithoutStoringChallenge
+// covers the plan-directed behavior change from the pre-device-roster
+// decoy-response design: publicKey now names a DEVICE key rather than an
+// account key, and device keys are server-generated random 32-byte values,
+// not guessable identifiers like usernames - so returning 404 for an unknown
+// one doesn't reopen the account-enumeration oracle the old decoy avoided.
+func TestGetChallenge_ShouldReturn404ForUnknownDeviceWithoutStoringChallenge(t *testing.T) {
+	// given - no devices in the repo
 	repo := &getChallengeTestRepo{users: map[string]*User{}}
 	ep := newGetChallengeTestEndpoints(repo)
 	ctx := newChallengeRequestCtx("does-not-exist")
@@ -81,17 +114,27 @@ func TestGetChallenge_ShouldReturnDecoyChallengeForUnknownUserWithoutStoringIt(t
 	// when
 	ep.GetChallenge(ctx)
 
-	// then - same response shape as the found case (200, real expiresAt/spacePublicKey)
-	assert.Equal(t, fasthttp.StatusOK, ctx.Response.StatusCode())
-	var resp ChallengeResponse
-	assert.NoError(t, json.Unmarshal(ctx.Response.Body(), &resp))
-	assert.NotEmpty(t, resp.Challenge)
-	assert.NotZero(t, resp.ExpiresAt)
-	assert.NotEmpty(t, resp.SpacePublicKey)
+	// then
+	assert.Equal(t, fasthttp.StatusNotFound, ctx.Response.StatusCode())
 
-	// but the decoy challenge is never stored, so it can never authenticate
 	_, ok := ep.challenges.get("does-not-exist")
 	assert.False(t, ok)
+}
+
+func TestGetChallenge_ShouldReturn404ForRevokedDevice(t *testing.T) {
+	// given
+	repo := &getChallengeTestRepo{
+		users:   map[string]*User{"pk-1": {PublicKey: "pk-1", Username: "alice", Role: RoleUser}},
+		revoked: map[string]bool{"pk-1": true},
+	}
+	ep := newGetChallengeTestEndpoints(repo)
+	ctx := newChallengeRequestCtx("pk-1")
+
+	// when
+	ep.GetChallenge(ctx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusNotFound, ctx.Response.StatusCode())
 }
 
 func TestGetChallenge_ShouldReturn500OnRepositoryError(t *testing.T) {

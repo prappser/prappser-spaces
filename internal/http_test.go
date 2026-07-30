@@ -23,6 +23,17 @@ func (noopUserRepository) UpdateAvatarStorageID(publicKey string, avatarStorageI
 	return nil
 }
 func (noopUserRepository) UpdateUsername(publicKey, username string) error { return nil }
+func (noopUserRepository) EnsureDevice(devicePublicKey, userPublicKey string, deviceName *string, createdAt int64) error {
+	return nil
+}
+func (noopUserRepository) GetDevice(devicePublicKey string) (*user.Device, error) { return nil, nil }
+func (noopUserRepository) ListDevices(userPublicKey string) ([]*user.Device, error) {
+	return nil, nil
+}
+func (noopUserRepository) RevokeDevice(devicePublicKey string, ts int64) error { return nil }
+func (noopUserRepository) TouchDeviceLastSeen(devicePublicKey string, ts int64) error {
+	return nil
+}
 
 // newTestRequestHandler builds the real NewRequestHandler with only
 // userEndpoints wired for real; every other endpoint dependency is nil,
@@ -34,42 +45,72 @@ func newTestRequestHandler(t *testing.T) fasthttp.RequestHandler {
 	assert.NoError(t, err)
 	userEndpoints := user.NewEndpoints(noopUserRepository{}, user.Config{ChallengeTTLSec: 300}, priv, pub, nil, nil)
 	cfg := &Config{TrustProxyHeaders: true}
-	return NewRequestHandler(cfg, userEndpoints, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	return NewRequestHandler(cfg, userEndpoints, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 }
 
 func newAuthRouteRequestCtx(path string) *fasthttp.RequestCtx {
+	return newAuthRouteRequestCtxWithMethod("GET", path)
+}
+
+func newAuthRouteRequestCtxWithMethod(method, path string) *fasthttp.RequestCtx {
 	ctx := &fasthttp.RequestCtx{}
-	ctx.Request.Header.SetMethod("GET")
+	ctx.Request.Header.SetMethod(method)
 	ctx.Request.SetRequestURI(path)
 	return ctx
 }
 
 // TestRateLimiting_SharesIPBudgetAcrossAuthRoutes checks that the per-IP
 // limiter wired in NewRequestHandler is a single shared instance across
-// /users/challenge, /users/auth, and /users/owners/register - not one budget
-// per route - and that it actually trips.
+// /users/challenge, /users/auth, /users/owners/register, and POST
+// /users/devices - not one budget per route - and that it actually trips.
 func TestRateLimiting_SharesIPBudgetAcrossAuthRoutes(t *testing.T) {
 	// given
 	handler := newTestRequestHandler(t)
-	routes := []string{
-		"/users/challenge?publicKey=pk",
-		"/users/auth",
-		"/users/owners/register",
+	routes := []struct {
+		method string
+		path   string
+	}{
+		{"GET", "/users/challenge?publicKey=pk"},
+		{"POST", "/users/auth"},
+		{"POST", "/users/owners/register"},
+		{"POST", "/users/devices"},
 	}
 
-	// when - 30 requests split evenly across the three routes, all from the
+	// when - 30 requests split evenly across the four routes, all from the
 	// same (zero) RemoteIP, should all stay within the 30/min per-IP budget
 	for i := 0; i < 30; i++ {
-		ctx := newAuthRouteRequestCtx(routes[i%len(routes)])
+		r := routes[i%len(routes)]
+		ctx := newAuthRouteRequestCtxWithMethod(r.method, r.path)
 		handler(ctx)
 		assert.NotEqual(t, fasthttp.StatusTooManyRequests, ctx.Response.StatusCode(),
-			"request %d (route %s) should not be rate limited yet", i+1, routes[i%len(routes)])
+			"request %d (route %s) should not be rate limited yet", i+1, r.path)
 	}
 
-	// then - the 31st request, on any of the three routes, trips the shared
+	// then - the 31st request, on any of the four routes, trips the shared
 	// per-IP budget
-	ctx := newAuthRouteRequestCtx(routes[0])
+	ctx := newAuthRouteRequestCtxWithMethod(routes[0].method, routes[0].path)
 	handler(ctx)
 	assert.Equal(t, fasthttp.StatusTooManyRequests, ctx.Response.StatusCode())
 	assert.NotEmpty(t, ctx.Response.Header.Peek("Retry-After"))
+}
+
+// TestRateLimiting_RegisterDeviceIsRateLimitedByIP checks POST
+// /users/devices specifically trips the per-IP limiter on its own, the same
+// way the other unauthenticated auth-adjacent routes do.
+func TestRateLimiting_RegisterDeviceIsRateLimitedByIP(t *testing.T) {
+	// given
+	handler := newTestRequestHandler(t)
+
+	// when - 30 requests exhausts the 30/min per-IP budget on this route alone
+	for i := 0; i < 30; i++ {
+		ctx := newAuthRouteRequestCtxWithMethod("POST", "/users/devices")
+		handler(ctx)
+		assert.NotEqual(t, fasthttp.StatusTooManyRequests, ctx.Response.StatusCode(),
+			"request %d should not be rate limited yet", i+1)
+	}
+
+	// then
+	ctx := newAuthRouteRequestCtxWithMethod("POST", "/users/devices")
+	handler(ctx)
+	assert.Equal(t, fasthttp.StatusTooManyRequests, ctx.Response.StatusCode())
 }

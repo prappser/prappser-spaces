@@ -32,6 +32,24 @@ type User struct {
 	SpaceID         string  `json:"spaceId,omitempty"`
 	CreatedAt       int64   `json:"createdAt"`
 	AvatarStorageID *string `json:"avatarStorageId,omitempty"`
+	// DevicePublicKey identifies which of the account's devices authenticated
+	// the current request. Populated by UserService.ValidateJWT from the JWT's
+	// devicePublicKey claim (or the account key for legacy tokens - device #1's
+	// key equals the account key). Not part of the wire representation: it is
+	// request-scoped identity, not account data.
+	DevicePublicKey string `json:"-"`
+}
+
+// Device is one entry in a user's device roster (see device_repository.go).
+// A user has one row per device that has ever authenticated; RevokedAt marks
+// a device as no longer usable without deleting its history.
+type Device struct {
+	DevicePublicKey string  `json:"devicePublicKey"`
+	UserPublicKey   string  `json:"userPublicKey"`
+	DeviceName      *string `json:"deviceName,omitempty"`
+	CreatedAt       int64   `json:"createdAt"`
+	LastSeenAt      *int64  `json:"lastSeenAt,omitempty"`
+	RevokedAt       *int64  `json:"revokedAt,omitempty"`
 }
 
 type UserRepository interface {
@@ -41,6 +59,15 @@ type UserRepository interface {
 	UpdateUserRole(publicKey string, role string) error
 	UpdateAvatarStorageID(publicKey string, avatarStorageID *string) error
 	UpdateUsername(publicKey, username string) error
+	// EnsureDevice registers a device for an account if it doesn't already exist (no-op otherwise).
+	EnsureDevice(devicePublicKey, userPublicKey string, deviceName *string, createdAt int64) error
+	// GetDevice returns nil, nil when no device with that key exists.
+	GetDevice(devicePublicKey string) (*Device, error)
+	// ListDevices returns the non-revoked devices for an account.
+	ListDevices(userPublicKey string) ([]*Device, error)
+	// RevokeDevice soft-revokes a device and deletes its push subscriptions.
+	RevokeDevice(devicePublicKey string, ts int64) error
+	TouchDeviceLastSeen(devicePublicKey string, ts int64) error
 }
 
 // SpaceCreator creates a default space for new owners.
@@ -78,15 +105,19 @@ type userAuthJWSClaims struct {
 
 type JWTClaims struct {
 	UserPublicKey string `json:"userPublicKey"`
-	Username      string `json:"username"`
-	Role          string `json:"role"`
-	SpaceID       string `json:"spaceId"`
+	// DevicePublicKey is the device that authenticated, distinct from
+	// UserPublicKey (the account). Empty on tokens minted before the device
+	// roster existed - ValidateJWT falls back to UserPublicKey for those.
+	DevicePublicKey string `json:"devicePublicKey"`
+	Username        string `json:"username"`
+	Role            string `json:"role"`
+	SpaceID         string `json:"spaceId"`
 	jwt.RegisteredClaims
 }
 
 type ChallengeResponse struct {
-	Challenge       string `json:"challenge"`
-	ExpiresAt       int64  `json:"expiresAt"`
+	Challenge      string `json:"challenge"`
+	ExpiresAt      int64  `json:"expiresAt"`
 	SpacePublicKey string `json:"spacePublicKey"`
 }
 
@@ -227,6 +258,14 @@ func (ue UserEndpoints) OwnerRegister(ctx *fasthttp.RequestCtx) {
 				return
 			}
 
+			// Backfill device #1 for accounts created before the device roster
+			// existed (ON CONFLICT DO NOTHING makes this a no-op otherwise).
+			if err := ue.userRepository.EnsureDevice(existingUser.PublicKey, existingUser.PublicKey, nil, time.Now().Unix()); err != nil {
+				log.Error().Err(err).Msg("Failed to ensure device for upgraded owner")
+				ctx.Error("Failed to upgrade user to owner", fasthttp.StatusInternalServerError)
+				return
+			}
+
 			// Auto-create default space for newly upgraded owner
 			if ue.spaceCreator != nil {
 				if err := ue.spaceCreator.CreateSpace(existingUser.Username+"'s space", &existingUser.PublicKey); err != nil {
@@ -259,6 +298,13 @@ func (ue UserEndpoints) OwnerRegister(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
+	// Device #1 for a brand-new owner: this owner's account key IS device #1's key.
+	if err := ue.userRepository.EnsureDevice(newUser.PublicKey, newUser.PublicKey, nil, newUser.CreatedAt); err != nil {
+		log.Error().Err(err).Msg("Failed to ensure device for new owner")
+		ctx.Error("Failed to create owner", fasthttp.StatusInternalServerError)
+		return
+	}
+
 	// Auto-create default space for new owner
 	if ue.spaceCreator != nil {
 		if err := ue.spaceCreator.CreateSpace(newUser.Username+"'s space", &newUser.PublicKey); err != nil {
@@ -285,15 +331,21 @@ func (ue UserEndpoints) GetChallenge(ctx *fasthttp.RequestCtx) {
 	}
 
 	publicKeyStr := string(publicKey)
-	log.Debug().Str("publicKey", publicKeyStr).Int("publicKeyLen", len(publicKeyStr)).Msg("[CHALLENGE] Challenge requested for user (full key)")
+	log.Debug().Str("publicKey", publicKeyStr).Int("publicKeyLen", len(publicKeyStr)).Msg("[CHALLENGE] Challenge requested for device (full key)")
 
-	// Check if user exists. Internal DB errors are a real 500; a missing
-	// user is NOT reported as such below - see the not-found branch, which
-	// keeps the response shape identical to avoid a user-enumeration oracle.
-	user, err := ue.userRepository.GetUserByPublicKey(publicKeyStr)
+	// publicKey identifies a DEVICE key (see device_repository.go), not
+	// necessarily the account key - pre-device-roster clients pass the
+	// account key directly, which still resolves because device #1's key
+	// equals the account key (backfilled by migration 000018).
+	device, err := ue.userRepository.GetDevice(publicKeyStr)
 	if err != nil {
-		log.Error().Err(err).Str("publicKey", publicKeyStr[:min(50, len(publicKeyStr))]+"...").Msg("[CHALLENGE] Failed to get user")
+		log.Error().Err(err).Str("publicKey", publicKeyStr[:min(50, len(publicKeyStr))]+"...").Msg("[CHALLENGE] Failed to get device")
 		ctx.Error("Internal server error", fasthttp.StatusInternalServerError)
+		return
+	}
+	if device == nil || device.RevokedAt != nil {
+		log.Debug().Str("publicKey", publicKeyStr[:min(50, len(publicKeyStr))]+"...").Msg("[CHALLENGE] Device not found or revoked")
+		ctx.Error("Device not found", fasthttp.StatusNotFound)
 		return
 	}
 
@@ -307,35 +359,19 @@ func (ue UserEndpoints) GetChallenge(ctx *fasthttp.RequestCtx) {
 
 	expiresAt := time.Now().Add(time.Duration(ue.config.ChallengeTTLSec) * time.Second)
 
-	if user == nil {
-		// Do not store the challenge: it can never be used to complete
-		// auth, since UserAuth looks it up by publicKey and none exists.
-		// Response shape (200, random challenge, real expiresAt/spacePublicKey)
-		// matches the found case so callers can't distinguish "no such user"
-		// from "challenge issued" by status code or body shape.
-		// Residual timing gap: this branch skips challengeStore.store()'s
-		// lock+map-write+prune sweep that the found branch does below. Not
-		// dummy-worked, since the DB lookup above and generateChallenge()
-		// dominate the total latency either way - the store() delta is noise
-		// next to that, not worth the complexity of a fake write to match it.
-		log.Debug().Str("publicKey", publicKeyStr[:min(50, len(publicKeyStr))]+"...").Msg("[CHALLENGE] User not found, issuing decoy challenge")
-	} else {
-		log.Debug().Str("username", user.Username).Str("publicKey", publicKeyStr[:min(50, len(publicKeyStr))]+"...").Msg("[CHALLENGE] User found, generating challenge")
+	ue.challenges.store(publicKeyStr, challengeInfo{
+		challenge: challenge,
+		expiresAt: expiresAt,
+	})
 
-		ue.challenges.store(publicKeyStr, challengeInfo{
-			challenge: challenge,
-			expiresAt: expiresAt,
-		})
-
-		log.Debug().Str("publicKey", publicKeyStr[:min(50, len(publicKeyStr))]+"...").Time("expiresAt", expiresAt).Msg("[CHALLENGE] Challenge generated and stored")
-	}
+	log.Debug().Str("publicKey", publicKeyStr[:min(50, len(publicKeyStr))]+"...").Time("expiresAt", expiresAt).Msg("[CHALLENGE] Challenge generated and stored")
 
 	// Convert space's Ed25519 public key to base64
 	spacePublicKeyString := base64.StdEncoding.EncodeToString(ue.publicKey)
 
 	response := ChallengeResponse{
-		Challenge:       challenge,
-		ExpiresAt:       expiresAt.Unix(),
+		Challenge:      challenge,
+		ExpiresAt:      expiresAt.Unix(),
 		SpacePublicKey: spacePublicKeyString,
 	}
 
@@ -363,7 +399,7 @@ func (ue UserEndpoints) UserAuth(ctx *fasthttp.RequestCtx) {
 	}
 
 	log.Debug().Msg("[AUTH] Verifying JWS signature")
-	claims, err := ue.verifyUserAuthJWS(jws, ue.config.ChallengeTTLSec)
+	claims, device, err := ue.verifyUserAuthJWS(jws, ue.config.ChallengeTTLSec)
 	if err != nil {
 		log.Error().Err(err).Msg("[AUTH] Failed to verify JWS")
 		ctx.Error("Failed to verify JWS", fasthttp.StatusBadRequest)
@@ -371,10 +407,11 @@ func (ue UserEndpoints) UserAuth(ctx *fasthttp.RequestCtx) {
 	}
 
 	publicKeyPrefix := claims.PublicKey[:min(50, len(claims.PublicKey))] + "..."
-	log.Debug().Str("publicKey", publicKeyPrefix).Msg("[AUTH] JWS verified, fetching user")
+	log.Debug().Str("publicKey", publicKeyPrefix).Msg("[AUTH] JWS verified, fetching account")
 
-	// Get user by public key (already verified in verifyUserAuthJWS, but need full user object)
-	user, err := ue.userRepository.GetUserByPublicKey(claims.PublicKey)
+	// Fetch the account owning the verified device (claims.PublicKey is the
+	// DEVICE key; device.UserPublicKey is the account key).
+	user, err := ue.userRepository.GetUserByPublicKey(device.UserPublicKey)
 	if err != nil {
 		log.Error().Err(err).Str("publicKey", publicKeyPrefix).Msg("[AUTH] Failed to get user")
 		ctx.Error("Internal server error", fasthttp.StatusInternalServerError)
@@ -389,11 +426,15 @@ func (ue UserEndpoints) UserAuth(ctx *fasthttp.RequestCtx) {
 	log.Debug().Str("username", user.Username).Str("role", user.Role).Msg("[AUTH] User found, generating JWT")
 
 	// Generate JWT token
-	token, expiresAt, err := ue.userService.GenerateJWT(user)
+	token, expiresAt, err := ue.userService.GenerateJWT(user, device.DevicePublicKey)
 	if err != nil {
 		log.Error().Err(err).Msg("[AUTH] Failed to generate JWT")
 		ctx.Error("Internal server error", fasthttp.StatusInternalServerError)
 		return
+	}
+
+	if err := ue.userRepository.TouchDeviceLastSeen(device.DevicePublicKey, time.Now().Unix()); err != nil {
+		log.Warn().Err(err).Str("publicKey", publicKeyPrefix).Msg("[AUTH] Failed to touch device last seen")
 	}
 
 	// Challenge is already consumed (deleted) by verifyUserAuthJWS's atomic
@@ -425,22 +466,24 @@ func extractJWSFromAuthorizationHeader(authHeader string) (string, error) {
 	return parts[1], nil
 }
 
-
-func (ue UserEndpoints) verifyUserAuthJWS(signedJWT string, ttlSec int) (*userAuthJWSClaims, error) {
+func (ue UserEndpoints) verifyUserAuthJWS(signedJWT string, ttlSec int) (*userAuthJWSClaims, *Device, error) {
 	log.Debug().Msg("[VERIFY] Parsing JWT")
 
 	// Parse JWT without verification first to get claims
 	token, _, err := jwt.NewParser().ParseUnverified(signedJWT, jwt.MapClaims{})
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse JWT: %w", err)
+		return nil, nil, fmt.Errorf("failed to parse JWT: %w", err)
 	}
 
 	mapClaims, ok := token.Claims.(jwt.MapClaims)
 	if !ok {
-		return nil, fmt.Errorf("invalid JWT claims format")
+		return nil, nil, fmt.Errorf("invalid JWT claims format")
 	}
 
 	var claims userAuthJWSClaims
+	// claims.PublicKey identifies a DEVICE key (see device_repository.go);
+	// pre-device-roster clients pass the account key directly, which still
+	// resolves because device #1's key equals the account key.
 	if pk, ok := mapClaims["publicKey"].(string); ok {
 		claims.PublicKey = pk
 	}
@@ -459,46 +502,44 @@ func (ue UserEndpoints) verifyUserAuthJWS(signedJWT string, ttlSec int) (*userAu
 	var issuedAtTime = time.Unix(claims.IssuedAt, 0)
 	if issuedAtTime.Add(time.Duration(ttlSec) * time.Second).Before(timeNow) {
 		log.Debug().Str("publicKey", publicKeyPrefix).Msg("[VERIFY] JWT has expired")
-		return nil, fmt.Errorf("JWT has expired")
+		return nil, nil, fmt.Errorf("JWT has expired")
 	}
 
-	log.Debug().Str("publicKey", publicKeyPrefix).Msg("[VERIFY] Looking up user in database")
-	// 1. Get the user by public key (unique identifier)
-	user, err := ue.userRepository.GetUserByPublicKey(claims.PublicKey)
+	log.Debug().Str("publicKey", publicKeyPrefix).Msg("[VERIFY] Looking up device in database")
+	// 1. Get the device by its public key
+	device, err := ue.userRepository.GetDevice(claims.PublicKey)
 	if err != nil {
-		log.Debug().Str("publicKey", publicKeyPrefix).Msg("[VERIFY] Failed to get user from database")
-		return nil, fmt.Errorf("user not found: %w", err)
+		log.Debug().Str("publicKey", publicKeyPrefix).Msg("[VERIFY] Failed to get device from database")
+		return nil, nil, fmt.Errorf("device not found: %w", err)
 	}
-	if user == nil {
-		log.Debug().Str("publicKey", publicKeyPrefix).Msg("[VERIFY] User not found in database")
-		return nil, fmt.Errorf("user not found")
+	if device == nil {
+		log.Debug().Str("publicKey", publicKeyPrefix).Msg("[VERIFY] Device not found in database")
+		return nil, nil, fmt.Errorf("device not found")
 	}
-
-	// 2. Validate that the user has a public key
-	if user.PublicKey == "" {
-		log.Error().Str("publicKey", publicKeyPrefix).Msg("[VERIFY] User has no public key registered")
-		return nil, fmt.Errorf("user has no public key registered")
+	if device.RevokedAt != nil {
+		log.Debug().Str("publicKey", publicKeyPrefix).Msg("[VERIFY] Device has been revoked")
+		return nil, nil, fmt.Errorf("device revoked")
 	}
 
-	log.Debug().Str("username", user.Username).Str("publicKey", publicKeyPrefix).Int("publicKeyLen", len(user.PublicKey)).Msg("[VERIFY] User found, validating public key")
+	log.Debug().Str("publicKey", publicKeyPrefix).Msg("[VERIFY] Device found, validating public key")
 
-	// 3. Parse the user's Ed25519 public key from base64
-	publicKeyBytes, err := base64.StdEncoding.DecodeString(user.PublicKey)
+	// 2. Parse the device's Ed25519 public key from base64
+	publicKeyBytes, err := base64.StdEncoding.DecodeString(claims.PublicKey)
 	if err != nil {
 		log.Error().Err(err).Str("publicKey", publicKeyPrefix).Msg("[VERIFY] Failed to decode public key base64")
-		return nil, fmt.Errorf("failed to decode public key: %w", err)
+		return nil, nil, fmt.Errorf("failed to decode public key: %w", err)
 	}
 
 	if len(publicKeyBytes) != ed25519.PublicKeySize {
 		log.Error().Int("size", len(publicKeyBytes)).Msg("[VERIFY] Invalid Ed25519 public key size")
-		return nil, fmt.Errorf("invalid public key size: expected %d, got %d", ed25519.PublicKeySize, len(publicKeyBytes))
+		return nil, nil, fmt.Errorf("invalid public key size: expected %d, got %d", ed25519.PublicKeySize, len(publicKeyBytes))
 	}
 
 	ed25519PublicKey := ed25519.PublicKey(publicKeyBytes)
 
 	log.Debug().Str("publicKey", publicKeyPrefix).Msg("[VERIFY] Public key parsed, verifying JWT signature")
 
-	// 4. Verify the JWT signature using their Ed25519 public key
+	// 3. Verify the JWT signature using the device's Ed25519 public key
 	verifiedToken, err := jwt.Parse(signedJWT, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodEd25519); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
@@ -508,39 +549,39 @@ func (ue UserEndpoints) verifyUserAuthJWS(signedJWT string, ttlSec int) (*userAu
 
 	if err != nil {
 		log.Error().Err(err).Str("publicKey", publicKeyPrefix).Msg("[VERIFY] JWT signature verification failed")
-		return nil, fmt.Errorf("failed to verify JWT signature: %w", err)
+		return nil, nil, fmt.Errorf("failed to verify JWT signature: %w", err)
 	}
 
 	if !verifiedToken.Valid {
 		log.Error().Str("publicKey", publicKeyPrefix).Msg("[VERIFY] JWT is not valid")
-		return nil, fmt.Errorf("JWT signature verification failed")
+		return nil, nil, fmt.Errorf("JWT signature verification failed")
 	}
 
 	log.Debug().Str("publicKey", publicKeyPrefix).Msg("[VERIFY] JWT signature verified, checking challenge")
 
-	// 5. Verify that the challenge matches what was issued (keyed by publicKey).
+	// 4. Verify that the challenge matches what was issued (keyed by publicKey).
 	// consume() retrieves and deletes it in one lock acquisition, so the
 	// challenge is redeemed exactly once - two concurrent replays of the same
 	// signed JWS can't both see it as present and both mint a JWT.
 	storedChallenge, exists, expired := ue.challenges.consume(claims.PublicKey)
 	if !exists {
-		log.Error().Str("publicKey", publicKeyPrefix).Msg("[VERIFY] No challenge found for user")
-		return nil, fmt.Errorf("no challenge found for user")
+		log.Error().Str("publicKey", publicKeyPrefix).Msg("[VERIFY] No challenge found for device")
+		return nil, nil, fmt.Errorf("no challenge found for device")
 	}
 
 	if storedChallenge.challenge != claims.Challenge {
 		log.Error().Str("publicKey", publicKeyPrefix).Msg("[VERIFY] Challenge mismatch")
-		return nil, fmt.Errorf("challenge mismatch")
+		return nil, nil, fmt.Errorf("challenge mismatch")
 	}
 
 	// Check if challenge has expired
 	if expired {
 		log.Error().Str("publicKey", publicKeyPrefix).Msg("[VERIFY] Challenge has expired")
-		return nil, fmt.Errorf("challenge has expired")
+		return nil, nil, fmt.Errorf("challenge has expired")
 	}
 
-	log.Debug().Str("username", user.Username).Str("publicKey", publicKeyPrefix).Msg("[VERIFY] All verifications passed successfully")
-	return &claims, nil
+	log.Debug().Str("publicKey", publicKeyPrefix).Msg("[VERIFY] All verifications passed successfully")
+	return &claims, device, nil
 }
 
 func generateChallenge() (string, error) {
@@ -551,7 +592,6 @@ func generateChallenge() (string, error) {
 	}
 	return base64.URLEncoding.EncodeToString(bytes), nil
 }
-
 
 // GetProfile returns the authenticated user's profile
 func (ue UserEndpoints) GetProfile(ctx *fasthttp.RequestCtx) {

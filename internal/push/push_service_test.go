@@ -22,8 +22,8 @@ type mockPushRepository struct {
 	}
 	incrementFailureCalls   []string
 	deleteSubscriptionCalls []struct {
-		id            string
-		userPublicKey string
+		id              string
+		devicePublicKey string
 	}
 }
 
@@ -60,21 +60,25 @@ func (m *mockPushRepository) UpdateSubscription(s *Subscription) error {
 	return nil
 }
 
-func (m *mockPushRepository) DeleteSubscription(id, userPublicKey string) error {
+func (m *mockPushRepository) DeleteSubscription(id, devicePublicKey string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	s, ok := m.subscriptions[id]
-	if !ok || s.UserPublicKey != userPublicKey {
+	if !ok || s.DevicePublicKey != devicePublicKey {
 		return fmt.Errorf("subscription not found")
 	}
 	m.deleteSubscriptionCalls = append(m.deleteSubscriptionCalls, struct {
-		id            string
-		userPublicKey string
-	}{id, userPublicKey})
+		id              string
+		devicePublicKey string
+	}{id, devicePublicKey})
 	delete(m.subscriptions, id)
 	return nil
 }
 
+// GetSubscriptionsForUsers is a simplified fake: it doesn't model the
+// user_devices join the real repository uses, so tests reuse the same
+// string as both a subscription's device key and the "account" key passed
+// in here (mirroring device #1 == account key).
 func (m *mockPushRepository) GetSubscriptionsForUsers(userPublicKeys []string) ([]*Subscription, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -84,18 +88,18 @@ func (m *mockPushRepository) GetSubscriptionsForUsers(userPublicKeys []string) (
 	}
 	var result []*Subscription
 	for _, s := range m.subscriptions {
-		if _, ok := keySet[s.UserPublicKey]; ok {
+		if _, ok := keySet[s.DevicePublicKey]; ok {
 			result = append(result, s)
 		}
 	}
 	return result, nil
 }
 
-func (m *mockPushRepository) GetSubscriptionByID(id, userPublicKey string) (*Subscription, error) {
+func (m *mockPushRepository) GetSubscriptionByID(id, devicePublicKey string) (*Subscription, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	s, ok := m.subscriptions[id]
-	if !ok || s.UserPublicKey != userPublicKey {
+	if !ok || s.DevicePublicKey != devicePublicKey {
 		return nil, nil
 	}
 	return s, nil
@@ -188,7 +192,7 @@ func TestPushService_Push_ShouldSendForMemberAddedEvent(t *testing.T) {
 
 	repo.subscriptions["sub-1"] = &Subscription{
 		ID:                  "sub-1",
-		UserPublicKey:       "user-pk-1",
+		DevicePublicKey:     "user-pk-1",
 		Endpoint:            "https://push.example.com/1",
 		P256dh:              "p256dh-value",
 		Auth:                "auth-value",
@@ -216,7 +220,7 @@ func TestPushService_Push_ShouldSkipWhenApplicationMuted(t *testing.T) {
 
 	repo.subscriptions["sub-1"] = &Subscription{
 		ID:                  "sub-1",
-		UserPublicKey:       "user-pk-1",
+		DevicePublicKey:     "user-pk-1",
 		Endpoint:            "https://push.example.com/1",
 		P256dh:              "p256dh-value",
 		Auth:                "auth-value",
@@ -242,7 +246,7 @@ func TestPushService_Push_ShouldSendWhenDifferentApplicationMuted(t *testing.T) 
 
 	repo.subscriptions["sub-1"] = &Subscription{
 		ID:                  "sub-1",
-		UserPublicKey:       "user-pk-1",
+		DevicePublicKey:     "user-pk-1",
 		Endpoint:            "https://push.example.com/1",
 		P256dh:              "p256dh-value",
 		Auth:                "auth-value",
@@ -268,7 +272,7 @@ func TestPushService_Push_ShouldDeleteSubscriptionOn410(t *testing.T) {
 
 	repo.subscriptions["sub-1"] = &Subscription{
 		ID:                  "sub-1",
-		UserPublicKey:       "user-pk-1",
+		DevicePublicKey:     "user-pk-1",
 		Endpoint:            "https://push.example.com/1",
 		P256dh:              "p256dh-value",
 		Auth:                "auth-value",
@@ -298,7 +302,7 @@ func TestPushService_Push_ShouldIncrementFailureOn429(t *testing.T) {
 
 	repo.subscriptions["sub-1"] = &Subscription{
 		ID:                  "sub-1",
-		UserPublicKey:       "user-pk-1",
+		DevicePublicKey:     "user-pk-1",
 		Endpoint:            "https://push.example.com/1",
 		P256dh:              "p256dh-value",
 		Auth:                "auth-value",
@@ -330,7 +334,7 @@ func TestPushService_Push_ShouldSkipWhenEventTypeHasNoCategory(t *testing.T) {
 
 	repo.subscriptions["sub-1"] = &Subscription{
 		ID:                  "sub-1",
-		UserPublicKey:       "user-pk-1",
+		DevicePublicKey:     "user-pk-1",
 		Endpoint:            "https://push.example.com/1",
 		P256dh:              "p256dh-value",
 		Auth:                "auth-value",
@@ -357,7 +361,7 @@ func TestPushService_Push_ShouldUseSpaceVapidForAllRecipients(t *testing.T) {
 
 	repo.subscriptions["sub-1"] = &Subscription{
 		ID:                  "sub-1",
-		UserPublicKey:       "user-pk-1",
+		DevicePublicKey:     "user-pk-1",
 		Endpoint:            "https://push.example.com/1",
 		P256dh:              "p256dh-1",
 		Auth:                "auth-1",
@@ -365,7 +369,7 @@ func TestPushService_Push_ShouldUseSpaceVapidForAllRecipients(t *testing.T) {
 	}
 	repo.subscriptions["sub-2"] = &Subscription{
 		ID:                  "sub-2",
-		UserPublicKey:       "user-pk-2",
+		DevicePublicKey:     "user-pk-2",
 		Endpoint:            "https://push.example.com/2",
 		P256dh:              "p256dh-2",
 		Auth:                "auth-2",
@@ -435,7 +439,7 @@ func TestPushService_Push_ShouldDeliverCreatorPublicKeyInPayload(t *testing.T) {
 
 	repo.subscriptions["sub-1"] = &Subscription{
 		ID:                  "sub-1",
-		UserPublicKey:       "user-pk-1",
+		DevicePublicKey:     "user-pk-1",
 		Endpoint:            "https://push.example.com/1",
 		P256dh:              "p256dh-value",
 		Auth:                "auth-value",

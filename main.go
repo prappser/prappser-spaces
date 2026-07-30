@@ -214,7 +214,9 @@ func main() {
 
 	profileEndpoints := profile.NewProfileEndpoints(userRepository, appRepository, eventService)
 
-	requestHandler := internal.NewRequestHandler(config, userEndpoints, statusEndpoints, healthEndpoints, userService, appEndpoints, invitationEndpoints, eventEndpoints, setupEndpoints, storageEndpoints, wsHandler, spaceEndpoints, pushEndpoints, profileEndpoints)
+	deviceEndpoints := user.NewDeviceEndpoints(userRepository)
+
+	requestHandler := internal.NewRequestHandler(config, userEndpoints, statusEndpoints, healthEndpoints, userService, appEndpoints, invitationEndpoints, eventEndpoints, setupEndpoints, storageEndpoints, wsHandler, spaceEndpoints, pushEndpoints, profileEndpoints, deviceEndpoints)
 
 	serverAddr := fmt.Sprintf(":%s", config.Port)
 	log.Info().Str("addr", serverAddr).Msg("Starting HTTP server")

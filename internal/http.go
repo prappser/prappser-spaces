@@ -55,7 +55,7 @@ func authPublicKeyKey(ctx *fasthttp.RequestCtx) string {
 	return publicKey
 }
 
-func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, statusEndpoints *status.StatusEndpoints, healthEndpoints *health.HealthEndpoints, userService *user.UserService, appEndpoints *application.ApplicationEndpoints, invitationEndpoints *invitation.InvitationEndpoints, eventEndpoints *event.EventEndpoints, setupEndpoints *setup.SetupEndpoints, storageEndpoints *storage.Endpoints, wsHandler *websocket.Handler, spaceEndpoints *space.SpaceEndpoints, pushEndpoints *push.PushEndpoints, profileEndpoints *profile.ProfileEndpoints) fasthttp.RequestHandler {
+func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, statusEndpoints *status.StatusEndpoints, healthEndpoints *health.HealthEndpoints, userService *user.UserService, appEndpoints *application.ApplicationEndpoints, invitationEndpoints *invitation.InvitationEndpoints, eventEndpoints *event.EventEndpoints, setupEndpoints *setup.SetupEndpoints, storageEndpoints *storage.Endpoints, wsHandler *websocket.Handler, spaceEndpoints *space.SpaceEndpoints, pushEndpoints *push.PushEndpoints, profileEndpoints *profile.ProfileEndpoints, deviceEndpoints *user.DeviceEndpoints) fasthttp.RequestHandler {
 	authMiddleware := middleware.NewAuthMiddleware(userService)
 	corsMiddleware := middleware.NewCORSMiddleware(config.AllowedOrigins)
 	ipRateLimiter := middleware.NewRateLimiter(ipRateLimitPerMinute, time.Minute, config.TrustProxyHeaders)
@@ -79,6 +79,18 @@ func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, status
 			ipRateLimiter.LimitByIP(identifierRateLimiter.LimitByKey(userEndpoints.GetChallenge, challengePublicKeyKey))(ctx)
 		case path == "/users/auth":
 			ipRateLimiter.LimitByIP(identifierRateLimiter.LimitByKey(userEndpoints.UserAuth, authPublicKeyKey))(ctx)
+		case path == "/users/devices":
+			method := string(ctx.Method())
+			switch method {
+			case "POST":
+				ipRateLimiter.LimitByIP(deviceEndpoints.RegisterDevice)(ctx)
+			case "GET":
+				authMiddleware.RequireAuth(deviceEndpoints.ListDevices)(ctx)
+			case "DELETE":
+				authMiddleware.RequireAuth(deviceEndpoints.RevokeDevice)(ctx)
+			default:
+				ctx.Error("Method Not Allowed", fasthttp.StatusMethodNotAllowed)
+			}
 		case path == "/users/me":
 			method := string(ctx.Method())
 			switch method {

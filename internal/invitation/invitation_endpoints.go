@@ -250,6 +250,9 @@ func (ie *InvitationEndpoints) CheckInvitation(ctx *fasthttp.RequestCtx) {
 type JoinRequest struct {
 	PublicKey string `json:"publicKey"`
 	Username  string `json:"username"`
+	// DevicePublicKey is optional; InvitationService.Join defaults it to
+	// PublicKey when empty (device #1's key equals the account key).
+	DevicePublicKey string `json:"devicePublicKey,omitempty"`
 }
 
 // JoinApplication handles POST /invites/{token}/join
@@ -289,7 +292,7 @@ func (ie *InvitationEndpoints) JoinApplication(ctx *fasthttp.RequestCtx) {
 	log.Debug().Str("username", req.Username).Str("token", token).Msg("[JOIN] Joining application")
 
 	// Join via invitation service (handles user creation, validation, transaction, event production)
-	result, err := ie.invitationService.Join(token, req.PublicKey, req.Username)
+	result, err := ie.invitationService.Join(token, req.PublicKey, req.Username, req.DevicePublicKey)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to join application")
 

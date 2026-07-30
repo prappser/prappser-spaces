@@ -74,7 +74,7 @@ func (pe *PushEndpoints) CreateSubscription(ctx *fasthttp.RequestCtx) {
 
 	sub := &Subscription{
 		ID:                  uuid.NewString(),
-		UserPublicKey:       authenticatedUser.PublicKey,
+		DevicePublicKey:     authenticatedUser.DevicePublicKey,
 		Endpoint:            req.Endpoint,
 		P256dh:              req.P256dh,
 		Auth:                req.Auth,
@@ -90,7 +90,7 @@ func (pe *PushEndpoints) CreateSubscription(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	log.Debug().Str("subscriptionId", sub.ID).Str("userPublicKey", authenticatedUser.PublicKey).Msg("[PUSH] Subscription created")
+	log.Debug().Str("subscriptionId", sub.ID).Str("devicePublicKey", authenticatedUser.DevicePublicKey).Msg("[PUSH] Subscription created")
 	ctx.SetStatusCode(fasthttp.StatusCreated)
 	ctx.SetContentType("application/json")
 	json.NewEncoder(ctx).Encode(map[string]string{"id": sub.ID})
@@ -122,7 +122,7 @@ func (pe *PushEndpoints) UpdateSubscription(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	existing, err := pe.repo.GetSubscriptionByID(subscriptionID, authenticatedUser.PublicKey)
+	existing, err := pe.repo.GetSubscriptionByID(subscriptionID, authenticatedUser.DevicePublicKey)
 	if err != nil {
 		log.Error().Err(err).Str("subscriptionId", subscriptionID).Msg("[PUSH] Failed to fetch subscription for update")
 		ctx.Error("Failed to fetch subscription", fasthttp.StatusInternalServerError)
@@ -188,7 +188,7 @@ func (pe *PushEndpoints) DeleteSubscription(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	if err := pe.repo.DeleteSubscription(subscriptionID, authenticatedUser.PublicKey); err != nil {
+	if err := pe.repo.DeleteSubscription(subscriptionID, authenticatedUser.DevicePublicKey); err != nil {
 		if err.Error() == "subscription not found" {
 			ctx.Error("Subscription not found", fasthttp.StatusNotFound)
 			return

@@ -28,6 +28,8 @@ func getTestDB(t *testing.T) *sql.DB {
 	}
 
 	// Minimal schema for integration tests (assumes migrations have run or we create inline).
+	// push_subscriptions is keyed by device_public_key (post-000018), joined
+	// through user_devices to resolve an owning account.
 	schema := `
 		CREATE TABLE IF NOT EXISTS users (
 			public_key TEXT PRIMARY KEY,
@@ -35,6 +37,15 @@ func getTestDB(t *testing.T) *sql.DB {
 			role       TEXT NOT NULL,
 			created_at BIGINT NOT NULL
 		);
+		CREATE TABLE IF NOT EXISTS user_devices (
+			device_public_key TEXT PRIMARY KEY,
+			user_public_key   TEXT NOT NULL REFERENCES users(public_key) ON DELETE CASCADE,
+			device_name       TEXT,
+			created_at        BIGINT NOT NULL,
+			last_seen_at      BIGINT,
+			revoked_at        BIGINT
+		);
+		CREATE INDEX IF NOT EXISTS idx_user_devices_user ON user_devices(user_public_key);
 		CREATE TABLE IF NOT EXISTS space_vapid (
 			id                SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
 			vapid_public_key  TEXT NOT NULL,
@@ -44,7 +55,7 @@ func getTestDB(t *testing.T) *sql.DB {
 		);
 		CREATE TABLE IF NOT EXISTS push_subscriptions (
 			id                   TEXT PRIMARY KEY,
-			user_public_key      TEXT NOT NULL REFERENCES users(public_key) ON DELETE CASCADE,
+			device_public_key    TEXT NOT NULL REFERENCES user_devices(device_public_key) ON DELETE CASCADE,
 			endpoint             TEXT NOT NULL UNIQUE,
 			p256dh               TEXT NOT NULL,
 			auth                 TEXT NOT NULL,
@@ -55,7 +66,7 @@ func getTestDB(t *testing.T) *sql.DB {
 			last_success_at      BIGINT,
 			failure_count        INTEGER NOT NULL DEFAULT 0
 		);
-		CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user ON push_subscriptions(user_public_key);
+		CREATE INDEX IF NOT EXISTS idx_push_subscriptions_device ON push_subscriptions(device_public_key);
 	`
 	if _, err := db.Exec(schema); err != nil {
 		t.Fatalf("Failed to create test schema: %v", err)
@@ -68,16 +79,40 @@ func getTestDB(t *testing.T) *sql.DB {
 	if _, err := db.Exec("DELETE FROM space_vapid"); err != nil {
 		t.Fatalf("Failed to clean space_vapid: %v", err)
 	}
+	if _, err := db.Exec("DELETE FROM user_devices WHERE device_public_key LIKE 'test-%'"); err != nil {
+		t.Fatalf("Failed to clean user_devices: %v", err)
+	}
 	if _, err := db.Exec("DELETE FROM users WHERE public_key LIKE 'test-%'"); err != nil {
 		t.Fatalf("Failed to clean users: %v", err)
 	}
 
-	// Insert a test user so FK constraints pass.
-	if _, err := db.Exec(
+	// Insert a test user and its device #1 (same key, mirroring the free
+	// migration in 000018) so FK constraints pass. In one transaction: other
+	// packages' integration tests run concurrently against this same shared
+	// database and clean up via the same "test-%" pattern, so a non-atomic
+	// insert-user-then-insert-device here has a window where a concurrent
+	// DELETE FROM users can remove the just-inserted user before the device
+	// insert runs, tripping the user_devices FK.
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatalf("Failed to begin fixture transaction: %v", err)
+	}
+	if _, err := tx.Exec(
 		"INSERT INTO users (public_key, username, role, created_at) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING",
 		"test-user-1", "testuser", "user", time.Now().Unix(),
 	); err != nil {
+		tx.Rollback()
 		t.Fatalf("Failed to insert test user: %v", err)
+	}
+	if _, err := tx.Exec(
+		"INSERT INTO user_devices (device_public_key, user_public_key, created_at) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING",
+		"test-user-1", "test-user-1", time.Now().Unix(),
+	); err != nil {
+		tx.Rollback()
+		t.Fatalf("Failed to insert test device: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Failed to commit fixture transaction: %v", err)
 	}
 
 	return db
@@ -172,7 +207,7 @@ func TestPushRepository_CreateAndGetSubscription_Integration(t *testing.T) {
 	label := "My Device"
 	sub := &Subscription{
 		ID:                  "sub-integration-1",
-		UserPublicKey:       "test-user-1",
+		DevicePublicKey:     "test-user-1",
 		Endpoint:            "https://push.example.com/integration-1",
 		P256dh:              "p256dh-value",
 		Auth:                "auth-value",
@@ -207,7 +242,7 @@ func TestPushRepository_UpdateSubscription_Integration(t *testing.T) {
 
 	sub := &Subscription{
 		ID:                  "sub-integration-2",
-		UserPublicKey:       "test-user-1",
+		DevicePublicKey:     "test-user-1",
 		Endpoint:            "https://push.example.com/integration-2",
 		P256dh:              "p256dh-old",
 		Auth:                "auth-old",
@@ -242,7 +277,7 @@ func TestPushRepository_DeleteSubscription_Integration(t *testing.T) {
 
 	sub := &Subscription{
 		ID:                  "sub-integration-3",
-		UserPublicKey:       "test-user-1",
+		DevicePublicKey:     "test-user-1",
 		Endpoint:            "https://push.example.com/integration-3",
 		P256dh:              "p256dh",
 		Auth:                "auth",
@@ -270,7 +305,7 @@ func TestPushRepository_MarkSuccessAndIncrementFailure_Integration(t *testing.T)
 
 	sub := &Subscription{
 		ID:                  "sub-integration-4",
-		UserPublicKey:       "test-user-1",
+		DevicePublicKey:     "test-user-1",
 		Endpoint:            "https://push.example.com/integration-4",
 		P256dh:              "p256dh",
 		Auth:                "auth",
@@ -294,4 +329,55 @@ func TestPushRepository_MarkSuccessAndIncrementFailure_Integration(t *testing.T)
 	assert.Equal(t, 0, subs[0].FailureCount)
 	assert.NotNil(t, subs[0].LastSuccessAt)
 	assert.Equal(t, ts, *subs[0].LastSuccessAt)
+}
+
+func TestPushRepository_GetSubscriptionsForUsers_ShouldJoinAcrossDevicesAndDropRevoked_Integration(t *testing.T) {
+	// given: one account with two devices, each with its own subscription
+	db := getTestDB(t)
+	defer db.Close()
+	repo := NewPushRepository(db)
+
+	if _, err := db.Exec(
+		"INSERT INTO user_devices (device_public_key, user_public_key, created_at) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING",
+		"test-device-2", "test-user-1", time.Now().Unix(),
+	); err != nil {
+		t.Fatalf("Failed to insert second test device: %v", err)
+	}
+
+	sub1 := &Subscription{
+		ID:              "sub-device-1",
+		DevicePublicKey: "test-user-1", // device #1, inserted by getTestDB
+		Endpoint:        "https://push.example.com/device-1",
+		P256dh:          "p256dh-1",
+		Auth:            "auth-1",
+		CreatedAt:       time.Now().Unix(),
+	}
+	sub2 := &Subscription{
+		ID:              "sub-device-2",
+		DevicePublicKey: "test-device-2",
+		Endpoint:        "https://push.example.com/device-2",
+		P256dh:          "p256dh-2",
+		Auth:            "auth-2",
+		CreatedAt:       time.Now().Unix(),
+	}
+	assert.NoError(t, repo.CreateSubscription(sub1))
+	assert.NoError(t, repo.CreateSubscription(sub2))
+
+	// when: both devices live
+	subs, err := repo.GetSubscriptionsForUsers([]string{"test-user-1"})
+
+	// then: subscriptions from both devices come back
+	assert.NoError(t, err)
+	assert.Len(t, subs, 2)
+
+	// when: device 2 is revoked (raw UPDATE - push package has no RevokeDevice)
+	if _, err := db.Exec(`UPDATE user_devices SET revoked_at = $1 WHERE device_public_key = $2`, time.Now().Unix(), "test-device-2"); err != nil {
+		t.Fatalf("Failed to revoke test device 2: %v", err)
+	}
+	subs, err = repo.GetSubscriptionsForUsers([]string{"test-user-1"})
+
+	// then: only device 1's subscription remains
+	assert.NoError(t, err)
+	assert.Len(t, subs, 1)
+	assert.Equal(t, "sub-device-1", subs[0].ID)
 }
