@@ -33,6 +33,19 @@ func GenerateEd25519KeyPair() (ed25519.PrivateKey, ed25519.PublicKey, error) {
 	return priv, pub, err
 }
 
+// DeriveKey derives an AES key from a master password and salt using Argon2id
+// with the package's standard parameters.
+func DeriveKey(password string, salt []byte) []byte {
+	return argon2.IDKey(
+		[]byte(password),
+		salt,
+		Argon2Time,
+		Argon2Memory,
+		Argon2Threads,
+		KeySize,
+	)
+}
+
 func EncryptPrivateKey(privateKey ed25519.PrivateKey, masterPassword string) (*EncryptedKey, error) {
 	salt := make([]byte, SaltSize)
 	if _, err := rand.Read(salt); err != nil {
@@ -44,14 +57,7 @@ func EncryptPrivateKey(privateKey ed25519.PrivateKey, masterPassword string) (*E
 		return nil, fmt.Errorf("failed to generate nonce: %w", err)
 	}
 
-	aesKey := argon2.IDKey(
-		[]byte(masterPassword),
-		salt,
-		Argon2Time,
-		Argon2Memory,
-		Argon2Threads,
-		KeySize,
-	)
+	aesKey := DeriveKey(masterPassword, salt)
 
 	block, err := aes.NewCipher(aesKey)
 	if err != nil {
@@ -74,14 +80,7 @@ func EncryptPrivateKey(privateKey ed25519.PrivateKey, masterPassword string) (*E
 }
 
 func DecryptPrivateKey(enc *EncryptedKey, masterPassword string) (ed25519.PrivateKey, error) {
-	aesKey := argon2.IDKey(
-		[]byte(masterPassword),
-		enc.Salt,
-		Argon2Time,
-		Argon2Memory,
-		Argon2Threads,
-		KeySize,
-	)
+	aesKey := DeriveKey(masterPassword, enc.Salt)
 
 	block, err := aes.NewCipher(aesKey)
 	if err != nil {
