@@ -76,6 +76,12 @@ func (m *mockUserRepository) RevokeDevice(devicePublicKey string, ts int64) erro
 func (m *mockUserRepository) TouchDeviceLastSeen(devicePublicKey string, ts int64) error {
 	return nil
 }
+func (m *mockUserRepository) SetPasswordCredentials(publicKey, identifier, passwordVerifier string) error {
+	return nil
+}
+func (m *mockUserRepository) GetPasswordCredential(identifier string) (string, string, error) {
+	return "", "", nil
+}
 
 func TestGenerateChallenge_ShouldGenerateUniqueChallenge(t *testing.T) {
 	// when

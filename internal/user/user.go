@@ -4,6 +4,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -32,6 +33,11 @@ type User struct {
 	SpaceID         string  `json:"spaceId,omitempty"`
 	CreatedAt       int64   `json:"createdAt"`
 	AvatarStorageID *string `json:"avatarStorageId,omitempty"`
+	// Identifier is the normalized login identifier for password-based
+	// login (see password.go, password_endpoints.go). NEVER add a
+	// PasswordVerifier field here - GetProfile JSON-encodes this whole
+	// struct, and the verifier must never reach a client response.
+	Identifier *string `json:"identifier,omitempty"`
 	// DevicePublicKey identifies which of the account's devices authenticated
 	// the current request. Populated by UserService.ValidateJWT from the JWT's
 	// devicePublicKey claim (or the account key for legacy tokens - device #1's
@@ -68,7 +74,18 @@ type UserRepository interface {
 	// RevokeDevice soft-revokes a device and deletes its push subscriptions.
 	RevokeDevice(devicePublicKey string, ts int64) error
 	TouchDeviceLastSeen(devicePublicKey string, ts int64) error
+	// SetPasswordCredentials sets the password-login identifier and verifier
+	// for an account. Returns ErrIdentifierTaken if another account already
+	// holds that identifier (case-insensitive).
+	SetPasswordCredentials(publicKey, identifier, passwordVerifier string) error
+	// GetPasswordCredential returns "", "", nil when no account holds this
+	// identifier (absence is a valid state, not an error).
+	GetPasswordCredential(identifier string) (userPublicKey, verifier string, err error)
 }
+
+// ErrIdentifierTaken is returned by SetPasswordCredentials when the
+// requested identifier is already registered to a different account.
+var ErrIdentifierTaken = errors.New("identifier already taken")
 
 // SpaceCreator creates a default space for new owners.
 type SpaceCreator interface {

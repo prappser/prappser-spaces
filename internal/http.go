@@ -4,6 +4,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/goccy/go-json"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/prappser/prappser-spaces/internal/application"
 	"github.com/prappser/prappser-spaces/internal/event"
@@ -24,6 +25,13 @@ import (
 const (
 	ipRateLimitPerMinute         = 30
 	identifierRateLimitPerMinute = 10
+
+	// passwordEnrollLimit/Window rate-limit the password credential path of
+	// POST /users/devices per normalized identifier - tighter than the
+	// per-IP budget above because a password guesser can rotate IPs but not
+	// the identifier they're targeting.
+	passwordEnrollLimit  = 5
+	passwordEnrollWindow = 15 * time.Minute
 )
 
 // challengePublicKeyKey extracts the publicKey query param used by
@@ -55,11 +63,32 @@ func authPublicKeyKey(ctx *fasthttp.RequestCtx) string {
 	return publicKey
 }
 
-func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, statusEndpoints *status.StatusEndpoints, healthEndpoints *health.HealthEndpoints, userService *user.UserService, appEndpoints *application.ApplicationEndpoints, invitationEndpoints *invitation.InvitationEndpoints, eventEndpoints *event.EventEndpoints, setupEndpoints *setup.SetupEndpoints, storageEndpoints *storage.Endpoints, wsHandler *websocket.Handler, spaceEndpoints *space.SpaceEndpoints, pushEndpoints *push.PushEndpoints, profileEndpoints *profile.ProfileEndpoints, deviceEndpoints *user.DeviceEndpoints) fasthttp.RequestHandler {
+// enrollIdentifierKey extracts the normalized password-login identifier from
+// POST /users/devices' body, for per-identifier rate limiting on the
+// password credential path. Returns "" for the delegation path (no
+// identifier field) or a shape-invalid identifier - LimitByKey skips
+// rate-limiting on an empty key, but the per-IP limiter composed around it
+// (see the /users/devices route below) still applies either way.
+func enrollIdentifierKey(ctx *fasthttp.RequestCtx) string {
+	var req struct {
+		Identifier string `json:"identifier"`
+	}
+	if err := json.Unmarshal(ctx.PostBody(), &req); err != nil {
+		return ""
+	}
+	identifier, err := user.NormalizeIdentifier(req.Identifier)
+	if err != nil {
+		return ""
+	}
+	return identifier
+}
+
+func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, statusEndpoints *status.StatusEndpoints, healthEndpoints *health.HealthEndpoints, userService *user.UserService, appEndpoints *application.ApplicationEndpoints, invitationEndpoints *invitation.InvitationEndpoints, eventEndpoints *event.EventEndpoints, setupEndpoints *setup.SetupEndpoints, storageEndpoints *storage.Endpoints, wsHandler *websocket.Handler, spaceEndpoints *space.SpaceEndpoints, pushEndpoints *push.PushEndpoints, profileEndpoints *profile.ProfileEndpoints, deviceEndpoints *user.DeviceEndpoints, passwordEndpoints *user.PasswordEndpoints) fasthttp.RequestHandler {
 	authMiddleware := middleware.NewAuthMiddleware(userService)
 	corsMiddleware := middleware.NewCORSMiddleware(config.AllowedOrigins)
 	ipRateLimiter := middleware.NewRateLimiter(ipRateLimitPerMinute, time.Minute, config.TrustProxyHeaders)
 	identifierRateLimiter := middleware.NewRateLimiter(identifierRateLimitPerMinute, time.Minute, config.TrustProxyHeaders)
+	passwordRateLimiter := middleware.NewRateLimiter(passwordEnrollLimit, passwordEnrollWindow, config.TrustProxyHeaders)
 
 	handler := func(ctx *fasthttp.RequestCtx) {
 		path := string(ctx.Path())
@@ -83,12 +112,34 @@ func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, status
 			method := string(ctx.Method())
 			switch method {
 			case "POST":
-				ipRateLimiter.LimitByIP(deviceEndpoints.RegisterDevice)(ctx)
+				// Composed limiters, never skipping the per-IP one: the IP
+				// limiter is wrapped INSIDE the identifier limiter, so even
+				// when enrollIdentifierKey returns "" (delegation path) and
+				// LimitByKey skips its own check, it still calls through to
+				// the IP-limited handler - the per-IP budget always applies,
+				// on top of the tighter per-identifier budget on the
+				// password path (a guesser can rotate IPs but not the
+				// identifier they're targeting).
+				passwordRateLimiter.LimitByKey(ipRateLimiter.LimitByIP(deviceEndpoints.RegisterDevice), enrollIdentifierKey)(ctx)
 			case "GET":
 				authMiddleware.RequireAuth(deviceEndpoints.ListDevices)(ctx)
 			case "DELETE":
 				authMiddleware.RequireAuth(deviceEndpoints.RevokeDevice)(ctx)
 			default:
+				ctx.Error("Method Not Allowed", fasthttp.StatusMethodNotAllowed)
+			}
+		case path == "/users/salt":
+			method := string(ctx.Method())
+			if method == "GET" {
+				ipRateLimiter.LimitByIP(passwordEndpoints.GetSalt)(ctx)
+			} else {
+				ctx.Error("Method Not Allowed", fasthttp.StatusMethodNotAllowed)
+			}
+		case path == "/users/password":
+			method := string(ctx.Method())
+			if method == "POST" {
+				ipRateLimiter.LimitByIP(authMiddleware.RequireAuth(passwordEndpoints.SetPassword))(ctx)
+			} else {
 				ctx.Error("Method Not Allowed", fasthttp.StatusMethodNotAllowed)
 			}
 		case path == "/users/me":

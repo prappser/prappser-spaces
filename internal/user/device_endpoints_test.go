@@ -7,20 +7,27 @@ import (
 	"testing"
 	"time"
 
+	"github.com/goccy/go-json"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/valyala/fasthttp"
 )
 
-// deviceTestRepo is a UserRepository stub for device endpoint tests. Devices
-// and accounts are pre-seeded directly into the maps by each test.
+// deviceTestRepo is a UserRepository stub for device endpoint tests. Devices,
+// accounts, and password credentials are pre-seeded directly into the maps
+// by each test.
 type deviceTestRepo struct {
-	devices  map[string]*Device
-	accounts map[string]*User
+	devices     map[string]*Device
+	accounts    map[string]*User
+	credentials map[string]struct{ userPublicKey, verifier string } // keyed by normalized identifier
 }
 
 func newDeviceTestRepo() *deviceTestRepo {
-	return &deviceTestRepo{devices: map[string]*Device{}, accounts: map[string]*User{}}
+	return &deviceTestRepo{
+		devices:     map[string]*Device{},
+		accounts:    map[string]*User{},
+		credentials: map[string]struct{ userPublicKey, verifier string }{},
+	}
 }
 
 func (r *deviceTestRepo) CreateUser(u *User) error { return nil }
@@ -66,6 +73,15 @@ func (r *deviceTestRepo) RevokeDevice(devicePublicKey string, ts int64) error {
 	return nil
 }
 func (r *deviceTestRepo) TouchDeviceLastSeen(devicePublicKey string, ts int64) error { return nil }
+
+func (r *deviceTestRepo) SetPasswordCredentials(publicKey, identifier, passwordVerifier string) error {
+	r.credentials[identifier] = struct{ userPublicKey, verifier string }{publicKey, passwordVerifier}
+	return nil
+}
+func (r *deviceTestRepo) GetPasswordCredential(identifier string) (string, string, error) {
+	cred := r.credentials[identifier]
+	return cred.userPublicKey, cred.verifier, nil
+}
 
 // buildDelegationJWS signs a delegation payload with signerPriv using the
 // given signing method (EdDSA for valid delegations, something else to
@@ -164,7 +180,7 @@ func TestVerifyDelegation(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			repo := newRepo()
-			de := NewDeviceEndpoints(repo)
+			de := NewDeviceEndpoints(repo, nil)
 			jws := tc.build(repo, de)
 
 			signer, err := de.verifyDelegation(jws)
@@ -184,7 +200,7 @@ func TestRevokeDevice_ShouldReturn403WhenTargetIsCurrentDevice(t *testing.T) {
 	// given
 	repo := newDeviceTestRepo()
 	repo.devices["device-current"] = &Device{DevicePublicKey: "device-current", UserPublicKey: "account-1"}
-	de := NewDeviceEndpoints(repo)
+	de := NewDeviceEndpoints(repo, nil)
 
 	ctx := &fasthttp.RequestCtx{}
 	ctx.Request.SetRequestURI("/users/devices?devicePublicKey=device-current")
@@ -201,7 +217,7 @@ func TestRevokeDevice_ShouldReturn404WhenNotOwnedByAuthenticatedAccount(t *testi
 	// given
 	repo := newDeviceTestRepo()
 	repo.devices["device-other"] = &Device{DevicePublicKey: "device-other", UserPublicKey: "some-other-account"}
-	de := NewDeviceEndpoints(repo)
+	de := NewDeviceEndpoints(repo, nil)
 
 	ctx := &fasthttp.RequestCtx{}
 	ctx.Request.SetRequestURI("/users/devices?devicePublicKey=device-other")
@@ -218,7 +234,7 @@ func TestRevokeDevice_ShouldReturn204OnSuccess(t *testing.T) {
 	// given
 	repo := newDeviceTestRepo()
 	repo.devices["device-other"] = &Device{DevicePublicKey: "device-other", UserPublicKey: "account-1"}
-	de := NewDeviceEndpoints(repo)
+	de := NewDeviceEndpoints(repo, nil)
 
 	ctx := &fasthttp.RequestCtx{}
 	ctx.Request.SetRequestURI("/users/devices?devicePublicKey=device-other")
@@ -230,4 +246,166 @@ func TestRevokeDevice_ShouldReturn204OnSuccess(t *testing.T) {
 	// then
 	assert.Equal(t, fasthttp.StatusNoContent, ctx.Response.StatusCode())
 	assert.NotNil(t, repo.devices["device-other"].RevokedAt)
+}
+
+// newRegisterDeviceRequestCtx marshals body as the POST /users/devices
+// request and returns a ready-to-dispatch context.
+func newRegisterDeviceRequestCtx(t *testing.T, body registerDeviceRequest) *fasthttp.RequestCtx {
+	t.Helper()
+	b, err := json.Marshal(body)
+	assert.NoError(t, err)
+	ctx := &fasthttp.RequestCtx{}
+	ctx.Request.Header.SetMethod("POST")
+	ctx.Request.SetBody(b)
+	return ctx
+}
+
+// validNewDevicePublicKey is a syntactically valid (32 std-base64-encoded
+// bytes) device public key for RegisterDevice tests that don't care about
+// its actual Ed25519 validity.
+func validNewDevicePublicKey() string {
+	pub, _, _ := ed25519.GenerateKey(rand.Reader)
+	return base64.StdEncoding.EncodeToString(pub)
+}
+
+// seedPasswordCredential registers a password credential for account
+// "account-1" under identifier, returning the plaintext authSecret a caller
+// can present to authenticate as it.
+func seedPasswordCredential(t *testing.T, repo *deviceTestRepo, verifierKey []byte, identifier string) (authSecret string) {
+	t.Helper()
+	secretBytes := make([]byte, 32)
+	_, err := rand.Read(secretBytes)
+	assert.NoError(t, err)
+	authSecret = base64.StdEncoding.EncodeToString(secretBytes)
+
+	verifier, err := hashAuthSecret(verifierKey, authSecret)
+	assert.NoError(t, err)
+
+	repo.accounts["account-1"] = &User{PublicKey: "account-1", Username: "alice", Role: RoleUser}
+	assert.NoError(t, repo.SetPasswordCredentials("account-1", identifier, verifier))
+	return authSecret
+}
+
+func TestRegisterDevice_ShouldEnrollWithValidPasswordCredential(t *testing.T) {
+	// given
+	verifierKey := []byte("test-verifier-key")
+	repo := newDeviceTestRepo()
+	authSecret := seedPasswordCredential(t, repo, verifierKey, "alice")
+	de := NewDeviceEndpoints(repo, verifierKey)
+
+	ctx := newRegisterDeviceRequestCtx(t, registerDeviceRequest{
+		Identifier:      "alice",
+		AuthSecret:      authSecret,
+		DevicePublicKey: validNewDevicePublicKey(),
+	})
+
+	// when
+	de.RegisterDevice(ctx)
+
+	// then - same response shape as the delegation path: 201, account fields populated
+	assert.Equal(t, fasthttp.StatusCreated, ctx.Response.StatusCode())
+	var resp registerDeviceResponse
+	assert.NoError(t, json.Unmarshal(ctx.Response.Body(), &resp))
+	assert.Equal(t, "account-1", resp.UserPublicKey)
+	assert.Equal(t, "alice", resp.Username)
+}
+
+func TestRegisterDevice_ShouldReturn401ForWrongAuthSecret(t *testing.T) {
+	// given
+	verifierKey := []byte("test-verifier-key")
+	repo := newDeviceTestRepo()
+	seedPasswordCredential(t, repo, verifierKey, "alice")
+	de := NewDeviceEndpoints(repo, verifierKey)
+
+	wrongSecretBytes := make([]byte, 32)
+	ctx := newRegisterDeviceRequestCtx(t, registerDeviceRequest{
+		Identifier:      "alice",
+		AuthSecret:      base64.StdEncoding.EncodeToString(wrongSecretBytes),
+		DevicePublicKey: validNewDevicePublicKey(),
+	})
+
+	// when
+	de.RegisterDevice(ctx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusUnauthorized, ctx.Response.StatusCode())
+}
+
+// TestRegisterDevice_ShouldReturn401WithByteIdenticalBodyForUnknownIdentifier
+// is the anti-enumeration test for the password enroll path: an unknown
+// identifier and a wrong password for a real identifier must be
+// indistinguishable from the response alone.
+func TestRegisterDevice_ShouldReturn401WithByteIdenticalBodyForUnknownIdentifier(t *testing.T) {
+	// given
+	verifierKey := []byte("test-verifier-key")
+	repo := newDeviceTestRepo()
+	seedPasswordCredential(t, repo, verifierKey, "alice")
+	de := NewDeviceEndpoints(repo, verifierKey)
+
+	wrongSecretBytes := make([]byte, 32)
+	wrongPasswordCtx := newRegisterDeviceRequestCtx(t, registerDeviceRequest{
+		Identifier:      "alice",
+		AuthSecret:      base64.StdEncoding.EncodeToString(wrongSecretBytes),
+		DevicePublicKey: validNewDevicePublicKey(),
+	})
+	unknownIdentifierCtx := newRegisterDeviceRequestCtx(t, registerDeviceRequest{
+		Identifier:      "does-not-exist",
+		AuthSecret:      base64.StdEncoding.EncodeToString(wrongSecretBytes),
+		DevicePublicKey: validNewDevicePublicKey(),
+	})
+
+	// when
+	de.RegisterDevice(wrongPasswordCtx)
+	de.RegisterDevice(unknownIdentifierCtx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusUnauthorized, wrongPasswordCtx.Response.StatusCode())
+	assert.Equal(t, fasthttp.StatusUnauthorized, unknownIdentifierCtx.Response.StatusCode())
+	assert.Equal(t, wrongPasswordCtx.Response.Body(), unknownIdentifierCtx.Response.Body())
+}
+
+func TestRegisterDevice_ShouldReturn400WhenBothCredentialsPresent(t *testing.T) {
+	// given
+	de := NewDeviceEndpoints(newDeviceTestRepo(), []byte("test-verifier-key"))
+	ctx := newRegisterDeviceRequestCtx(t, registerDeviceRequest{
+		Delegation:      "some-delegation-jws",
+		Identifier:      "alice",
+		AuthSecret:      base64.StdEncoding.EncodeToString(make([]byte, 32)),
+		DevicePublicKey: validNewDevicePublicKey(),
+	})
+
+	// when
+	de.RegisterDevice(ctx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusBadRequest, ctx.Response.StatusCode())
+}
+
+func TestRegisterDevice_ShouldReturn400WhenIdentifierWithoutAuthSecret(t *testing.T) {
+	// given
+	de := NewDeviceEndpoints(newDeviceTestRepo(), []byte("test-verifier-key"))
+	ctx := newRegisterDeviceRequestCtx(t, registerDeviceRequest{
+		Identifier:      "alice",
+		DevicePublicKey: validNewDevicePublicKey(),
+	})
+
+	// when
+	de.RegisterDevice(ctx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusBadRequest, ctx.Response.StatusCode())
+}
+
+func TestRegisterDevice_ShouldReturn400WhenNeitherCredentialPresent(t *testing.T) {
+	// given
+	de := NewDeviceEndpoints(newDeviceTestRepo(), []byte("test-verifier-key"))
+	ctx := newRegisterDeviceRequestCtx(t, registerDeviceRequest{
+		DevicePublicKey: validNewDevicePublicKey(),
+	})
+
+	// when
+	de.RegisterDevice(ctx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusBadRequest, ctx.Response.StatusCode())
 }

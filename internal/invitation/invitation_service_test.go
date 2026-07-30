@@ -71,6 +71,12 @@ func (r *fakeUserRepo) ListDevices(userPublicKey string) ([]*user.Device, error)
 }
 func (r *fakeUserRepo) RevokeDevice(devicePublicKey string, ts int64) error        { return nil }
 func (r *fakeUserRepo) TouchDeviceLastSeen(devicePublicKey string, ts int64) error { return nil }
+func (r *fakeUserRepo) SetPasswordCredentials(publicKey, identifier, passwordVerifier string) error {
+	return nil
+}
+func (r *fakeUserRepo) GetPasswordCredential(identifier string) (string, string, error) {
+	return "", "", nil
+}
 
 // fakeEventService is never invoked on the already-a-member Join path these
 // tests take, but InvitationService's EventService field requires it.

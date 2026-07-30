@@ -63,6 +63,12 @@ func (r *getChallengeTestRepo) RevokeDevice(devicePublicKey string, ts int64) er
 func (r *getChallengeTestRepo) TouchDeviceLastSeen(devicePublicKey string, ts int64) error {
 	return nil
 }
+func (r *getChallengeTestRepo) SetPasswordCredentials(publicKey, identifier, passwordVerifier string) error {
+	return nil
+}
+func (r *getChallengeTestRepo) GetPasswordCredential(identifier string) (string, string, error) {
+	return "", "", nil
+}
 
 func newGetChallengeTestEndpoints(repo UserRepository) *UserEndpoints {
 	pub, priv, _ := ed25519.GenerateKey(rand.Reader)
