@@ -76,10 +76,13 @@ func (m *mockUserRepository) RevokeDevice(devicePublicKey string, ts int64) erro
 func (m *mockUserRepository) TouchDeviceLastSeen(devicePublicKey string, ts int64) error {
 	return nil
 }
-func (m *mockUserRepository) SetPasswordCredentials(publicKey, identifier, passwordVerifier string) error {
+func (m *mockUserRepository) SetPasswordCredentials(publicKey, identifier, passwordVerifier, accountKeyBlob, userState string) error {
 	return nil
 }
 func (m *mockUserRepository) GetPasswordCredential(identifier string) (string, string, error) {
+	return "", "", nil
+}
+func (m *mockUserRepository) GetEscrow(publicKey string) (string, string, error) {
 	return "", "", nil
 }
 

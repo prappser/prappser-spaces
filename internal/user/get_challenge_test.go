@@ -63,10 +63,13 @@ func (r *getChallengeTestRepo) RevokeDevice(devicePublicKey string, ts int64) er
 func (r *getChallengeTestRepo) TouchDeviceLastSeen(devicePublicKey string, ts int64) error {
 	return nil
 }
-func (r *getChallengeTestRepo) SetPasswordCredentials(publicKey, identifier, passwordVerifier string) error {
+func (r *getChallengeTestRepo) SetPasswordCredentials(publicKey, identifier, passwordVerifier, accountKeyBlob, userState string) error {
 	return nil
 }
 func (r *getChallengeTestRepo) GetPasswordCredential(identifier string) (string, string, error) {
+	return "", "", nil
+}
+func (r *getChallengeTestRepo) GetEscrow(publicKey string) (string, string, error) {
 	return "", "", nil
 }
 

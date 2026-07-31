@@ -52,9 +52,14 @@ func (pe *PasswordEndpoints) GetSalt(ctx *fasthttp.RequestCtx) {
 }
 
 // setPasswordRequest is the request body for POST /users/password.
+// AccountKeyBlob and UserState are the encrypted escrow blobs (see
+// escrow.go on the client) - both optional, and omitting either clears it
+// (see SetPasswordCredentials).
 type setPasswordRequest struct {
-	Identifier string `json:"identifier"`
-	AuthSecret string `json:"authSecret"`
+	Identifier     string `json:"identifier"`
+	AuthSecret     string `json:"authSecret"`
+	AccountKeyBlob string `json:"accountKeyBlob,omitempty"`
+	UserState      string `json:"userState,omitempty"`
 }
 
 // SetPassword handles POST /users/password. Requires auth: the account
@@ -89,7 +94,19 @@ func (pe *PasswordEndpoints) SetPassword(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	if err := pe.userRepository.SetPasswordCredentials(authenticatedUser.PublicKey, identifier, verifier); err != nil {
+	if err := validateEscrowBlob(req.AccountKeyBlob, maxAccountKeyBlobLen); err != nil {
+		log.Debug().Err(err).Msg("[PASSWORD] Invalid accountKeyBlob for set password request")
+		ctx.Error("accountKeyBlob is invalid", fasthttp.StatusBadRequest)
+		return
+	}
+
+	if err := validateEscrowBlob(req.UserState, maxUserStateBlobLen); err != nil {
+		log.Debug().Err(err).Msg("[PASSWORD] Invalid userState for set password request")
+		ctx.Error("userState is invalid", fasthttp.StatusBadRequest)
+		return
+	}
+
+	if err := pe.userRepository.SetPasswordCredentials(authenticatedUser.PublicKey, identifier, verifier, req.AccountKeyBlob, req.UserState); err != nil {
 		if err == ErrIdentifierTaken {
 			// Residual enumeration oracle, accepted deliberately: this 409
 			// only fires for an AUTHENTICATED account choosing an identifier,
