@@ -36,7 +36,11 @@ type User struct {
 	// Identifier is the normalized login identifier for password-based
 	// login (see password.go, password_endpoints.go). NEVER add a
 	// PasswordVerifier field here - GetProfile JSON-encodes this whole
-	// struct, and the verifier must never reach a client response.
+	// struct, and the verifier must never reach a client response. NEVER add
+	// AccountKeyBlob/UserState fields either: GetUserByPublicKey runs on
+	// every authed request via ValidateJWT, and an up-to-64KiB blob column
+	// would bloat that hot path for the (rare) escrow read path - use
+	// UserRepository.GetEscrow instead.
 	Identifier *string `json:"identifier,omitempty"`
 	// DevicePublicKey identifies which of the account's devices authenticated
 	// the current request. Populated by UserService.ValidateJWT from the JWT's
@@ -74,13 +78,21 @@ type UserRepository interface {
 	// RevokeDevice soft-revokes a device and deletes its push subscriptions.
 	RevokeDevice(devicePublicKey string, ts int64) error
 	TouchDeviceLastSeen(devicePublicKey string, ts int64) error
-	// SetPasswordCredentials sets the password-login identifier and verifier
-	// for an account. Returns ErrIdentifierTaken if another account already
-	// holds that identifier (case-insensitive).
-	SetPasswordCredentials(publicKey, identifier, passwordVerifier string) error
+	// SetPasswordCredentials sets the password-login identifier, verifier, and
+	// escrowed account-key/user-state blobs for an account in a single write
+	// (see user_repository.go's doc comment for why the blobs move together
+	// with the verifier). Returns ErrIdentifierTaken if another account
+	// already holds that identifier (case-insensitive). An empty
+	// accountKeyBlob or userState clears that column.
+	SetPasswordCredentials(publicKey, identifier, passwordVerifier, accountKeyBlob, userState string) error
 	// GetPasswordCredential returns "", "", nil when no account holds this
 	// identifier (absence is a valid state, not an error).
 	GetPasswordCredential(identifier string) (userPublicKey, verifier string, err error)
+	// GetEscrow returns the account's escrowed account-key and user-state
+	// blobs, "", "", nil when unset or no such account (absence is a valid
+	// state, not an error). Deliberately NOT exposed via User/GetUserByPublicKey
+	// - see the User struct's doc comment for why.
+	GetEscrow(publicKey string) (accountKeyBlob, userState string, err error)
 }
 
 // ErrIdentifierTaken is returned by SetPasswordCredentials when the

@@ -19,12 +19,22 @@ import (
 const maxDelegationTTLSec = 600
 
 // delegationClaims are the claims of a delegation JWS: an existing device
-// (Issuer) vouching for a new device joining the same account.
+// (Issuer) vouching for a new device joining the same account. Audience (aud)
+// is required (grill F4): it binds the delegation to the specific space, so
+// a delegation minted for one space cannot be replayed against another.
+// DevicePublicKey (dpk) is OPTIONAL: the QR/paste device-link flow mints its
+// delegation in generateLink BEFORE the scanning device has generated a
+// keypair, so the enrolling device's public key isn't known yet at mint
+// time. When dpk IS present (e.g. escrow-restore delegations, minted after
+// the enrolling device's key is known), it must match the enrolling device
+// exactly - see verifyDelegation.
 type delegationClaims struct {
-	Issuer    string `json:"iss"` // signer device's public key
-	JTI       string `json:"jti"`
-	IssuedAt  int64  `json:"iat"`
-	ExpiresAt int64  `json:"exp"`
+	Issuer          string `json:"iss"` // signer device's public key
+	JTI             string `json:"jti"`
+	IssuedAt        int64  `json:"iat"`
+	ExpiresAt       int64  `json:"exp"`
+	DevicePublicKey string `json:"dpk"` // the enrolling device's public key
+	Audience        string `json:"aud"` // the target space's public key
 }
 
 // jtiInfo/jtiStore mirrors challengeStore's shape (see user.go): a
@@ -74,11 +84,16 @@ type DeviceEndpoints struct {
 	// and password.go's verifyAuthSecret). Shared with PasswordEndpoints,
 	// both derived once from the space keypair in main.go.
 	verifierKey []byte
+	// spacePublicKey is this space's own base64-encoded Ed25519 public key -
+	// a delegation JWS's aud claim must equal it (see delegationClaims).
+	spacePublicKey string
 }
 
-// NewDeviceEndpoints creates a new DeviceEndpoints.
-func NewDeviceEndpoints(userRepository UserRepository, verifierKey []byte) *DeviceEndpoints {
-	return &DeviceEndpoints{userRepository: userRepository, usedJTIs: newJTIStore(), verifierKey: verifierKey}
+// NewDeviceEndpoints creates a new DeviceEndpoints. spacePublicKey is this
+// space's own base64-encoded Ed25519 public key (see main.go's
+// spacePublicKeyString), used to validate delegation JWS aud claims.
+func NewDeviceEndpoints(userRepository UserRepository, verifierKey []byte, spacePublicKey string) *DeviceEndpoints {
+	return &DeviceEndpoints{userRepository: userRepository, usedJTIs: newJTIStore(), verifierKey: verifierKey, spacePublicKey: spacePublicKey}
 }
 
 // registerDeviceRequest is the request body for POST /users/devices.
@@ -93,12 +108,19 @@ type registerDeviceRequest struct {
 }
 
 // registerDeviceResponse is the response body for POST /users/devices.
+// AccountKeyBlob and UserState are only ever populated on the password
+// enrollment path (see RegisterDevice) - the delegation path's response is
+// byte-identical to before escrow existed, since a delegating device already
+// has the account key locally and re-sending escrow over it would be a
+// pointless extra exposure of the blobs.
 type registerDeviceResponse struct {
 	UserPublicKey   string `json:"userPublicKey"`
 	Username        string `json:"username"`
 	Role            string `json:"role"`
 	DevicePublicKey string `json:"devicePublicKey"`
 	CreatedAt       int64  `json:"createdAt"`
+	AccountKeyBlob  string `json:"accountKeyBlob,omitempty"`
+	UserState       string `json:"userState,omitempty"`
 }
 
 // RegisterDevice handles POST /users/devices. It is UNauthenticated - the
@@ -117,7 +139,7 @@ func (de *DeviceEndpoints) RegisterDevice(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	accountPublicKey, statusCode, err := de.resolveEnrollCredential(&req)
+	accountPublicKey, viaPassword, statusCode, err := de.resolveEnrollCredential(&req)
 	if err != nil {
 		ctx.Error(err.Error(), statusCode)
 		return
@@ -171,58 +193,75 @@ func (de *DeviceEndpoints) RegisterDevice(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	log.Debug().Str("devicePublicKey", req.DevicePublicKey).Msg("[DEVICE] Device registered")
-	ctx.SetStatusCode(responseStatusCode)
-	ctx.SetContentType("application/json")
-	json.NewEncoder(ctx).Encode(registerDeviceResponse{
+	resp := registerDeviceResponse{
 		UserPublicKey:   account.PublicKey,
 		Username:        account.Username,
 		Role:            account.Role,
 		DevicePublicKey: req.DevicePublicKey,
 		CreatedAt:       createdAt,
-	})
+	}
+
+	// Escrow is only ever returned on the password path (see
+	// registerDeviceResponse's doc comment).
+	if viaPassword {
+		accountKeyBlob, userState, escrowErr := de.userRepository.GetEscrow(accountPublicKey)
+		if escrowErr != nil {
+			log.Error().Err(escrowErr).Msg("[DEVICE] Failed to get escrow")
+			ctx.Error("internal server error", fasthttp.StatusInternalServerError)
+			return
+		}
+		resp.AccountKeyBlob = accountKeyBlob
+		resp.UserState = userState
+	}
+
+	log.Debug().Str("devicePublicKey", req.DevicePublicKey).Msg("[DEVICE] Device registered")
+	ctx.SetStatusCode(responseStatusCode)
+	ctx.SetContentType("application/json")
+	json.NewEncoder(ctx).Encode(resp)
 }
 
 // resolveEnrollCredential resolves the account public key a device
 // registration should attach to, from exactly one of two credential kinds:
 // a delegation JWS (an existing device vouching for the new one), or an
-// identifier+authSecret password credential. statusCode and err.Error() are
+// identifier+authSecret password credential. viaPassword is true only for
+// the identifier+authSecret branch (see registerDeviceResponse's doc
+// comment for why RegisterDevice cares). statusCode and err.Error() are
 // only meaningful when err is non-nil, and are exactly what RegisterDevice
 // should respond with.
-func (de *DeviceEndpoints) resolveEnrollCredential(req *registerDeviceRequest) (accountPublicKey string, statusCode int, err error) {
+func (de *DeviceEndpoints) resolveEnrollCredential(req *registerDeviceRequest) (accountPublicKey string, viaPassword bool, statusCode int, err error) {
 	delegationPresent := req.Delegation != ""
 	identifierPresent := req.Identifier != ""
 	authSecretPresent := req.AuthSecret != ""
 	passwordPresent := identifierPresent || authSecretPresent
 
 	if delegationPresent && passwordPresent {
-		return "", fasthttp.StatusBadRequest, fmt.Errorf("provide either delegation or identifier+authSecret, not both")
+		return "", false, fasthttp.StatusBadRequest, fmt.Errorf("provide either delegation or identifier+authSecret, not both")
 	}
 	if !delegationPresent && !passwordPresent {
-		return "", fasthttp.StatusBadRequest, fmt.Errorf("delegation or identifier+authSecret is required")
+		return "", false, fasthttp.StatusBadRequest, fmt.Errorf("delegation or identifier+authSecret is required")
 	}
 	if passwordPresent && (!identifierPresent || !authSecretPresent) {
-		return "", fasthttp.StatusBadRequest, fmt.Errorf("identifier and authSecret are both required")
+		return "", false, fasthttp.StatusBadRequest, fmt.Errorf("identifier and authSecret are both required")
 	}
 
 	if delegationPresent {
-		signerDevice, verifyErr := de.verifyDelegation(req.Delegation)
+		signerDevice, verifyErr := de.verifyDelegation(req.Delegation, req.DevicePublicKey)
 		if verifyErr != nil {
 			log.Debug().Err(verifyErr).Msg("[DEVICE] Delegation verification failed")
-			return "", fasthttp.StatusUnauthorized, fmt.Errorf("invalid delegation")
+			return "", false, fasthttp.StatusUnauthorized, fmt.Errorf("invalid delegation")
 		}
-		return signerDevice.UserPublicKey, 0, nil
+		return signerDevice.UserPublicKey, false, 0, nil
 	}
 
 	identifier, normErr := NormalizeIdentifier(req.Identifier)
 	if normErr != nil {
-		return "", fasthttp.StatusBadRequest, fmt.Errorf("identifier is invalid")
+		return "", false, fasthttp.StatusBadRequest, fmt.Errorf("identifier is invalid")
 	}
 
 	userPublicKey, verifier, lookupErr := de.userRepository.GetPasswordCredential(identifier)
 	if lookupErr != nil {
 		log.Error().Err(lookupErr).Msg("[DEVICE] Failed to look up password credential")
-		return "", fasthttp.StatusInternalServerError, fmt.Errorf("internal server error")
+		return "", false, fasthttp.StatusInternalServerError, fmt.Errorf("internal server error")
 	}
 	// Miss, empty verifier, or mismatch all collapse to the same generic
 	// error - the body must be byte-identical for an unknown identifier and
@@ -230,18 +269,23 @@ func (de *DeviceEndpoints) resolveEnrollCredential(req *registerDeviceRequest) (
 	// anti-enumeration rationale).
 	if userPublicKey == "" || verifier == "" || !verifyAuthSecret(de.verifierKey, verifier, req.AuthSecret) {
 		log.Debug().Msg("[DEVICE] Password credential check failed")
-		return "", fasthttp.StatusUnauthorized, fmt.Errorf("invalid credentials")
+		return "", false, fasthttp.StatusUnauthorized, fmt.Errorf("invalid credentials")
 	}
 
-	return userPublicKey, 0, nil
+	return userPublicKey, true, 0, nil
 }
 
 // verifyDelegation validates a delegation JWS and returns the signer's
-// device row. Verify order: parse claims -> signer device exists and is
-// unrevoked -> signature verifies against the signer's own key (requiring
-// EdDSA) -> exp is in the future and the token's total lifetime is within
-// maxDelegationTTLSec -> jti has not been replayed.
-func (de *DeviceEndpoints) verifyDelegation(signedJWT string) (*Device, error) {
+// device row. devicePublicKey is the enrolling device's public key from the
+// enclosing registerDeviceRequest - IF the delegation carries a dpk claim, it
+// must match devicePublicKey exactly; a delegation with no dpk claim skips
+// that check (see delegationClaims for why dpk is optional). aud is always
+// required and must match this space. Verify order: parse claims -> signer
+// device exists and is unrevoked -> signature verifies against the signer's
+// own key (requiring EdDSA) -> dpk (if present) matches the enrolling device
+// and aud matches this space -> exp is in the future and the token's total
+// lifetime is within maxDelegationTTLSec -> jti has not been replayed.
+func (de *DeviceEndpoints) verifyDelegation(signedJWT string, devicePublicKey string) (*Device, error) {
 	token, _, err := jwt.NewParser().ParseUnverified(signedJWT, jwt.MapClaims{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse delegation: %w", err)
@@ -265,9 +309,15 @@ func (de *DeviceEndpoints) verifyDelegation(signedJWT string) (*Device, error) {
 	if exp, ok := mapClaims["exp"].(float64); ok {
 		claims.ExpiresAt = int64(exp)
 	}
+	if dpk, ok := mapClaims["dpk"].(string); ok {
+		claims.DevicePublicKey = dpk
+	}
+	if aud, ok := mapClaims["aud"].(string); ok {
+		claims.Audience = aud
+	}
 
-	if claims.Issuer == "" || claims.JTI == "" {
-		return nil, fmt.Errorf("missing iss or jti claim")
+	if claims.Issuer == "" || claims.JTI == "" || claims.Audience == "" {
+		return nil, fmt.Errorf("missing iss, jti, or aud claim")
 	}
 
 	signerDevice, err := de.userRepository.GetDevice(claims.Issuer)
@@ -295,6 +345,14 @@ func (de *DeviceEndpoints) verifyDelegation(signedJWT string) (*Device, error) {
 	}
 	if !verifiedToken.Valid {
 		return nil, fmt.Errorf("delegation signature verification failed")
+	}
+
+	// dpk is optional (see delegationClaims) - only checked when present.
+	if claims.DevicePublicKey != "" && claims.DevicePublicKey != devicePublicKey {
+		return nil, fmt.Errorf("delegation dpk does not match enrolling device")
+	}
+	if claims.Audience != de.spacePublicKey {
+		return nil, fmt.Errorf("delegation aud does not match this space")
 	}
 
 	now := timeNowFunc()

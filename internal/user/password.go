@@ -23,7 +23,37 @@ var ErrInvalidIdentifier = errors.New("invalid identifier")
 // std-base64 of exactly 32 bytes.
 var ErrInvalidAuthSecret = errors.New("invalid auth secret")
 
+// ErrInvalidEscrowBlob is returned when a supplied escrow blob (accountKeyBlob
+// or userState) is not valid std-base64, or exceeds the size cap for its kind.
+var ErrInvalidEscrowBlob = errors.New("invalid escrow blob")
+
+// maxAccountKeyBlobLen and maxUserStateBlobLen cap the base64 length of the
+// two escrow blobs SetPassword accepts. accountKeyBlob wraps a fixed 32-byte
+// seed (small; 512 std-base64 chars gives generous AEAD-framing headroom).
+// userState wraps an arbitrary-size JSON document (space list + preferences),
+// capped at 64KiB to keep a misbehaving client from writing an unbounded row.
+const (
+	maxAccountKeyBlobLen = 512
+	maxUserStateBlobLen  = 64 * 1024
+)
+
 var identifierPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._+@-]{2,63}$`)
+
+// validateEscrowBlob checks that blob is valid std-base64 and does not exceed
+// maxLen. An empty blob is always valid - it is the signal to CLEAR the
+// corresponding escrow column (see user_repository.go's SetPasswordCredentials).
+func validateEscrowBlob(blob string, maxLen int) error {
+	if blob == "" {
+		return nil
+	}
+	if len(blob) > maxLen {
+		return fmt.Errorf("%w: exceeds max length %d", ErrInvalidEscrowBlob, maxLen)
+	}
+	if _, err := base64.StdEncoding.DecodeString(blob); err != nil {
+		return fmt.Errorf("%w: not valid base64", ErrInvalidEscrowBlob)
+	}
+	return nil
+}
 
 // verifierScheme prefixes every stored password_verifier value, naming the
 // algorithm so a future scheme change can coexist with old rows.

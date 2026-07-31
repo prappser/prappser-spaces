@@ -19,7 +19,8 @@ import (
 type deviceTestRepo struct {
 	devices     map[string]*Device
 	accounts    map[string]*User
-	credentials map[string]struct{ userPublicKey, verifier string } // keyed by normalized identifier
+	credentials map[string]struct{ userPublicKey, verifier string }   // keyed by normalized identifier
+	escrow      map[string]struct{ accountKeyBlob, userState string } // keyed by account public key
 }
 
 func newDeviceTestRepo() *deviceTestRepo {
@@ -27,6 +28,7 @@ func newDeviceTestRepo() *deviceTestRepo {
 		devices:     map[string]*Device{},
 		accounts:    map[string]*User{},
 		credentials: map[string]struct{ userPublicKey, verifier string }{},
+		escrow:      map[string]struct{ accountKeyBlob, userState string }{},
 	}
 }
 
@@ -74,21 +76,34 @@ func (r *deviceTestRepo) RevokeDevice(devicePublicKey string, ts int64) error {
 }
 func (r *deviceTestRepo) TouchDeviceLastSeen(devicePublicKey string, ts int64) error { return nil }
 
-func (r *deviceTestRepo) SetPasswordCredentials(publicKey, identifier, passwordVerifier string) error {
+func (r *deviceTestRepo) SetPasswordCredentials(publicKey, identifier, passwordVerifier, accountKeyBlob, userState string) error {
 	r.credentials[identifier] = struct{ userPublicKey, verifier string }{publicKey, passwordVerifier}
+	r.escrow[publicKey] = struct{ accountKeyBlob, userState string }{accountKeyBlob, userState}
 	return nil
 }
 func (r *deviceTestRepo) GetPasswordCredential(identifier string) (string, string, error) {
 	cred := r.credentials[identifier]
 	return cred.userPublicKey, cred.verifier, nil
 }
+func (r *deviceTestRepo) GetEscrow(publicKey string) (string, string, error) {
+	escrow := r.escrow[publicKey]
+	return escrow.accountKeyBlob, escrow.userState, nil
+}
 
 // buildDelegationJWS signs a delegation payload with signerPriv using the
 // given signing method (EdDSA for valid delegations, something else to
-// exercise the alg check).
-func buildDelegationJWS(t *testing.T, method jwt.SigningMethod, signKey interface{}, issuer, jti string, iat, exp int64) string {
+// exercise the alg check). dpk and aud are the delegation's target device
+// and target space - empty strings omit that claim, to exercise the
+// required-claim checks.
+func buildDelegationJWS(t *testing.T, method jwt.SigningMethod, signKey interface{}, issuer, jti string, iat, exp int64, dpk, aud string) string {
 	t.Helper()
 	claims := jwt.MapClaims{"iss": issuer, "jti": jti, "iat": iat, "exp": exp}
+	if dpk != "" {
+		claims["dpk"] = dpk
+	}
+	if aud != "" {
+		claims["aud"] = aud
+	}
 	token := jwt.NewWithClaims(method, claims)
 	signed, err := token.SignedString(signKey)
 	assert.NoError(t, err)
@@ -106,6 +121,13 @@ func TestVerifyDelegation(t *testing.T) {
 	assert.NoError(t, err)
 	_ = otherPub
 
+	const (
+		enrollingDeviceKeyB64 = "enrolling-device-key"
+		spacePublicKeyB64     = "this-space-key"
+		wrongDeviceKeyB64     = "some-other-device-key"
+		wrongSpaceKeyB64      = "some-other-space-key"
+	)
+
 	newRepo := func() *deviceTestRepo {
 		repo := newDeviceTestRepo()
 		repo.devices[signerKeyB64] = &Device{DevicePublicKey: signerKeyB64, UserPublicKey: "account-1", CreatedAt: now}
@@ -120,21 +142,21 @@ func TestVerifyDelegation(t *testing.T) {
 		{
 			name: "happy path",
 			build: func(repo *deviceTestRepo, de *DeviceEndpoints) string {
-				return buildDelegationJWS(t, jwt.SigningMethodEdDSA, signerPriv, signerKeyB64, "jti-1", now, now+300)
+				return buildDelegationJWS(t, jwt.SigningMethodEdDSA, signerPriv, signerKeyB64, "jti-1", now, now+300, enrollingDeviceKeyB64, spacePublicKeyB64)
 			},
 			wantErr: false,
 		},
 		{
 			name: "expired",
 			build: func(repo *deviceTestRepo, de *DeviceEndpoints) string {
-				return buildDelegationJWS(t, jwt.SigningMethodEdDSA, signerPriv, signerKeyB64, "jti-2", now-1000, now-400)
+				return buildDelegationJWS(t, jwt.SigningMethodEdDSA, signerPriv, signerKeyB64, "jti-2", now-1000, now-400, enrollingDeviceKeyB64, spacePublicKeyB64)
 			},
 			wantErr: true,
 		},
 		{
 			name: "exp-iat too long",
 			build: func(repo *deviceTestRepo, de *DeviceEndpoints) string {
-				return buildDelegationJWS(t, jwt.SigningMethodEdDSA, signerPriv, signerKeyB64, "jti-3", now, now+700)
+				return buildDelegationJWS(t, jwt.SigningMethodEdDSA, signerPriv, signerKeyB64, "jti-3", now, now+700, enrollingDeviceKeyB64, spacePublicKeyB64)
 			},
 			wantErr: true,
 		},
@@ -142,7 +164,7 @@ func TestVerifyDelegation(t *testing.T) {
 			name: "wrong signer signature",
 			build: func(repo *deviceTestRepo, de *DeviceEndpoints) string {
 				// Signed by a different key than the one registered under signerKeyB64.
-				return buildDelegationJWS(t, jwt.SigningMethodEdDSA, otherPriv, signerKeyB64, "jti-4", now, now+300)
+				return buildDelegationJWS(t, jwt.SigningMethodEdDSA, otherPriv, signerKeyB64, "jti-4", now, now+300, enrollingDeviceKeyB64, spacePublicKeyB64)
 			},
 			wantErr: true,
 		},
@@ -151,18 +173,18 @@ func TestVerifyDelegation(t *testing.T) {
 			build: func(repo *deviceTestRepo, de *DeviceEndpoints) string {
 				revokedAt := now
 				repo.devices[signerKeyB64].RevokedAt = &revokedAt
-				return buildDelegationJWS(t, jwt.SigningMethodEdDSA, signerPriv, signerKeyB64, "jti-5", now, now+300)
+				return buildDelegationJWS(t, jwt.SigningMethodEdDSA, signerPriv, signerKeyB64, "jti-5", now, now+300, enrollingDeviceKeyB64, spacePublicKeyB64)
 			},
 			wantErr: true,
 		},
 		{
 			name: "replayed jti",
 			build: func(repo *deviceTestRepo, de *DeviceEndpoints) string {
-				jws := buildDelegationJWS(t, jwt.SigningMethodEdDSA, signerPriv, signerKeyB64, "jti-6", now, now+300)
+				jws := buildDelegationJWS(t, jwt.SigningMethodEdDSA, signerPriv, signerKeyB64, "jti-6", now, now+300, enrollingDeviceKeyB64, spacePublicKeyB64)
 				// Consume it once on the SAME endpoints instance the test will
 				// re-verify against below - jti tracking is per-instance, so a
 				// fresh instance wouldn't see it as replayed.
-				_, err := de.verifyDelegation(jws)
+				_, err := de.verifyDelegation(jws, enrollingDeviceKeyB64)
 				assert.NoError(t, err, "first use should succeed")
 				return jws
 			},
@@ -171,7 +193,38 @@ func TestVerifyDelegation(t *testing.T) {
 		{
 			name: "alg not EdDSA",
 			build: func(repo *deviceTestRepo, de *DeviceEndpoints) string {
-				return buildDelegationJWS(t, jwt.SigningMethodHS256, []byte("secret"), signerKeyB64, "jti-7", now, now+300)
+				return buildDelegationJWS(t, jwt.SigningMethodHS256, []byte("secret"), signerKeyB64, "jti-7", now, now+300, enrollingDeviceKeyB64, spacePublicKeyB64)
+			},
+			wantErr: true,
+		},
+		{
+			// dpk is optional (QR/paste device-link flow mints its delegation
+			// before the enrolling device's keypair exists) - a delegation
+			// with no dpk claim but a valid aud must still be accepted.
+			name: "missing dpk is accepted when aud is valid",
+			build: func(repo *deviceTestRepo, de *DeviceEndpoints) string {
+				return buildDelegationJWS(t, jwt.SigningMethodEdDSA, signerPriv, signerKeyB64, "jti-8", now, now+300, "", spacePublicKeyB64)
+			},
+			wantErr: false,
+		},
+		{
+			name: "missing aud",
+			build: func(repo *deviceTestRepo, de *DeviceEndpoints) string {
+				return buildDelegationJWS(t, jwt.SigningMethodEdDSA, signerPriv, signerKeyB64, "jti-9", now, now+300, enrollingDeviceKeyB64, "")
+			},
+			wantErr: true,
+		},
+		{
+			name: "wrong dpk",
+			build: func(repo *deviceTestRepo, de *DeviceEndpoints) string {
+				return buildDelegationJWS(t, jwt.SigningMethodEdDSA, signerPriv, signerKeyB64, "jti-10", now, now+300, wrongDeviceKeyB64, spacePublicKeyB64)
+			},
+			wantErr: true,
+		},
+		{
+			name: "wrong aud",
+			build: func(repo *deviceTestRepo, de *DeviceEndpoints) string {
+				return buildDelegationJWS(t, jwt.SigningMethodEdDSA, signerPriv, signerKeyB64, "jti-11", now, now+300, enrollingDeviceKeyB64, wrongSpaceKeyB64)
 			},
 			wantErr: true,
 		},
@@ -180,10 +233,10 @@ func TestVerifyDelegation(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			repo := newRepo()
-			de := NewDeviceEndpoints(repo, nil)
+			de := NewDeviceEndpoints(repo, nil, spacePublicKeyB64)
 			jws := tc.build(repo, de)
 
-			signer, err := de.verifyDelegation(jws)
+			signer, err := de.verifyDelegation(jws, enrollingDeviceKeyB64)
 
 			if tc.wantErr {
 				assert.Error(t, err)
@@ -200,7 +253,7 @@ func TestRevokeDevice_ShouldReturn403WhenTargetIsCurrentDevice(t *testing.T) {
 	// given
 	repo := newDeviceTestRepo()
 	repo.devices["device-current"] = &Device{DevicePublicKey: "device-current", UserPublicKey: "account-1"}
-	de := NewDeviceEndpoints(repo, nil)
+	de := NewDeviceEndpoints(repo, nil, "space-key")
 
 	ctx := &fasthttp.RequestCtx{}
 	ctx.Request.SetRequestURI("/users/devices?devicePublicKey=device-current")
@@ -217,7 +270,7 @@ func TestRevokeDevice_ShouldReturn404WhenNotOwnedByAuthenticatedAccount(t *testi
 	// given
 	repo := newDeviceTestRepo()
 	repo.devices["device-other"] = &Device{DevicePublicKey: "device-other", UserPublicKey: "some-other-account"}
-	de := NewDeviceEndpoints(repo, nil)
+	de := NewDeviceEndpoints(repo, nil, "space-key")
 
 	ctx := &fasthttp.RequestCtx{}
 	ctx.Request.SetRequestURI("/users/devices?devicePublicKey=device-other")
@@ -234,7 +287,7 @@ func TestRevokeDevice_ShouldReturn204OnSuccess(t *testing.T) {
 	// given
 	repo := newDeviceTestRepo()
 	repo.devices["device-other"] = &Device{DevicePublicKey: "device-other", UserPublicKey: "account-1"}
-	de := NewDeviceEndpoints(repo, nil)
+	de := NewDeviceEndpoints(repo, nil, "space-key")
 
 	ctx := &fasthttp.RequestCtx{}
 	ctx.Request.SetRequestURI("/users/devices?devicePublicKey=device-other")
@@ -268,10 +321,10 @@ func validNewDevicePublicKey() string {
 	return base64.StdEncoding.EncodeToString(pub)
 }
 
-// seedPasswordCredential registers a password credential for account
-// "account-1" under identifier, returning the plaintext authSecret a caller
-// can present to authenticate as it.
-func seedPasswordCredential(t *testing.T, repo *deviceTestRepo, verifierKey []byte, identifier string) (authSecret string) {
+// seedPasswordCredential registers a password credential (and, optionally,
+// escrow blobs) for account "account-1" under identifier, returning the
+// plaintext authSecret a caller can present to authenticate as it.
+func seedPasswordCredential(t *testing.T, repo *deviceTestRepo, verifierKey []byte, identifier string, accountKeyBlob, userState string) (authSecret string) {
 	t.Helper()
 	secretBytes := make([]byte, 32)
 	_, err := rand.Read(secretBytes)
@@ -282,7 +335,7 @@ func seedPasswordCredential(t *testing.T, repo *deviceTestRepo, verifierKey []by
 	assert.NoError(t, err)
 
 	repo.accounts["account-1"] = &User{PublicKey: "account-1", Username: "alice", Role: RoleUser}
-	assert.NoError(t, repo.SetPasswordCredentials("account-1", identifier, verifier))
+	assert.NoError(t, repo.SetPasswordCredentials("account-1", identifier, verifier, accountKeyBlob, userState))
 	return authSecret
 }
 
@@ -290,8 +343,8 @@ func TestRegisterDevice_ShouldEnrollWithValidPasswordCredential(t *testing.T) {
 	// given
 	verifierKey := []byte("test-verifier-key")
 	repo := newDeviceTestRepo()
-	authSecret := seedPasswordCredential(t, repo, verifierKey, "alice")
-	de := NewDeviceEndpoints(repo, verifierKey)
+	authSecret := seedPasswordCredential(t, repo, verifierKey, "alice", "", "")
+	de := NewDeviceEndpoints(repo, verifierKey, "space-key")
 
 	ctx := newRegisterDeviceRequestCtx(t, registerDeviceRequest{
 		Identifier:      "alice",
@@ -314,8 +367,8 @@ func TestRegisterDevice_ShouldReturn401ForWrongAuthSecret(t *testing.T) {
 	// given
 	verifierKey := []byte("test-verifier-key")
 	repo := newDeviceTestRepo()
-	seedPasswordCredential(t, repo, verifierKey, "alice")
-	de := NewDeviceEndpoints(repo, verifierKey)
+	seedPasswordCredential(t, repo, verifierKey, "alice", "", "")
+	de := NewDeviceEndpoints(repo, verifierKey, "space-key")
 
 	wrongSecretBytes := make([]byte, 32)
 	ctx := newRegisterDeviceRequestCtx(t, registerDeviceRequest{
@@ -339,8 +392,8 @@ func TestRegisterDevice_ShouldReturn401WithByteIdenticalBodyForUnknownIdentifier
 	// given
 	verifierKey := []byte("test-verifier-key")
 	repo := newDeviceTestRepo()
-	seedPasswordCredential(t, repo, verifierKey, "alice")
-	de := NewDeviceEndpoints(repo, verifierKey)
+	seedPasswordCredential(t, repo, verifierKey, "alice", "", "")
+	de := NewDeviceEndpoints(repo, verifierKey, "space-key")
 
 	wrongSecretBytes := make([]byte, 32)
 	wrongPasswordCtx := newRegisterDeviceRequestCtx(t, registerDeviceRequest{
@@ -366,7 +419,7 @@ func TestRegisterDevice_ShouldReturn401WithByteIdenticalBodyForUnknownIdentifier
 
 func TestRegisterDevice_ShouldReturn400WhenBothCredentialsPresent(t *testing.T) {
 	// given
-	de := NewDeviceEndpoints(newDeviceTestRepo(), []byte("test-verifier-key"))
+	de := NewDeviceEndpoints(newDeviceTestRepo(), []byte("test-verifier-key"), "space-key")
 	ctx := newRegisterDeviceRequestCtx(t, registerDeviceRequest{
 		Delegation:      "some-delegation-jws",
 		Identifier:      "alice",
@@ -383,7 +436,7 @@ func TestRegisterDevice_ShouldReturn400WhenBothCredentialsPresent(t *testing.T) 
 
 func TestRegisterDevice_ShouldReturn400WhenIdentifierWithoutAuthSecret(t *testing.T) {
 	// given
-	de := NewDeviceEndpoints(newDeviceTestRepo(), []byte("test-verifier-key"))
+	de := NewDeviceEndpoints(newDeviceTestRepo(), []byte("test-verifier-key"), "space-key")
 	ctx := newRegisterDeviceRequestCtx(t, registerDeviceRequest{
 		Identifier:      "alice",
 		DevicePublicKey: validNewDevicePublicKey(),
@@ -398,7 +451,7 @@ func TestRegisterDevice_ShouldReturn400WhenIdentifierWithoutAuthSecret(t *testin
 
 func TestRegisterDevice_ShouldReturn400WhenNeitherCredentialPresent(t *testing.T) {
 	// given
-	de := NewDeviceEndpoints(newDeviceTestRepo(), []byte("test-verifier-key"))
+	de := NewDeviceEndpoints(newDeviceTestRepo(), []byte("test-verifier-key"), "space-key")
 	ctx := newRegisterDeviceRequestCtx(t, registerDeviceRequest{
 		DevicePublicKey: validNewDevicePublicKey(),
 	})
@@ -408,4 +461,171 @@ func TestRegisterDevice_ShouldReturn400WhenNeitherCredentialPresent(t *testing.T
 
 	// then
 	assert.Equal(t, fasthttp.StatusBadRequest, ctx.Response.StatusCode())
+}
+
+func TestRegisterDevice_ShouldReturnEscrowBlobsOnPasswordPath(t *testing.T) {
+	// given
+	verifierKey := []byte("test-verifier-key")
+	repo := newDeviceTestRepo()
+	accountKeyBlob := base64.StdEncoding.EncodeToString([]byte("sealed-account-key"))
+	userState := base64.StdEncoding.EncodeToString([]byte("sealed-user-state"))
+	authSecret := seedPasswordCredential(t, repo, verifierKey, "alice", accountKeyBlob, userState)
+	de := NewDeviceEndpoints(repo, verifierKey, "space-key")
+
+	ctx := newRegisterDeviceRequestCtx(t, registerDeviceRequest{
+		Identifier:      "alice",
+		AuthSecret:      authSecret,
+		DevicePublicKey: validNewDevicePublicKey(),
+	})
+
+	// when
+	de.RegisterDevice(ctx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusCreated, ctx.Response.StatusCode())
+	var resp registerDeviceResponse
+	assert.NoError(t, json.Unmarshal(ctx.Response.Body(), &resp))
+	assert.Equal(t, accountKeyBlob, resp.AccountKeyBlob)
+	assert.Equal(t, userState, resp.UserState)
+}
+
+// registerViaDelegation builds a valid delegation from an already-enrolled
+// signer device to a fresh new device, and dispatches RegisterDevice with it
+// - shared setup for the delegation-path RegisterDevice tests below.
+func registerViaDelegation(t *testing.T, de *DeviceEndpoints, signerKeyB64 string, signerPriv ed25519.PrivateKey, newDeviceKeyB64, spacePublicKeyB64, jti string) *fasthttp.RequestCtx {
+	t.Helper()
+	now := time.Now().Unix()
+	delegation := buildDelegationJWS(t, jwt.SigningMethodEdDSA, signerPriv, signerKeyB64, jti, now, now+300, newDeviceKeyB64, spacePublicKeyB64)
+	ctx := newRegisterDeviceRequestCtx(t, registerDeviceRequest{
+		Delegation:      delegation,
+		DevicePublicKey: newDeviceKeyB64,
+	})
+	de.RegisterDevice(ctx)
+	return ctx
+}
+
+// TestRegisterDevice_ShouldNotReturnEscrowBlobsOnDelegationPath is the
+// byte-identical-response requirement from registerDeviceResponse's doc
+// comment: even when the account HAS escrow blobs stored, the delegation
+// path must not surface them - only the password path does.
+func TestRegisterDevice_ShouldNotReturnEscrowBlobsOnDelegationPath(t *testing.T) {
+	// given
+	const spacePublicKeyB64 = "space-key"
+	signerPub, signerPriv, err := ed25519.GenerateKey(rand.Reader)
+	assert.NoError(t, err)
+	signerKeyB64 := base64.StdEncoding.EncodeToString(signerPub)
+
+	repo := newDeviceTestRepo()
+	repo.devices[signerKeyB64] = &Device{DevicePublicKey: signerKeyB64, UserPublicKey: "account-1", CreatedAt: time.Now().Unix()}
+	repo.accounts["account-1"] = &User{PublicKey: "account-1", Username: "alice", Role: RoleUser}
+	repo.escrow["account-1"] = struct{ accountKeyBlob, userState string }{
+		base64.StdEncoding.EncodeToString([]byte("sealed-account-key")),
+		base64.StdEncoding.EncodeToString([]byte("sealed-user-state")),
+	}
+	de := NewDeviceEndpoints(repo, nil, spacePublicKeyB64)
+
+	// when
+	ctx := registerViaDelegation(t, de, signerKeyB64, signerPriv, validNewDevicePublicKey(), spacePublicKeyB64, "jti-delegate-1")
+
+	// then
+	assert.Equal(t, fasthttp.StatusCreated, ctx.Response.StatusCode())
+	var resp registerDeviceResponse
+	assert.NoError(t, json.Unmarshal(ctx.Response.Body(), &resp))
+	assert.Empty(t, resp.AccountKeyBlob)
+	assert.Empty(t, resp.UserState)
+}
+
+// TestRegisterDevice_ShouldAcceptDelegationMissingDpk covers the QR/paste
+// device-link flow: its delegation is minted before the enrolling device's
+// keypair exists, so it never carries a dpk claim. aud alone must be enough
+// to enroll successfully.
+func TestRegisterDevice_ShouldAcceptDelegationMissingDpk(t *testing.T) {
+	// given
+	const spacePublicKeyB64 = "space-key"
+	signerPub, signerPriv, err := ed25519.GenerateKey(rand.Reader)
+	assert.NoError(t, err)
+	signerKeyB64 := base64.StdEncoding.EncodeToString(signerPub)
+
+	repo := newDeviceTestRepo()
+	repo.devices[signerKeyB64] = &Device{DevicePublicKey: signerKeyB64, UserPublicKey: "account-1", CreatedAt: time.Now().Unix()}
+	repo.accounts["account-1"] = &User{PublicKey: "account-1", Username: "alice", Role: RoleUser}
+	de := NewDeviceEndpoints(repo, nil, spacePublicKeyB64)
+	newDeviceKeyB64 := validNewDevicePublicKey()
+	now := time.Now().Unix()
+
+	missingDpk := buildDelegationJWS(t, jwt.SigningMethodEdDSA, signerPriv, signerKeyB64, "jti-missing-dpk", now, now+300, "", spacePublicKeyB64)
+
+	// when
+	ctx := newRegisterDeviceRequestCtx(t, registerDeviceRequest{Delegation: missingDpk, DevicePublicKey: newDeviceKeyB64})
+	de.RegisterDevice(ctx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusCreated, ctx.Response.StatusCode())
+}
+
+func TestRegisterDevice_ShouldReturn401ForDelegationMissingAud(t *testing.T) {
+	// given
+	const spacePublicKeyB64 = "space-key"
+	signerPub, signerPriv, err := ed25519.GenerateKey(rand.Reader)
+	assert.NoError(t, err)
+	signerKeyB64 := base64.StdEncoding.EncodeToString(signerPub)
+
+	repo := newDeviceTestRepo()
+	repo.devices[signerKeyB64] = &Device{DevicePublicKey: signerKeyB64, UserPublicKey: "account-1", CreatedAt: time.Now().Unix()}
+	de := NewDeviceEndpoints(repo, nil, spacePublicKeyB64)
+	newDeviceKeyB64 := validNewDevicePublicKey()
+	now := time.Now().Unix()
+
+	missingAud := buildDelegationJWS(t, jwt.SigningMethodEdDSA, signerPriv, signerKeyB64, "jti-missing-aud", now, now+300, newDeviceKeyB64, "")
+
+	// when
+	ctx := newRegisterDeviceRequestCtx(t, registerDeviceRequest{Delegation: missingAud, DevicePublicKey: newDeviceKeyB64})
+	de.RegisterDevice(ctx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusUnauthorized, ctx.Response.StatusCode())
+}
+
+func TestRegisterDevice_ShouldReturn401ForDelegationWithWrongDpk(t *testing.T) {
+	// given
+	const spacePublicKeyB64 = "space-key"
+	signerPub, signerPriv, err := ed25519.GenerateKey(rand.Reader)
+	assert.NoError(t, err)
+	signerKeyB64 := base64.StdEncoding.EncodeToString(signerPub)
+
+	repo := newDeviceTestRepo()
+	repo.devices[signerKeyB64] = &Device{DevicePublicKey: signerKeyB64, UserPublicKey: "account-1", CreatedAt: time.Now().Unix()}
+	de := NewDeviceEndpoints(repo, nil, spacePublicKeyB64)
+	newDeviceKeyB64 := validNewDevicePublicKey()
+	now := time.Now().Unix()
+
+	// when - delegation minted for a DIFFERENT device than the one enrolling
+	delegation := buildDelegationJWS(t, jwt.SigningMethodEdDSA, signerPriv, signerKeyB64, "jti-wrong-dpk", now, now+300, "wrong-device-key", spacePublicKeyB64)
+	ctx := newRegisterDeviceRequestCtx(t, registerDeviceRequest{Delegation: delegation, DevicePublicKey: newDeviceKeyB64})
+	de.RegisterDevice(ctx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusUnauthorized, ctx.Response.StatusCode())
+}
+
+func TestRegisterDevice_ShouldReturn401ForDelegationWithWrongAud(t *testing.T) {
+	// given
+	const spacePublicKeyB64 = "space-key"
+	signerPub, signerPriv, err := ed25519.GenerateKey(rand.Reader)
+	assert.NoError(t, err)
+	signerKeyB64 := base64.StdEncoding.EncodeToString(signerPub)
+
+	repo := newDeviceTestRepo()
+	repo.devices[signerKeyB64] = &Device{DevicePublicKey: signerKeyB64, UserPublicKey: "account-1", CreatedAt: time.Now().Unix()}
+	de := NewDeviceEndpoints(repo, nil, spacePublicKeyB64)
+	newDeviceKeyB64 := validNewDevicePublicKey()
+	now := time.Now().Unix()
+
+	// when - delegation minted for a DIFFERENT space than this one
+	delegation := buildDelegationJWS(t, jwt.SigningMethodEdDSA, signerPriv, signerKeyB64, "jti-wrong-aud", now, now+300, newDeviceKeyB64, "some-other-space-key")
+	ctx := newRegisterDeviceRequestCtx(t, registerDeviceRequest{Delegation: delegation, DevicePublicKey: newDeviceKeyB64})
+	de.RegisterDevice(ctx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusUnauthorized, ctx.Response.StatusCode())
 }

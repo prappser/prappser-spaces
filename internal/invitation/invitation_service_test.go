@@ -71,10 +71,13 @@ func (r *fakeUserRepo) ListDevices(userPublicKey string) ([]*user.Device, error)
 }
 func (r *fakeUserRepo) RevokeDevice(devicePublicKey string, ts int64) error        { return nil }
 func (r *fakeUserRepo) TouchDeviceLastSeen(devicePublicKey string, ts int64) error { return nil }
-func (r *fakeUserRepo) SetPasswordCredentials(publicKey, identifier, passwordVerifier string) error {
+func (r *fakeUserRepo) SetPasswordCredentials(publicKey, identifier, passwordVerifier, accountKeyBlob, userState string) error {
 	return nil
 }
 func (r *fakeUserRepo) GetPasswordCredential(identifier string) (string, string, error) {
+	return "", "", nil
+}
+func (r *fakeUserRepo) GetEscrow(publicKey string) (string, string, error) {
 	return "", "", nil
 }
 

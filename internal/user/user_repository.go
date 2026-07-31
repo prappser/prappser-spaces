@@ -128,13 +128,20 @@ func (r *userRepository) UpdateUsername(publicKey, username string) error {
 	return nil
 }
 
-// SetPasswordCredentials sets the password-login identifier and verifier for
-// an account. The unique index on lower(identifier) (migration 000019)
-// enforces case-insensitive uniqueness at the database level.
-func (r *userRepository) SetPasswordCredentials(publicKey, identifier, passwordVerifier string) error {
+// SetPasswordCredentials sets the password-login identifier, verifier, and
+// escrowed account-key/user-state blobs for an account in a single UPDATE.
+// The unique index on lower(identifier) (migration 000019) enforces
+// case-insensitive uniqueness at the database level.
+//
+// The verifier and both escrow blobs are written together on purpose: an
+// omitted (empty string) blob clears that column via NULLIF rather than
+// leaving a stale value in place. A stale escrow blob under a wrapKey that no
+// longer matches the current verifier is worse than a cleared one - it would
+// look present to a client but fail to decrypt.
+func (r *userRepository) SetPasswordCredentials(publicKey, identifier, passwordVerifier, accountKeyBlob, userState string) error {
 	_, err := r.db.Exec(
-		"UPDATE users SET identifier = $1, password_verifier = $2 WHERE public_key = $3",
-		identifier, passwordVerifier, publicKey,
+		"UPDATE users SET identifier = $1, password_verifier = $2, account_key_blob = NULLIF($3, ''), user_state_blob = NULLIF($4, '') WHERE public_key = $5",
+		identifier, passwordVerifier, accountKeyBlob, userState, publicKey,
 	)
 	if err != nil {
 		var pqErr *pq.Error
@@ -163,4 +170,22 @@ func (r *userRepository) GetPasswordCredential(identifier string) (userPublicKey
 		return "", "", fmt.Errorf("failed to get password credential: %w", err)
 	}
 	return userPublicKey, verifier, nil
+}
+
+// GetEscrow returns "", "", nil when the account has no row, or a row with
+// unset escrow columns - absence is a valid state here, not an error (see
+// GetPasswordCredential above for the same contract).
+func (r *userRepository) GetEscrow(publicKey string) (accountKeyBlob, userState string, err error) {
+	var accountKeyBlobNull, userStateNull sql.NullString
+	err = r.db.QueryRow(
+		"SELECT account_key_blob, user_state_blob FROM users WHERE public_key = $1",
+		publicKey,
+	).Scan(&accountKeyBlobNull, &userStateNull)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", "", nil
+		}
+		return "", "", fmt.Errorf("failed to get escrow: %w", err)
+	}
+	return accountKeyBlobNull.String, userStateNull.String, nil
 }

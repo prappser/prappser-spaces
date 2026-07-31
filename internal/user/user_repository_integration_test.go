@@ -39,7 +39,9 @@ func getTestDB(t *testing.T) *sql.DB {
 			created_at        BIGINT NOT NULL,
 			avatar_storage_id TEXT,
 			identifier        TEXT,
-			password_verifier TEXT
+			password_verifier TEXT,
+			account_key_blob  TEXT,
+			user_state_blob   TEXT
 		);
 		CREATE UNIQUE INDEX IF NOT EXISTS users_identifier_lower_idx ON users (lower(identifier));
 		CREATE TABLE IF NOT EXISTS user_devices (
@@ -132,7 +134,7 @@ func TestUserRepository_SetPasswordCredentials_ShouldRoundTripWithGetPasswordCre
 	}
 
 	// when
-	err := repo.SetPasswordCredentials("test-user-1", "test-alice", "hmac-sha256$dGVzdC12ZXJpZmllcg==")
+	err := repo.SetPasswordCredentials("test-user-1", "test-alice", "hmac-sha256$dGVzdC12ZXJpZmllcg==", "", "")
 
 	// then
 	assert.NoError(t, err)
@@ -140,6 +142,76 @@ func TestUserRepository_SetPasswordCredentials_ShouldRoundTripWithGetPasswordCre
 	assert.NoError(t, err)
 	assert.Equal(t, "test-user-1", userPublicKey)
 	assert.Equal(t, "hmac-sha256$dGVzdC12ZXJpZmllcg==", verifier)
+}
+
+// TestUserRepository_SetPasswordCredentials_ShouldRoundTripEscrowBlobsWithGetEscrow_Integration
+// covers the escrow half of SetPasswordCredentials: both blobs persist
+// together with the verifier, and GetEscrow reads them back.
+func TestUserRepository_SetPasswordCredentials_ShouldRoundTripEscrowBlobsWithGetEscrow_Integration(t *testing.T) {
+	// given
+	db := getTestDB(t)
+	defer db.Close()
+	repo := NewUserRepository(db)
+
+	if _, err := db.Exec(
+		"INSERT INTO users (public_key, username, role, created_at) VALUES ($1,$2,$3,$4)",
+		"test-user-1", "Alice", "user", time.Now().Unix(),
+	); err != nil {
+		t.Fatalf("Failed to insert test user: %v", err)
+	}
+
+	// when
+	err := repo.SetPasswordCredentials("test-user-1", "test-alice", "hmac-sha256$dGVzdC12ZXJpZmllcg==", "sealed-account-key", "sealed-user-state")
+
+	// then
+	assert.NoError(t, err)
+	accountKeyBlob, userState, err := repo.GetEscrow("test-user-1")
+	assert.NoError(t, err)
+	assert.Equal(t, "sealed-account-key", accountKeyBlob)
+	assert.Equal(t, "sealed-user-state", userState)
+}
+
+// TestUserRepository_SetPasswordCredentials_ShouldClearEscrowBlobsWhenOmitted_Integration
+// covers the NULLIF clear-on-omit contract: re-calling with empty blob
+// arguments clears whatever escrow a previous call stored.
+func TestUserRepository_SetPasswordCredentials_ShouldClearEscrowBlobsWhenOmitted_Integration(t *testing.T) {
+	// given
+	db := getTestDB(t)
+	defer db.Close()
+	repo := NewUserRepository(db)
+
+	if _, err := db.Exec(
+		"INSERT INTO users (public_key, username, role, created_at) VALUES ($1,$2,$3,$4)",
+		"test-user-1", "Alice", "user", time.Now().Unix(),
+	); err != nil {
+		t.Fatalf("Failed to insert test user: %v", err)
+	}
+	assert.NoError(t, repo.SetPasswordCredentials("test-user-1", "test-alice", "hmac-sha256$AAAA", "sealed-account-key", "sealed-user-state"))
+
+	// when - re-set with no escrow blobs
+	err := repo.SetPasswordCredentials("test-user-1", "test-alice", "hmac-sha256$BBBB", "", "")
+
+	// then
+	assert.NoError(t, err)
+	accountKeyBlob, userState, err := repo.GetEscrow("test-user-1")
+	assert.NoError(t, err)
+	assert.Empty(t, accountKeyBlob)
+	assert.Empty(t, userState)
+}
+
+func TestUserRepository_GetEscrow_ShouldReturnEmptyForUnknownPublicKey_Integration(t *testing.T) {
+	// given
+	db := getTestDB(t)
+	defer db.Close()
+	repo := NewUserRepository(db)
+
+	// when
+	accountKeyBlob, userState, err := repo.GetEscrow("test-does-not-exist")
+
+	// then
+	assert.NoError(t, err)
+	assert.Empty(t, accountKeyBlob)
+	assert.Empty(t, userState)
 }
 
 func TestUserRepository_GetPasswordCredential_ShouldReturnEmptyForUnknownIdentifier_Integration(t *testing.T) {
@@ -170,10 +242,10 @@ func TestUserRepository_SetPasswordCredentials_ShouldReturnErrIdentifierTakenFor
 	); err != nil {
 		t.Fatalf("Failed to insert test users: %v", err)
 	}
-	assert.NoError(t, repo.SetPasswordCredentials("test-user-1", "test-shared", "hmac-sha256$AAAA"))
+	assert.NoError(t, repo.SetPasswordCredentials("test-user-1", "test-shared", "hmac-sha256$AAAA", "", ""))
 
 	// when - a different account claims the same identifier, differing only by case
-	err := repo.SetPasswordCredentials("test-user-2", "TEST-SHARED", "hmac-sha256$BBBB")
+	err := repo.SetPasswordCredentials("test-user-2", "TEST-SHARED", "hmac-sha256$BBBB", "", "")
 
 	// then
 	assert.ErrorIs(t, err, ErrIdentifierTaken)

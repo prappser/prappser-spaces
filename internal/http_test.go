@@ -34,10 +34,13 @@ func (noopUserRepository) RevokeDevice(devicePublicKey string, ts int64) error {
 func (noopUserRepository) TouchDeviceLastSeen(devicePublicKey string, ts int64) error {
 	return nil
 }
-func (noopUserRepository) SetPasswordCredentials(publicKey, identifier, passwordVerifier string) error {
+func (noopUserRepository) SetPasswordCredentials(publicKey, identifier, passwordVerifier, accountKeyBlob, userState string) error {
 	return nil
 }
 func (noopUserRepository) GetPasswordCredential(identifier string) (string, string, error) {
+	return "", "", nil
+}
+func (noopUserRepository) GetEscrow(publicKey string) (string, string, error) {
 	return "", "", nil
 }
 

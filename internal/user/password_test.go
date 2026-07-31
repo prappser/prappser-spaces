@@ -185,3 +185,41 @@ func TestDerivePasswordSecrets_ShouldBeDeterministicForSameSeed(t *testing.T) {
 	assert.Equal(t, saltSecret1, saltSecret2)
 	assert.Equal(t, verifierKey1, verifierKey2)
 }
+
+func TestValidateEscrowBlob_ShouldAcceptEmptyBlob(t *testing.T) {
+	// when
+	err := validateEscrowBlob("", maxAccountKeyBlobLen)
+
+	// then
+	assert.NoError(t, err)
+}
+
+func TestValidateEscrowBlob_ShouldAcceptValidBase64WithinCap(t *testing.T) {
+	// given
+	blob := base64.StdEncoding.EncodeToString([]byte("sealed-account-key-seed"))
+
+	// when
+	err := validateEscrowBlob(blob, maxAccountKeyBlobLen)
+
+	// then
+	assert.NoError(t, err)
+}
+
+func TestValidateEscrowBlob_ShouldRejectNonBase64(t *testing.T) {
+	// when
+	err := validateEscrowBlob("not-valid-base64!!", maxAccountKeyBlobLen)
+
+	// then
+	assert.ErrorIs(t, err, ErrInvalidEscrowBlob)
+}
+
+func TestValidateEscrowBlob_ShouldRejectBlobExceedingMaxLen(t *testing.T) {
+	// given - valid base64, but longer than the cap
+	oversized := base64.StdEncoding.EncodeToString(make([]byte, maxAccountKeyBlobLen))
+
+	// when
+	err := validateEscrowBlob(oversized, maxAccountKeyBlobLen-1)
+
+	// then
+	assert.ErrorIs(t, err, ErrInvalidEscrowBlob)
+}

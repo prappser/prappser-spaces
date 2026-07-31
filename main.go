@@ -219,7 +219,7 @@ func main() {
 	// the space keypair invalidates every password credential (see
 	// user.DerivePasswordSecrets).
 	saltSecret, verifierKey := user.DerivePasswordSecrets(privateKey.Seed())
-	deviceEndpoints := user.NewDeviceEndpoints(userRepository, verifierKey)
+	deviceEndpoints := user.NewDeviceEndpoints(userRepository, verifierKey, spacePublicKeyString)
 	passwordEndpoints := user.NewPasswordEndpoints(userRepository, saltSecret, verifierKey)
 
 	requestHandler := internal.NewRequestHandler(config, userEndpoints, statusEndpoints, healthEndpoints, userService, appEndpoints, invitationEndpoints, eventEndpoints, setupEndpoints, storageEndpoints, wsHandler, spaceEndpoints, pushEndpoints, profileEndpoints, deviceEndpoints, passwordEndpoints)
