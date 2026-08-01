@@ -65,6 +65,7 @@ func (m *mockUserRepository) UpdateUserRole(publicKey string, role string) error
 	return nil
 }
 
+func (m *mockUserRepository) UpdateUserIssuer(publicKey, issuer string) error { return nil }
 func (m *mockUserRepository) EnsureDevice(devicePublicKey, userPublicKey string, deviceName *string, createdAt int64) error {
 	return nil
 }

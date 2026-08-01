@@ -2,6 +2,7 @@ package invitation
 
 import (
 	"context"
+	"errors"
 	"io"
 	"strconv"
 
@@ -253,6 +254,9 @@ type JoinRequest struct {
 	// DevicePublicKey is optional; InvitationService.Join defaults it to
 	// PublicKey when empty (device #1's key equals the account key).
 	DevicePublicKey string `json:"devicePublicKey,omitempty"`
+	// Assertion is optional (#111): a cross-space identity assertion
+	// vouching for PublicKey, see InvitationService.Join.
+	Assertion string `json:"assertion,omitempty"`
 }
 
 // JoinApplication handles POST /invites/{token}/join
@@ -292,9 +296,20 @@ func (ie *InvitationEndpoints) JoinApplication(ctx *fasthttp.RequestCtx) {
 	log.Debug().Str("username", req.Username).Str("token", token).Msg("[JOIN] Joining application")
 
 	// Join via invitation service (handles user creation, validation, transaction, event production)
-	result, err := ie.invitationService.Join(token, req.PublicKey, req.Username, req.DevicePublicKey)
+	result, err := ie.invitationService.Join(token, req.PublicKey, req.Username, req.DevicePublicKey, req.Assertion)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to join application")
+
+		// #111: assertion-specific errors first - checked with errors.Is
+		// rather than by message, since they're sentinel errors.
+		switch {
+		case errors.Is(err, user.ErrInvalidAssertion):
+			ctx.Error("invalid assertion", fasthttp.StatusUnauthorized)
+			return
+		case errors.Is(err, ErrDeviceConflict):
+			ctx.Error("device already registered to a different account", fasthttp.StatusConflict)
+			return
+		}
 
 		// Determine appropriate status code based on error message
 		errorMsg := err.Error()

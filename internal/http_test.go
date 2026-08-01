@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"testing"
 
+	"github.com/goccy/go-json"
 	"github.com/prappser/prappser-spaces/internal/user"
 	"github.com/stretchr/testify/assert"
 	"github.com/valyala/fasthttp"
@@ -23,6 +24,7 @@ func (noopUserRepository) UpdateAvatarStorageID(publicKey string, avatarStorageI
 	return nil
 }
 func (noopUserRepository) UpdateUsername(publicKey, username string) error { return nil }
+func (noopUserRepository) UpdateUserIssuer(publicKey, issuer string) error { return nil }
 func (noopUserRepository) EnsureDevice(devicePublicKey, userPublicKey string, deviceName *string, createdAt int64) error {
 	return nil
 }
@@ -54,7 +56,7 @@ func newTestRequestHandler(t *testing.T) fasthttp.RequestHandler {
 	assert.NoError(t, err)
 	userEndpoints := user.NewEndpoints(noopUserRepository{}, user.Config{ChallengeTTLSec: 300}, priv, pub, nil, nil)
 	cfg := &Config{TrustProxyHeaders: true}
-	return NewRequestHandler(cfg, userEndpoints, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	return NewRequestHandler(cfg, userEndpoints, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 }
 
 func newAuthRouteRequestCtx(path string) *fasthttp.RequestCtx {
@@ -122,4 +124,34 @@ func TestRateLimiting_RegisterDeviceIsRateLimitedByIP(t *testing.T) {
 	ctx := newAuthRouteRequestCtxWithMethod("POST", "/users/devices")
 	handler(ctx)
 	assert.Equal(t, fasthttp.StatusTooManyRequests, ctx.Response.StatusCode())
+}
+
+// TestSpacePublicKey_ShouldReturn200WithPublicKeyField checks GET
+// /space/publickey (#111 B1) returns the space's own key, wired to
+// userEndpoints.GetSpacePublicKey via newTestRequestHandler.
+func TestSpacePublicKey_ShouldReturn200WithPublicKeyField(t *testing.T) {
+	// given
+	handler := newTestRequestHandler(t)
+	ctx := newAuthRouteRequestCtxWithMethod("GET", "/space/publickey")
+
+	// when
+	handler(ctx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusOK, ctx.Response.StatusCode())
+	var resp map[string]string
+	assert.NoError(t, json.Unmarshal(ctx.Response.Body(), &resp))
+	assert.NotEmpty(t, resp["publicKey"])
+}
+
+func TestSpacePublicKey_ShouldReturn405OnPost(t *testing.T) {
+	// given
+	handler := newTestRequestHandler(t)
+	ctx := newAuthRouteRequestCtxWithMethod("POST", "/space/publickey")
+
+	// when
+	handler(ctx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusMethodNotAllowed, ctx.Response.StatusCode())
 }

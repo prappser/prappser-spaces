@@ -31,6 +31,12 @@ func getTestDB(t *testing.T) *sql.DB {
 	// because RevokeDevice's push_subscriptions cleanup is a raw DELETE
 	// against that table (see device_repository.go) - the device
 	// repository integration tests below need it present.
+	//
+	// issuer has a test-only DEFAULT '' (the real migration 000021 adds it
+	// NOT NULL with no default) so the raw INSERTs elsewhere in this file
+	// that predate #112 keep compiling without listing every column;
+	// CreateUser's COALESCE(NULLIF($5,''),$1) is what guarantees a non-empty
+	// issuer in production.
 	schema := `
 		CREATE TABLE IF NOT EXISTS users (
 			public_key        TEXT PRIMARY KEY,
@@ -41,7 +47,8 @@ func getTestDB(t *testing.T) *sql.DB {
 			identifier        TEXT,
 			password_verifier TEXT,
 			account_key_blob  TEXT,
-			user_state_blob   TEXT
+			user_state_blob   TEXT,
+			issuer            TEXT NOT NULL DEFAULT ''
 		);
 		CREATE UNIQUE INDEX IF NOT EXISTS users_identifier_lower_idx ON users (lower(identifier));
 		CREATE TABLE IF NOT EXISTS user_devices (
@@ -249,4 +256,134 @@ func TestUserRepository_SetPasswordCredentials_ShouldReturnErrIdentifierTakenFor
 
 	// then
 	assert.ErrorIs(t, err, ErrIdentifierTaken)
+}
+
+// TestUserRepository_CreateUser_ShouldDefaultIssuerToPublicKeyWhenEmpty_Integration
+// covers D1's self-registration default: an empty Issuer on the struct falls
+// through CreateUser's COALESCE/NULLIF fallback to the account's own public
+// key.
+func TestUserRepository_CreateUser_ShouldDefaultIssuerToPublicKeyWhenEmpty_Integration(t *testing.T) {
+	// given
+	db := getTestDB(t)
+	defer db.Close()
+	repo := NewUserRepository(db)
+
+	// when - Issuer left empty, as a plain (non-assertion) join would leave it
+	err := repo.CreateUser(&User{
+		PublicKey: "test-user-1",
+		Username:  "Alice",
+		Role:      "user",
+		CreatedAt: time.Now().Unix(),
+	})
+
+	// then
+	assert.NoError(t, err)
+	got, err := repo.GetUserByPublicKey("test-user-1")
+	assert.NoError(t, err)
+	assert.NotNil(t, got)
+	assert.Equal(t, "test-user-1", got.Issuer)
+}
+
+// TestUserRepository_CreateUser_ShouldPersistExplicitIssuer_Integration covers
+// D1's vouched case: an assertion-derived Issuer survives CreateUser's
+// COALESCE unchanged (NULLIF only substitutes on empty).
+func TestUserRepository_CreateUser_ShouldPersistExplicitIssuer_Integration(t *testing.T) {
+	// given
+	db := getTestDB(t)
+	defer db.Close()
+	repo := NewUserRepository(db)
+
+	// when - Issuer set to a vouching space's key, as first-contact-via-assertion would
+	err := repo.CreateUser(&User{
+		PublicKey: "test-user-1",
+		Username:  "Alice",
+		Role:      "user",
+		CreatedAt: time.Now().Unix(),
+		Issuer:    "test-space-key",
+	})
+
+	// then
+	assert.NoError(t, err)
+	got, err := repo.GetUserByPublicKey("test-user-1")
+	assert.NoError(t, err)
+	assert.NotNil(t, got)
+	assert.Equal(t, "test-space-key", got.Issuer)
+}
+
+// TestUserRepository_GetUserByPublicKey_ShouldReturnIssuer_Integration checks
+// the SELECT/Scan side directly (via a raw INSERT), independent of
+// CreateUser's COALESCE logic covered above.
+func TestUserRepository_GetUserByPublicKey_ShouldReturnIssuer_Integration(t *testing.T) {
+	// given
+	db := getTestDB(t)
+	defer db.Close()
+	repo := NewUserRepository(db)
+
+	if _, err := db.Exec(
+		"INSERT INTO users (public_key, username, role, created_at, issuer) VALUES ($1,$2,$3,$4,$5)",
+		"test-user-1", "Alice", "user", time.Now().Unix(), "test-space-key",
+	); err != nil {
+		t.Fatalf("Failed to insert test user: %v", err)
+	}
+
+	// when
+	got, err := repo.GetUserByPublicKey("test-user-1")
+
+	// then
+	assert.NoError(t, err)
+	assert.NotNil(t, got)
+	assert.Equal(t, "test-space-key", got.Issuer)
+}
+
+// TestUserRepository_UpdateUserIssuer_ShouldMoveSelfToVouched_Integration
+// covers D5's one-way re-pin lever: a self-pinned account (issuer = own
+// public key) upgrades to a vouching space's key.
+func TestUserRepository_UpdateUserIssuer_ShouldMoveSelfToVouched_Integration(t *testing.T) {
+	// given
+	db := getTestDB(t)
+	defer db.Close()
+	repo := NewUserRepository(db)
+
+	if _, err := db.Exec(
+		"INSERT INTO users (public_key, username, role, created_at, issuer) VALUES ($1,$2,$3,$4,$1)",
+		"test-user-1", "Alice", "user", time.Now().Unix(),
+	); err != nil {
+		t.Fatalf("Failed to insert test user: %v", err)
+	}
+
+	// when
+	err := repo.UpdateUserIssuer("test-user-1", "test-space-key")
+
+	// then
+	assert.NoError(t, err)
+	got, err := repo.GetUserByPublicKey("test-user-1")
+	assert.NoError(t, err)
+	assert.Equal(t, "test-space-key", got.Issuer)
+}
+
+// TestUserRepository_UpdateUserIssuer_ShouldBeNoOpWhenAlreadyVouched_Integration
+// covers the SQL guard (WHERE issuer = public_key): a pin that has already
+// moved away from self never moves again, and the call still returns nil
+// rather than an error (see UserRepository's doc comment).
+func TestUserRepository_UpdateUserIssuer_ShouldBeNoOpWhenAlreadyVouched_Integration(t *testing.T) {
+	// given
+	db := getTestDB(t)
+	defer db.Close()
+	repo := NewUserRepository(db)
+
+	if _, err := db.Exec(
+		"INSERT INTO users (public_key, username, role, created_at, issuer) VALUES ($1,$2,$3,$4,$5)",
+		"test-user-1", "Alice", "user", time.Now().Unix(), "test-space-key-A",
+	); err != nil {
+		t.Fatalf("Failed to insert test user: %v", err)
+	}
+
+	// when - already vouched by space A; a different issuer must not move the pin
+	err := repo.UpdateUserIssuer("test-user-1", "test-space-key-B")
+
+	// then
+	assert.NoError(t, err)
+	got, err := repo.GetUserByPublicKey("test-user-1")
+	assert.NoError(t, err)
+	assert.Equal(t, "test-space-key-A", got.Issuer)
 }

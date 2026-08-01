@@ -42,6 +42,11 @@ type User struct {
 	// would bloat that hot path for the (rare) escrow read path - use
 	// UserRepository.GetEscrow instead.
 	Identifier *string `json:"identifier,omitempty"`
+	// Issuer is the public key that vouched for this account TO THIS SPACE.
+	// Equals PublicKey when the account registered/joined here directly;
+	// equals the issuing space's key when it arrived via a cross-space
+	// assertion (#111). NEVER empty: CreateUser defaults it to PublicKey.
+	Issuer string `json:"issuer"`
 	// DevicePublicKey identifies which of the account's devices authenticated
 	// the current request. Populated by UserService.ValidateJWT from the JWT's
 	// devicePublicKey claim (or the account key for legacy tokens - device #1's
@@ -69,6 +74,13 @@ type UserRepository interface {
 	UpdateUserRole(publicKey string, role string) error
 	UpdateAvatarStorageID(publicKey string, avatarStorageID *string) error
 	UpdateUsername(publicKey, username string) error
+	// UpdateUserIssuer re-pins issuer from self (issuer == public_key) to a
+	// vouching space's key, used only by the cross-space assertion re-pin
+	// (#111 D5). The SQL guard (WHERE issuer = public_key) enforces the
+	// one-way self->vouched upgrade: it is a no-op, returning nil, when the
+	// account is already vouched or doesn't exist - callers treat a no-op as
+	// fine.
+	UpdateUserIssuer(publicKey, issuer string) error
 	// EnsureDevice registers a device for an account if it doesn't already exist (no-op otherwise).
 	EnsureDevice(devicePublicKey, userPublicKey string, deviceName *string, createdAt int64) error
 	// GetDevice returns nil, nil when no device with that key exists.
