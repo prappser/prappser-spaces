@@ -42,6 +42,7 @@ func (r *deviceTestRepo) UpdateAvatarStorageID(publicKey string, avatarStorageID
 	return nil
 }
 func (r *deviceTestRepo) UpdateUsername(publicKey, username string) error { return nil }
+func (r *deviceTestRepo) UpdateUserIssuer(publicKey, issuer string) error { return nil }
 
 func (r *deviceTestRepo) EnsureDevice(devicePublicKey, userPublicKey string, deviceName *string, createdAt int64) error {
 	if _, exists := r.devices[devicePublicKey]; exists {

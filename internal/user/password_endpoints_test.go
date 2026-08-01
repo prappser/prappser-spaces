@@ -37,6 +37,7 @@ func (r *passwordTestRepo) UpdateAvatarStorageID(publicKey string, avatarStorage
 	return nil
 }
 func (r *passwordTestRepo) UpdateUsername(publicKey, username string) error { return nil }
+func (r *passwordTestRepo) UpdateUserIssuer(publicKey, issuer string) error { return nil }
 func (r *passwordTestRepo) EnsureDevice(devicePublicKey, userPublicKey string, deviceName *string, createdAt int64) error {
 	return nil
 }

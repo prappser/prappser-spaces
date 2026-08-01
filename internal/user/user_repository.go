@@ -24,8 +24,8 @@ func NewUserRepository(db *sql.DB) UserRepository {
 
 func (r *userRepository) CreateUser(user *User) error {
 	_, err := r.db.Exec(
-		"INSERT INTO users (public_key, username, role, created_at) VALUES ($1, $2, $3, $4)",
-		user.PublicKey, user.Username, user.Role, user.CreatedAt,
+		"INSERT INTO users (public_key, username, role, created_at, issuer) VALUES ($1, $2, $3, $4, COALESCE(NULLIF($5,''),$1))",
+		user.PublicKey, user.Username, user.Role, user.CreatedAt, user.Issuer,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create user: %w", err)
@@ -38,9 +38,9 @@ func (r *userRepository) GetUserByPublicKey(publicKey string) (*User, error) {
 	var avatarStorageID sql.NullString
 	var identifier sql.NullString
 	err := r.db.QueryRow(
-		"SELECT public_key, username, role, created_at, avatar_storage_id, identifier FROM users WHERE public_key = $1",
+		"SELECT public_key, username, role, created_at, avatar_storage_id, identifier, issuer FROM users WHERE public_key = $1",
 		publicKey,
-	).Scan(&user.PublicKey, &user.Username, &user.Role, &user.CreatedAt, &avatarStorageID, &identifier)
+	).Scan(&user.PublicKey, &user.Username, &user.Role, &user.CreatedAt, &avatarStorageID, &identifier, &user.Issuer)
 
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -62,9 +62,9 @@ func (r *userRepository) GetUserByUsername(username string) (*User, error) {
 	var avatarStorageID sql.NullString
 	var identifier sql.NullString
 	err := r.db.QueryRow(
-		"SELECT public_key, username, role, created_at, avatar_storage_id, identifier FROM users WHERE username = $1",
+		"SELECT public_key, username, role, created_at, avatar_storage_id, identifier, issuer FROM users WHERE username = $1",
 		username,
-	).Scan(&user.PublicKey, &user.Username, &user.Role, &user.CreatedAt, &avatarStorageID, &identifier)
+	).Scan(&user.PublicKey, &user.Username, &user.Role, &user.CreatedAt, &avatarStorageID, &identifier, &user.Issuer)
 
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -124,6 +124,22 @@ func (r *userRepository) UpdateUsername(publicKey, username string) error {
 	}
 	if rows == 0 {
 		return fmt.Errorf("user with public key %s not found", publicKey)
+	}
+	return nil
+}
+
+// UpdateUserIssuer re-pins issuer from self to vouched. The WHERE clause is
+// the entire guard: it only ever matches a row still self-pinned
+// (issuer = public_key), so it is a no-op - not an error - for an unknown
+// account or one already vouched by someone else. See UserRepository's doc
+// comment for the full rationale.
+func (r *userRepository) UpdateUserIssuer(publicKey, issuer string) error {
+	_, err := r.db.Exec(
+		"UPDATE users SET issuer=$2 WHERE public_key=$1 AND issuer=public_key",
+		publicKey, issuer,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update user issuer: %w", err)
 	}
 	return nil
 }

@@ -4,12 +4,14 @@ import (
 	"context"
 	"crypto/ed25519"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 	"github.com/prappser/prappser-spaces/internal/application"
 	"github.com/prappser/prappser-spaces/internal/event"
 	"github.com/prappser/prappser-spaces/internal/user"
@@ -18,7 +20,19 @@ import (
 
 const (
 	MaxExpirationHours = 48
+
+	// pqUniqueViolation is the PostgreSQL SQLSTATE code for a unique
+	// constraint violation - defined locally rather than shared from
+	// internal/user, matching the same local-duplication convention as
+	// internal/storage/service.go (see its doc comment) for a single string
+	// literal.
+	pqUniqueViolation = "23505"
 )
+
+// ErrDeviceConflict is returned by Join when an assertion's presented device
+// key already belongs to a different account, or has been revoked (#111
+// G6) - the caller should respond 409.
+var ErrDeviceConflict = errors.New("device already registered to a different account")
 
 type EventService interface {
 	AcceptEvent(ctx context.Context, e *event.Event, submitter *user.User) (*event.Event, error)
@@ -33,9 +47,12 @@ type InvitationService struct {
 	db             *sql.DB
 	userRepository user.UserRepository
 	eventService   EventService
+	// spacePublicKey is this space's own base64-encoded Ed25519 public key -
+	// the expected audience for an assertion presented on Join (#111).
+	spacePublicKey string
 }
 
-func NewInvitationService(repo InvitationRepository, privateKey ed25519.PrivateKey, publicKey ed25519.PublicKey, appRepo application.ApplicationRepository, db *sql.DB, userRepository user.UserRepository, eventService EventService) *InvitationService {
+func NewInvitationService(repo InvitationRepository, privateKey ed25519.PrivateKey, publicKey ed25519.PublicKey, appRepo application.ApplicationRepository, db *sql.DB, userRepository user.UserRepository, eventService EventService, spacePublicKey string) *InvitationService {
 	return &InvitationService{
 		repo:           repo,
 		privateKey:     privateKey,
@@ -44,6 +61,7 @@ func NewInvitationService(repo InvitationRepository, privateKey ed25519.PrivateK
 		db:             db,
 		userRepository: userRepository,
 		eventService:   eventService,
+		spacePublicKey: spacePublicKey,
 	}
 }
 
@@ -441,6 +459,14 @@ func (s *InvitationService) GetInvitesForApp(appID string) ([]*Invitation, error
 	return s.repo.GetByApplicationID(appID)
 }
 
+// isUniqueViolation reports whether err is a Postgres unique constraint
+// violation (see pqUniqueViolation) - used by Join to detect a concurrent
+// create race on userPublicKey (#111 G9).
+func isUniqueViolation(err error) bool {
+	var pqErr *pq.Error
+	return errors.As(err, &pqErr) && pqErr.Code == pqUniqueViolation
+}
+
 // JoinResult contains the result of a successful join operation
 type JoinResult struct {
 	ApplicationID string `json:"applicationId"`
@@ -451,8 +477,13 @@ type JoinResult struct {
 
 // Join handles the complete join flow with transaction. devicePublicKey is
 // optional; when empty it defaults to userPublicKey (device #1's key equals
-// the account key).
-func (s *InvitationService) Join(tokenString, userPublicKey, userName, devicePublicKey string) (*JoinResult, error) {
+// the account key). assertion is optional (#111): a cross-space identity
+// assertion vouching for userPublicKey, verified against this space's own
+// key as audience and devicePublicKey as the bound device (PoP, D3). See
+// the doc comments below for exactly how it affects account creation and
+// issuer pinning - an assertion never adds a device to an ALREADY-known
+// account (D5).
+func (s *InvitationService) Join(tokenString, userPublicKey, userName, devicePublicKey, assertion string) (*JoinResult, error) {
 	log.Debug().
 		Str("username", userName).
 		Str("publicKey", userPublicKey[:min(20, len(userPublicKey))]+"...").
@@ -500,10 +531,39 @@ func (s *InvitationService) Join(tokenString, userPublicKey, userName, devicePub
 		return nil, fmt.Errorf("invitation has reached maximum uses")
 	}
 
+	now := time.Now()
+
+	// #111: devicePublicKey defaults to the presented publicKey when absent,
+	// for back-compat with clients that don't send a device roster key at
+	// all (device #1's key equals the account key).
+	presentedDevicePublicKey := devicePublicKey
+	if presentedDevicePublicKey == "" {
+		presentedDevicePublicKey = userPublicKey
+	}
+
+	// #111: verify the assertion (if any) up front - it is never touched
+	// again below except for its Issuer, once we already know it's genuinely
+	// about userPublicKey and bound to the device presenting it.
+	assertionPresented := assertion != ""
+	var assertionIssuer string
+	if assertionPresented {
+		verifiedClaims, err := user.VerifyAssertion(assertion, s.spacePublicKey, presentedDevicePublicKey, now)
+		if err != nil {
+			log.Debug().Err(err).Msg("[JOIN] assertion verification failed")
+			return nil, fmt.Errorf("invalid assertion: %w", user.ErrInvalidAssertion)
+		}
+		if verifiedClaims.UserID != userPublicKey {
+			log.Debug().Msg("[JOIN] assertion is for a different public key than presented")
+			return nil, fmt.Errorf("invalid assertion: %w", user.ErrInvalidAssertion)
+		}
+		assertionIssuer = verifiedClaims.Issuer
+	}
+
 	// Create user if doesn't exist (for member authentication)
 	log.Debug().Str("publicKey", userPublicKey[:min(20, len(userPublicKey))]+"...").Str("username", userName).Msg("[JOIN_SERVICE] Checking if user exists")
 	existingUser, err := s.userRepository.GetUserByPublicKey(userPublicKey)
 	isNewAccount := err != nil || existingUser == nil
+
 	if isNewAccount {
 		log.Debug().Str("username", userName).Msg("[JOIN_SERVICE] User not found, creating member user")
 
@@ -512,22 +572,60 @@ func (s *InvitationService) Join(tokenString, userPublicKey, userName, devicePub
 			return nil, fmt.Errorf("public key cannot be empty")
 		}
 
-		// Create user with guest role
+		if assertionPresented {
+			// [G6] pre-create guard: reject if the presented device key
+			// already belongs to a different account, or has been revoked -
+			// before we ever create a row for it.
+			d, err := s.userRepository.GetDevice(presentedDevicePublicKey)
+			if err != nil {
+				return nil, fmt.Errorf("failed to look up device: %w", err)
+			}
+			if d != nil && (d.UserPublicKey != userPublicKey || d.RevokedAt != nil) {
+				return nil, ErrDeviceConflict
+			}
+		}
+
+		// Create user with guest role. Issuer stays empty (COALESCE ->
+		// self) on the plain-join path; an assertion pins it to the
+		// vouching space (or, for a self-mint, the account's own key -
+		// D9 - which is issuer==publicKey either way).
 		newUser := &user.User{
 			PublicKey: userPublicKey,
 			Username:  userName,
 			Role:      user.RoleGuest,
-			CreatedAt: time.Now().Unix(),
+			CreatedAt: now.Unix(),
+		}
+		if assertionPresented {
+			newUser.Issuer = assertionIssuer
 		}
 
 		if err := s.userRepository.CreateUser(newUser); err != nil {
-			log.Error().Err(err).Str("username", userName).Msg("[JOIN_SERVICE] Failed to create user")
-			return nil, fmt.Errorf("failed to create user: %w", err)
+			if assertionPresented && isUniqueViolation(err) {
+				// [G9] Lost a create race to a concurrent join - fall
+				// through to the known-account path below with the row
+				// that won, instead of failing the whole join.
+				log.Debug().Msg("[JOIN_SERVICE] Create race lost to a concurrent join, falling through to known-account path")
+				isNewAccount = false
+			} else {
+				log.Error().Err(err).Str("username", userName).Msg("[JOIN_SERVICE] Failed to create user")
+				return nil, fmt.Errorf("failed to create user: %w", err)
+			}
+		} else {
+			log.Debug().Str("username", userName).Msg("[JOIN_SERVICE] User created successfully")
+			// Join is PUBLIC and unauthenticated - it never proves
+			// possession of userPublicKey's private key on its own. A
+			// client-supplied devicePublicKey is only ever honored here,
+			// for a BRAND-NEW account, where the caller names its own
+			// account and device together (and, with an assertion present,
+			// the dpk binding already proved possession of that device).
+			if err := s.userRepository.EnsureDevice(presentedDevicePublicKey, userPublicKey, nil, now.Unix()); err != nil {
+				log.Error().Err(err).Str("username", userName).Msg("[JOIN_SERVICE] Failed to ensure device")
+				return nil, fmt.Errorf("failed to ensure device: %w", err)
+			}
 		}
 
-		log.Debug().Str("username", userName).Msg("[JOIN_SERVICE] User created successfully")
-
 		// Re-fetch so existingUser is populated for the event payload below
+		// (also picks up the row that won the create race above).
 		existingUser, err = s.userRepository.GetUserByPublicKey(userPublicKey)
 		if err != nil || existingUser == nil {
 			return nil, fmt.Errorf("failed to fetch newly created user: %w", err)
@@ -536,22 +634,50 @@ func (s *InvitationService) Join(tokenString, userPublicKey, userName, devicePub
 		log.Debug().Str("username", userName).Msg("[JOIN_SERVICE] User already exists")
 	}
 
-	// Join is PUBLIC and unauthenticated - it never proves possession of
-	// userPublicKey's private key. A client-supplied devicePublicKey is only
-	// honored on the new-account branch, where it names the caller's own
-	// brand-new account and device together. For an EXISTING account, a
-	// caller presenting any valid invite token could otherwise bind an
-	// arbitrary device key to someone else's account and mint JWTs as them -
-	// so existing accounts always get device #1 (their own key) regardless
-	// of what the request claims, and adding further devices to an existing
-	// account must go through the delegation flow in RegisterDevice.
-	joiningDevicePublicKey := userPublicKey
-	if isNewAccount && devicePublicKey != "" {
-		joiningDevicePublicKey = devicePublicKey
-	}
-	if err := s.userRepository.EnsureDevice(joiningDevicePublicKey, userPublicKey, nil, time.Now().Unix()); err != nil {
-		log.Error().Err(err).Str("username", userName).Msg("[JOIN_SERVICE] Failed to ensure device")
-		return nil, fmt.Errorf("failed to ensure device: %w", err)
+	if !isNewAccount {
+		// KNOWN ACCOUNT - existing accounts always keep device #1 (their
+		// own key) regardless of what the request claims; adding further
+		// devices to an existing account must go through the delegation
+		// flow in RegisterDevice. An assertion NEVER adds a device here
+		// either (D5) - the only EnsureDevice on the assertion path is in
+		// the row-creating branch above.
+		issuer := existingUser.Issuer
+		if assertionPresented {
+			if issuer == existingUser.PublicKey && assertionIssuer != issuer {
+				// D5: one-way self->vouched re-pin. UpdateUserIssuer's own
+				// SQL guard (WHERE issuer = public_key) enforces this is
+				// only ever applied to a still-self-pinned account.
+				if err := s.userRepository.UpdateUserIssuer(existingUser.PublicKey, assertionIssuer); err != nil {
+					return nil, fmt.Errorf("failed to update user issuer: %w", err)
+				}
+				log.Info().
+					Str("publicKey", existingUser.PublicKey[:min(20, len(existingUser.PublicKey))]+"...").
+					Str("issuer", assertionIssuer).
+					Msg("[ASSERTION] Re-pinned self->vouched")
+				issuer = assertionIssuer
+			} else if issuer != existingUser.PublicKey && assertionIssuer != issuer {
+				log.Warn().
+					Str("pinnedIssuer", issuer).
+					Str("presentedIssuer", assertionIssuer).
+					Msg("[ASSERTION] Ignoring different issuer for already-pinned account")
+			}
+		}
+
+		// Legacy roster backfill, narrowed to self-registered accounts only
+		// (#111 G3) - a vouched account got a real device row at first
+		// contact and must never have the account key backfilled into it.
+		if issuer == existingUser.PublicKey {
+			devices, err := s.userRepository.ListDevices(userPublicKey)
+			if err != nil {
+				return nil, fmt.Errorf("failed to list devices: %w", err)
+			}
+			if len(devices) == 0 {
+				if err := s.userRepository.EnsureDevice(userPublicKey, userPublicKey, nil, now.Unix()); err != nil {
+					log.Error().Err(err).Str("username", userName).Msg("[JOIN_SERVICE] Failed to ensure device")
+					return nil, fmt.Errorf("failed to ensure device: %w", err)
+				}
+			}
+		}
 	}
 
 	// Check if user is already a member (idempotent)
