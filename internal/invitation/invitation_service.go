@@ -54,7 +54,17 @@ var (
 	// when the atomic claim loses a TOCTOU race against another concurrent
 	// join (D11).
 	ErrMaxUsesReached = errors.New("invitation has reached maximum uses")
+	// ErrNotAppAuthorized is returned by AuthorizeAppRole when the caller is
+	// not a member of the application, or holds a role outside the allowed
+	// set (#125) - invitation_endpoints.go maps it to 403.
+	ErrNotAppAuthorized = errors.New("not authorized for this application")
 )
+
+// memberNotFoundMsg is the exact error string both application.Repository
+// and application.MemoryRepository return from GetMemberByPublicKey for "no
+// rows" - neither wraps it with %w, so AuthorizeAppRole compares by message
+// (#125) to tell a not-found lookup apart from a real DB error.
+const memberNotFoundMsg = "member not found"
 
 type EventService interface {
 	AcceptEvent(ctx context.Context, e *event.Event, submitter *user.User) (*event.Event, error)
@@ -515,9 +525,67 @@ func (s *InvitationService) CheckInvitationUsage(tokenString, userPublicKey stri
 	return result, nil
 }
 
-// RevokeInvitation deletes an invitation (hard delete)
-func (s *InvitationService) RevokeInvitation(inviteID string) error {
-	return s.repo.Delete(inviteID)
+// AuthorizeAppRole verifies that callerPublicKey is a member of appID
+// holding one of the allowed roles (#125), closing the gap where any
+// authenticated space user could manage another application's invites.
+// Returns ErrNotAppAuthorized when the caller is not a member or holds a
+// disallowed role. Other repository errors (real DB failures, not a
+// not-found lookup) propagate as-is so the endpoint can surface a 500
+// instead of silently treating them as unauthorized.
+func (s *InvitationService) AuthorizeAppRole(appID, callerPublicKey string, allowed ...application.MemberRole) error {
+	member, err := s.appRepo.GetMemberByPublicKey(appID, callerPublicKey)
+	if err != nil {
+		if err.Error() == memberNotFoundMsg {
+			return ErrNotAppAuthorized
+		}
+		return err
+	}
+
+	for _, role := range allowed {
+		if member.Role == role {
+			return nil
+		}
+	}
+	return ErrNotAppAuthorized
+}
+
+// RevokeInvitation deletes an invitation (hard delete) and produces an
+// invite_revoked event (#125) so other members' clients pick up the change.
+// invite is the already-fetched row (the caller, invitation_endpoints.go,
+// already loaded it to check invite.ApplicationID == the path appID) - this
+// takes it directly instead of re-fetching by ID, keeping one lookup total.
+// revokedByPublicKey becomes the event's CreatorPublicKey - the caller was
+// already verified as the application owner via AuthorizeAppRole before this
+// runs. Event production uses ProduceEvent (skips authorization, like Join's
+// member_added) since the endpoint already did that check; if it fails, only
+// a warning is logged - the delete already happened, and RevokeInvite's own
+// response to the client already reflects success.
+func (s *InvitationService) RevokeInvitation(invite *Invitation, revokedByPublicKey string) error {
+	if err := s.repo.Delete(invite.ID); err != nil {
+		return err
+	}
+
+	evt := &event.Event{
+		ID:               uuid.New().String(),
+		Type:             event.EventTypeInviteRevoked,
+		CreatorPublicKey: revokedByPublicKey,
+		Data: map[string]interface{}{
+			"version":       1,
+			"applicationId": invite.ApplicationID,
+			"inviteId":      invite.ID,
+		},
+		CreatedAt:     time.Now().Unix(),
+		ApplicationID: invite.ApplicationID,
+	}
+	if invite.SpaceID != nil {
+		evt.SpaceID = *invite.SpaceID
+	}
+
+	if _, err := s.eventService.ProduceEvent(context.Background(), evt); err != nil {
+		log.Warn().Err(err).Str("inviteId", invite.ID).Msg("[INVITE] Failed to produce invite_revoked event")
+	}
+
+	return nil
 }
 
 // GetInvitesForApp returns all active invitations for an application

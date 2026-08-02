@@ -704,3 +704,112 @@ func TestCreateInvitation_ShouldForceIdentityOffWhenMembershipOff(t *testing.T) 
 	assert.False(t, repo.createdInvite.GrantsIdentity)
 	assert.Nil(t, repo.createdInvite.MaxUses)
 }
+
+// newAuthzTestService wires a real application.MemoryRepository seeded with
+// one application and, if role != "", a single member of that role for
+// memberPublicKey - the caller under test in the AuthorizeAppRole tests
+// below (#125).
+func newAuthzTestService(t *testing.T, appID, memberPublicKey string, role application.MemberRole) *InvitationService {
+	t.Helper()
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	assert.NoError(t, err)
+
+	appRepo := application.NewMemoryRepository()
+	assert.NoError(t, appRepo.CreateApplication(&application.Application{ID: appID, Name: "Test App"}))
+	if role != "" {
+		assert.NoError(t, appRepo.CreateMember(&application.Member{ID: "member-" + memberPublicKey, ApplicationID: appID, PublicKey: memberPublicKey, Role: role}))
+	}
+
+	return NewInvitationService(&fakeInvitationRepo{}, priv, pub, appRepo, nil, &fakeUserRepo{}, fakeEventService{}, "space-key")
+}
+
+func TestAuthorizeAppRole_NonMember_Rejected(t *testing.T) {
+	// given: caller has no member row at all in the application
+	svc := newAuthzTestService(t, "app-1", "someone-else-pk", application.MemberRoleOwner)
+
+	// when
+	err := svc.AuthorizeAppRole("app-1", "non-member-pk", application.MemberRoleOwner)
+
+	// then: #125 - a non-member is rejected, not silently allowed
+	assert.ErrorIs(t, err, ErrNotAppAuthorized)
+}
+
+func TestAuthorizeAppRole_PlainMember_RejectedForOwnerOnlyCheck(t *testing.T) {
+	// given: caller is a member, but only holds the "member" role
+	svc := newAuthzTestService(t, "app-1", "member-pk", application.MemberRoleMember)
+
+	// when
+	err := svc.AuthorizeAppRole("app-1", "member-pk", application.MemberRoleOwner)
+
+	// then: #125 - membership alone is not enough, the role must be allowed
+	assert.ErrorIs(t, err, ErrNotAppAuthorized)
+}
+
+func TestAuthorizeAppRole_Owner_Allowed(t *testing.T) {
+	// given: caller is the application owner
+	svc := newAuthzTestService(t, "app-1", "owner-pk", application.MemberRoleOwner)
+
+	// when
+	err := svc.AuthorizeAppRole("app-1", "owner-pk", application.MemberRoleOwner)
+
+	// then
+	assert.NoError(t, err)
+}
+
+func TestAuthorizeAppRole_Admin_AllowedAmongMultipleRoles(t *testing.T) {
+	// given: caller is an admin, checked against ListInvites' owner-or-admin set
+	svc := newAuthzTestService(t, "app-1", "admin-pk", application.MemberRoleAdmin)
+
+	// when
+	err := svc.AuthorizeAppRole("app-1", "admin-pk", application.MemberRoleOwner, application.MemberRoleAdmin)
+
+	// then
+	assert.NoError(t, err)
+}
+
+func TestAuthorizeAppRole_PlainMember_RejectedForOwnerOrAdminCheck(t *testing.T) {
+	// given: caller is a plain member, checked against ListInvites' owner-or-admin set
+	svc := newAuthzTestService(t, "app-1", "member-pk", application.MemberRoleMember)
+
+	// when
+	err := svc.AuthorizeAppRole("app-1", "member-pk", application.MemberRoleOwner, application.MemberRoleAdmin)
+
+	// then
+	assert.ErrorIs(t, err, ErrNotAppAuthorized)
+}
+
+// capturingEventService records the last event passed to ProduceEvent, for
+// TestRevokeInvitation_ProducesInviteRevokedEvent (#125) to assert on.
+type capturingEventService struct {
+	produced *event.Event
+}
+
+func (c *capturingEventService) AcceptEvent(ctx context.Context, e *event.Event, submitter *user.User) (*event.Event, error) {
+	return e, nil
+}
+func (c *capturingEventService) ProduceEvent(ctx context.Context, e *event.Event) (*event.Event, error) {
+	c.produced = e
+	return e, nil
+}
+
+func TestRevokeInvitation_ProducesInviteRevokedEvent(t *testing.T) {
+	// given
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	assert.NoError(t, err)
+	invite := &Invitation{ID: "invite-1", ApplicationID: "app-1", Role: "member", CreatedAt: time.Now().Unix()}
+	repo := &fakeInvitationRepo{invite: invite}
+	events := &capturingEventService{}
+	svc := NewInvitationService(repo, priv, pub, application.NewMemoryRepository(), nil, &fakeUserRepo{}, events, "space-key")
+
+	// when
+	err = svc.RevokeInvitation(invite, "owner-pk")
+
+	// then: the invite_revoked event carries the revoking caller as creator
+	// and the invite's applicationId/inviteId (#125)
+	assert.NoError(t, err)
+	assert.NotNil(t, events.produced)
+	assert.Equal(t, event.EventTypeInviteRevoked, events.produced.Type)
+	assert.Equal(t, "owner-pk", events.produced.CreatorPublicKey)
+	assert.Equal(t, "app-1", events.produced.Data["applicationId"])
+	assert.Equal(t, "invite-1", events.produced.Data["inviteId"])
+}

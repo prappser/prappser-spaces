@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/goccy/go-json"
+	"github.com/prappser/prappser-spaces/internal/application"
 	"github.com/prappser/prappser-spaces/internal/httputil"
 	"github.com/prappser/prappser-spaces/internal/storage"
 	"github.com/prappser/prappser-spaces/internal/user"
@@ -81,7 +82,16 @@ func (ie *InvitationEndpoints) CreateInvite(ctx *fasthttp.RequestCtx) {
 		req.Role = "member"
 	}
 
-	// TODO: Verify user is owner of the application
+	// #125: only the application owner may create invites.
+	if err := ie.invitationService.AuthorizeAppRole(appID, authenticatedUser.PublicKey, application.MemberRoleOwner); err != nil {
+		if errors.Is(err, ErrNotAppAuthorized) {
+			ctx.Error("forbidden", fasthttp.StatusForbidden)
+			return
+		}
+		log.Error().Err(err).Msg("Failed to verify application ownership")
+		ctx.Error("Failed to verify application ownership", fasthttp.StatusInternalServerError)
+		return
+	}
 
 	// Create invitation
 	opts := CreateInvitationOptions{
@@ -368,8 +378,16 @@ func (ie *InvitationEndpoints) RevokeInvite(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	// TODO: Verify user is owner of the application using authenticatedUser.PublicKey
-	_ = authenticatedUser // Will be used in owner verification TODO
+	// #125: only the application owner may revoke invites.
+	if err := ie.invitationService.AuthorizeAppRole(appID, authenticatedUser.PublicKey, application.MemberRoleOwner); err != nil {
+		if errors.Is(err, ErrNotAppAuthorized) {
+			ctx.Error("forbidden", fasthttp.StatusForbidden)
+			return
+		}
+		log.Error().Err(err).Msg("Failed to verify application ownership")
+		ctx.Error("Failed to verify application ownership", fasthttp.StatusInternalServerError)
+		return
+	}
 
 	// Get invitation to verify it exists
 	invite, err := ie.invitationService.repo.GetByID(inviteID)
@@ -385,14 +403,13 @@ func (ie *InvitationEndpoints) RevokeInvite(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	// Revoke invitation (hard delete)
-	if err := ie.invitationService.RevokeInvitation(inviteID); err != nil {
+	// Revoke invitation (hard delete) and produce the invite_revoked event (#125).
+	// invite was already fetched above, so this doesn't look it up again.
+	if err := ie.invitationService.RevokeInvitation(invite, authenticatedUser.PublicKey); err != nil {
 		log.Error().Err(err).Msg("Failed to revoke invitation")
 		ctx.Error("Failed to revoke invitation", fasthttp.StatusInternalServerError)
 		return
 	}
-
-	// TODO: Produce invite_revoked event
 
 	// Return success (204 No Content)
 	ctx.SetStatusCode(fasthttp.StatusNoContent)
@@ -423,9 +440,16 @@ func (ie *InvitationEndpoints) ListInvites(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	// TODO: Verify user is owner or admin of the application
-
-	_ = authenticatedUser // Will be used in TODO above
+	// #125: only the application owner or an admin may list invites.
+	if err := ie.invitationService.AuthorizeAppRole(appID, authenticatedUser.PublicKey, application.MemberRoleOwner, application.MemberRoleAdmin); err != nil {
+		if errors.Is(err, ErrNotAppAuthorized) {
+			ctx.Error("forbidden", fasthttp.StatusForbidden)
+			return
+		}
+		log.Error().Err(err).Msg("Failed to verify application role")
+		ctx.Error("Failed to verify application role", fasthttp.StatusInternalServerError)
+		return
+	}
 
 	// Get invites for application
 	invites, err := ie.invitationService.GetInvitesForApp(appID)
