@@ -45,6 +45,10 @@ type CreateInviteRequest struct {
 	ExpiresInHours *int   `json:"expiresInHours,omitempty"`
 	Role           string `json:"role,omitempty"`
 	MaxUses        *int   `json:"maxUses,omitempty"`
+	// GrantsMembership and GrantsIdentity are optional; nil defaults to true
+	// (see CreateInvitationOptions).
+	GrantsMembership *bool `json:"grantsMembership,omitempty"`
+	GrantsIdentity   *bool `json:"grantsIdentity,omitempty"`
 }
 
 // CreateInvite handles POST /applications/{id}/invites
@@ -88,6 +92,8 @@ func (ie *InvitationEndpoints) CreateInvite(ctx *fasthttp.RequestCtx) {
 		ExpiresInHours:     req.ExpiresInHours,
 		SpaceID:            spaceIDPtr(authenticatedUser.SpaceID),
 		SpaceURL:           httputil.PublicURL(ctx, ie.externalURLOverride),
+		GrantsMembership:   req.GrantsMembership,
+		GrantsIdentity:     req.GrantsIdentity,
 	}
 
 	response, err := ie.invitationService.CreateInvitation(opts)
@@ -247,15 +253,14 @@ func (ie *InvitationEndpoints) CheckInvitation(ctx *fasthttp.RequestCtx) {
 	json.NewEncoder(ctx).Encode(result)
 }
 
-// JoinRequest represents the request body for joining via invitation
+// JoinRequest represents the request body for joining via invitation. The
+// old {publicKey, username, devicePublicKey} fields are gone (#110) - proof
+// is a signed join-proof JWS carrying all three as claims (join_proof.go),
+// proving possession of the device key it names.
 type JoinRequest struct {
-	PublicKey string `json:"publicKey"`
-	Username  string `json:"username"`
-	// DevicePublicKey is optional; InvitationService.Join defaults it to
-	// PublicKey when empty (device #1's key equals the account key).
-	DevicePublicKey string `json:"devicePublicKey,omitempty"`
+	Proof string `json:"proof"`
 	// Assertion is optional (#111): a cross-space identity assertion
-	// vouching for PublicKey, see InvitationService.Join.
+	// vouching for the account named in Proof, see InvitationService.Join.
 	Assertion string `json:"assertion,omitempty"`
 }
 
@@ -282,32 +287,42 @@ func (ie *InvitationEndpoints) JoinApplication(ctx *fasthttp.RequestCtx) {
 	}
 
 	// Validate required fields
-	if req.PublicKey == "" {
-		log.Error().Msg("[JOIN] Public key is missing")
-		ctx.Error("Public key is required", fasthttp.StatusBadRequest)
-		return
-	}
-	if req.Username == "" {
-		log.Error().Msg("[JOIN] Username is missing")
-		ctx.Error("Username is required", fasthttp.StatusBadRequest)
+	if req.Proof == "" {
+		log.Error().Msg("[JOIN] Proof is missing")
+		ctx.Error("Proof is required", fasthttp.StatusBadRequest)
 		return
 	}
 
-	log.Debug().Str("username", req.Username).Str("token", token).Msg("[JOIN] Joining application")
+	log.Debug().Str("token", token).Msg("[JOIN] Joining application")
 
-	// Join via invitation service (handles user creation, validation, transaction, event production)
-	result, err := ie.invitationService.Join(token, req.PublicKey, req.Username, req.DevicePublicKey, req.Assertion)
+	// Join via invitation service (handles proof verification, user creation, validation, event production)
+	result, err := ie.invitationService.Join(token, req.Proof, req.Assertion)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to join application")
 
-		// #111: assertion-specific errors first - checked with errors.Is
-		// rather than by message, since they're sentinel errors.
+		// #110/#111: sentinel errors first - checked with errors.Is rather
+		// than by message.
 		switch {
+		case errors.Is(err, ErrInvalidProof):
+			ctx.Error("invalid proof", fasthttp.StatusUnauthorized)
+			return
 		case errors.Is(err, user.ErrInvalidAssertion):
 			ctx.Error("invalid assertion", fasthttp.StatusUnauthorized)
 			return
 		case errors.Is(err, ErrDeviceConflict):
 			ctx.Error("device already registered to a different account", fasthttp.StatusConflict)
+			return
+		case errors.Is(err, ErrIdentityNotGranted):
+			ctx.Error("identity not granted", fasthttp.StatusForbidden)
+			return
+		case errors.Is(err, ErrMembershipNotGranted):
+			ctx.Error("membership not granted", fasthttp.StatusForbidden)
+			return
+		case errors.Is(err, ErrAccountKeyNotProven):
+			ctx.Error("account key not proven", fasthttp.StatusForbidden)
+			return
+		case errors.Is(err, ErrMaxUsesReached):
+			ctx.Error("Invitation has reached maximum uses", fasthttp.StatusGone)
 			return
 		}
 

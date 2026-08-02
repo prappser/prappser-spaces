@@ -29,8 +29,9 @@ func (r *invitationRepository) Create(invite *Invitation) error {
 	query := `
 		INSERT INTO invitations (
 			id, application_id, created_by_public_key,
-			role, max_uses, used_count, created_at, space_id
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+			role, max_uses, used_count, created_at, space_id,
+			grants_membership, grants_identity
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 	`
 
 	_, err := r.db.Exec(query,
@@ -42,6 +43,8 @@ func (r *invitationRepository) Create(invite *Invitation) error {
 		invite.UsedCount,
 		invite.CreatedAt,
 		invite.SpaceID,
+		invite.GrantsMembership,
+		invite.GrantsIdentity,
 	)
 
 	return err
@@ -50,7 +53,8 @@ func (r *invitationRepository) Create(invite *Invitation) error {
 func (r *invitationRepository) GetByID(id string) (*Invitation, error) {
 	query := `
 		SELECT id, application_id, created_by_public_key,
-		       role, max_uses, used_count, created_at
+		       role, max_uses, used_count, created_at, space_id,
+		       grants_membership, grants_identity
 		FROM invitations
 		WHERE id = $1
 	`
@@ -64,6 +68,9 @@ func (r *invitationRepository) GetByID(id string) (*Invitation, error) {
 		&invite.MaxUses,
 		&invite.UsedCount,
 		&invite.CreatedAt,
+		&invite.SpaceID,
+		&invite.GrantsMembership,
+		&invite.GrantsIdentity,
 	)
 
 	if err == sql.ErrNoRows {
@@ -96,11 +103,16 @@ func (r *invitationRepository) Delete(id string) error {
 	return nil
 }
 
+// IncrementUseCount atomically claims a use of the invitation: the
+// conditional WHERE closes the TOCTOU race between the earlier max-uses
+// precheck in Join and this write - a rows-affected count of 0 means either
+// the invitation vanished, or (far more likely, since GetByID already found
+// it) another concurrent join claimed the last remaining use first.
 func (r *invitationRepository) IncrementUseCount(id string) error {
 	query := `
 		UPDATE invitations
 		SET used_count = used_count + 1
-		WHERE id = $1
+		WHERE id = $1 AND (max_uses IS NULL OR used_count < max_uses)
 	`
 
 	result, err := r.db.Exec(query, id)
@@ -114,7 +126,7 @@ func (r *invitationRepository) IncrementUseCount(id string) error {
 	}
 
 	if rowsAffected == 0 {
-		return fmt.Errorf("invitation not found")
+		return ErrMaxUsesReached
 	}
 
 	return nil
@@ -133,7 +145,8 @@ func (r *invitationRepository) RecordUse(inviteID, userPublicKey string, useID s
 func (r *invitationRepository) GetByApplicationID(appID string) ([]*Invitation, error) {
 	query := `
 		SELECT id, application_id, created_by_public_key,
-		       role, max_uses, used_count, created_at
+		       role, max_uses, used_count, created_at, space_id,
+		       grants_membership, grants_identity
 		FROM invitations
 		WHERE application_id = $1
 		ORDER BY created_at DESC
@@ -156,6 +169,9 @@ func (r *invitationRepository) GetByApplicationID(appID string) ([]*Invitation, 
 			&invite.MaxUses,
 			&invite.UsedCount,
 			&invite.CreatedAt,
+			&invite.SpaceID,
+			&invite.GrantsMembership,
+			&invite.GrantsIdentity,
 		)
 		if err != nil {
 			return nil, err

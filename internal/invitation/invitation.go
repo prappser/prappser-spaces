@@ -14,6 +14,8 @@ type Invitation struct {
 	UsedCount          int     `json:"usedCount"`
 	CreatedAt          int64   `json:"createdAt"`
 	SpaceID            *string `json:"spaceId,omitempty"`
+	GrantsMembership   bool    `json:"grantsMembership"`
+	GrantsIdentity     bool    `json:"grantsIdentity"`
 }
 
 // InvitationUse tracks when a user joins via an invitation
@@ -43,26 +45,30 @@ type InvitationOptions struct {
 
 // InviteInfo is public information about an invitation
 type InviteInfo struct {
-	InviteID        string  `json:"inviteId"`
-	ApplicationName string  `json:"applicationName"`
-	ApplicationIcon *string `json:"applicationIcon,omitempty"`
-	CreatorUsername string  `json:"creatorUsername"`
-	Role            string  `json:"role"`
-	ExpiresAt       *int64  `json:"expiresAt,omitempty"`
-	IsExpired       bool    `json:"isExpired"`
-	IsValid         bool    `json:"isValid"`
+	InviteID         string  `json:"inviteId"`
+	ApplicationName  string  `json:"applicationName"`
+	ApplicationIcon  *string `json:"applicationIcon,omitempty"`
+	CreatorUsername  string  `json:"creatorUsername"`
+	Role             string  `json:"role"`
+	ExpiresAt        *int64  `json:"expiresAt,omitempty"`
+	IsExpired        bool    `json:"isExpired"`
+	IsValid          bool    `json:"isValid"`
+	GrantsMembership bool    `json:"grantsMembership"`
+	GrantsIdentity   bool    `json:"grantsIdentity"`
 }
 
 // CheckInvitationResult contains status information about invitation usage
 type CheckInvitationResult struct {
-	Valid           bool   `json:"valid"`
-	AlreadyUsed     bool   `json:"alreadyUsed"`
-	IsMember        bool   `json:"isMember"`
-	IsExpired       bool   `json:"isExpired"`
-	MaxUsesReached  bool   `json:"maxUsesReached"`
-	ApplicationName string `json:"applicationName,omitempty"`
-	Role            string `json:"role,omitempty"`
-	Message         string `json:"message"`
+	Valid            bool   `json:"valid"`
+	AlreadyUsed      bool   `json:"alreadyUsed"`
+	IsMember         bool   `json:"isMember"`
+	IsExpired        bool   `json:"isExpired"`
+	MaxUsesReached   bool   `json:"maxUsesReached"`
+	ApplicationName  string `json:"applicationName,omitempty"`
+	Role             string `json:"role,omitempty"`
+	Message          string `json:"message"`
+	GrantsMembership bool   `json:"grantsMembership"`
+	GrantsIdentity   bool   `json:"grantsIdentity"`
 }
 
 // InviteTokenClaims represents JWT claims for invitation tokens

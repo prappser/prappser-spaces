@@ -34,6 +34,28 @@ const (
 // G6) - the caller should respond 409.
 var ErrDeviceConflict = errors.New("device already registered to a different account")
 
+// Sentinel errors for the #110 join-proof / grants-flags gates. Each maps to
+// a distinct HTTP status in invitation_endpoints.go's error switch.
+var (
+	// ErrIdentityNotGranted is returned by Join when a space configured not
+	// to anchor new accounts (grants_identity=false) is presented with a
+	// brand-new, non-assertion-backed account (D6).
+	ErrIdentityNotGranted = errors.New("invitation does not grant identity")
+	// ErrMembershipNotGranted is returned by Join for a preview-only invite
+	// (grants_membership=false) - defence in depth, since no real
+	// membership-free preview exists yet (D7).
+	ErrMembershipNotGranted = errors.New("invitation does not grant membership")
+	// ErrAccountKeyNotProven is returned by Join when a non-assertion-backed
+	// request presents a device key that neither equals the account's own
+	// public key nor is an already-enrolled, unrevoked device of that same
+	// account (D5/G2).
+	ErrAccountKeyNotProven = errors.New("account key not proven")
+	// ErrMaxUsesReached is returned by InvitationRepository.IncrementUseCount
+	// when the atomic claim loses a TOCTOU race against another concurrent
+	// join (D11).
+	ErrMaxUsesReached = errors.New("invitation has reached maximum uses")
+)
+
 type EventService interface {
 	AcceptEvent(ctx context.Context, e *event.Event, submitter *user.User) (*event.Event, error)
 	ProduceEvent(ctx context.Context, e *event.Event) (*event.Event, error)
@@ -74,6 +96,10 @@ type CreateInvitationOptions struct {
 	ExpiresInHours     *int
 	SpaceID            *string
 	SpaceURL           string
+	// GrantsMembership and GrantsIdentity are nil-means-true (wire spec):
+	// nil defaults to true, matching the DB column defaults.
+	GrantsMembership *bool
+	GrantsIdentity   *bool
 }
 
 // CreateInvitation creates a new invitation and generates a JWT token
@@ -101,6 +127,31 @@ func (s *InvitationService) CreateInvitation(opts CreateInvitationOptions) (*Inv
 		return nil, fmt.Errorf("max uses must be at least 1")
 	}
 
+	// [D8] grantsMembership/grantsIdentity default to true. A preview-only
+	// invite (grantsMembership=false) can never mint identities either -
+	// forcing grantsIdentity off here deletes that nonsense state before it
+	// ever reaches the row.
+	grantsMembership := true
+	if opts.GrantsMembership != nil {
+		grantsMembership = *opts.GrantsMembership
+	}
+	grantsIdentity := true
+	if opts.GrantsIdentity != nil {
+		grantsIdentity = *opts.GrantsIdentity
+	}
+	if !grantsMembership {
+		grantsIdentity = false
+	}
+
+	// [D9] Identity-granting invites default to single-use - a multi-use
+	// link that mints identities is an account-farm vector. An explicit
+	// maxUses always wins.
+	maxUses := opts.MaxUses
+	if grantsIdentity && maxUses == nil {
+		one := 1
+		maxUses = &one
+	}
+
 	// Create invitation
 	now := time.Now().Unix()
 	invite := &Invitation{
@@ -108,10 +159,12 @@ func (s *InvitationService) CreateInvitation(opts CreateInvitationOptions) (*Inv
 		ApplicationID:      opts.ApplicationID,
 		CreatedByPublicKey: opts.CreatedByPublicKey,
 		Role:               opts.Role,
-		MaxUses:            opts.MaxUses,
+		MaxUses:            maxUses,
 		UsedCount:          0,
 		CreatedAt:          now,
 		SpaceID:            opts.SpaceID,
+		GrantsMembership:   grantsMembership,
+		GrantsIdentity:     grantsIdentity,
 	}
 
 	// Save to database
@@ -250,9 +303,11 @@ func (s *InvitationService) GetInviteInfo(tokenString string) (*InviteInfo, erro
 			Err(err).
 			Msg("[INVITE] Invite not found in database")
 		return &InviteInfo{
-			InviteID:  claims.InviteID,
-			IsExpired: isExpired,
-			IsValid:   false,
+			InviteID:         claims.InviteID,
+			IsExpired:        isExpired,
+			IsValid:          false,
+			GrantsMembership: true,
+			GrantsIdentity:   true,
 		}, nil
 	}
 	log.Debug().
@@ -302,14 +357,16 @@ func (s *InvitationService) GetInviteInfo(tokenString string) (*InviteInfo, erro
 	}
 
 	info := &InviteInfo{
-		InviteID:        invite.ID,
-		ApplicationName: applicationName,
-		ApplicationIcon: applicationIcon,
-		CreatorUsername: creatorUsername,
-		Role:            invite.Role,
-		ExpiresAt:       claims.ExpiresAt,
-		IsExpired:       isExpired,
-		IsValid:         !isExpired && !isMaxUsesReached,
+		InviteID:         invite.ID,
+		ApplicationName:  applicationName,
+		ApplicationIcon:  applicationIcon,
+		CreatorUsername:  creatorUsername,
+		Role:             invite.Role,
+		ExpiresAt:        claims.ExpiresAt,
+		IsExpired:        isExpired,
+		IsValid:          !isExpired && !isMaxUsesReached,
+		GrantsMembership: invite.GrantsMembership,
+		GrantsIdentity:   invite.GrantsIdentity,
 	}
 
 	log.Debug().
@@ -376,6 +433,10 @@ func (s *InvitationService) CheckInvitationUsage(tokenString, userPublicKey stri
 		IsMember:       false,
 		IsExpired:      false,
 		MaxUsesReached: false,
+		// [G5] Defaults for return paths before the invite row is loaded
+		// below; overwritten with the real values once GetByID succeeds.
+		GrantsMembership: true,
+		GrantsIdentity:   true,
 	}
 
 	// Validate token
@@ -398,6 +459,11 @@ func (s *InvitationService) CheckInvitationUsage(tokenString, userPublicKey stri
 		result.Message = "Invitation not found or has been revoked"
 		return result, nil
 	}
+
+	// [G5] Now that the real invite row is loaded, every return path below
+	// carries its actual flags instead of the pre-load defaults above.
+	result.GrantsMembership = invite.GrantsMembership
+	result.GrantsIdentity = invite.GrantsIdentity
 
 	// Get application info
 	app, err := s.appRepo.GetApplicationByID(invite.ApplicationID)
@@ -475,19 +541,18 @@ type JoinResult struct {
 	LastEventID   string `json:"lastEventId,omitempty"`
 }
 
-// Join handles the complete join flow with transaction. devicePublicKey is
-// optional; when empty it defaults to userPublicKey (device #1's key equals
-// the account key). assertion is optional (#111): a cross-space identity
-// assertion vouching for userPublicKey, verified against this space's own
-// key as audience and devicePublicKey as the bound device (PoP, D3). See
-// the doc comments below for exactly how it affects account creation and
+// Join handles the complete join flow. proof is a signed join-proof JWS
+// (join_proof.go) that carries the joining account's public key, username,
+// and enrolling device's public key as claims, bound to this specific
+// invite (D4) and signed by the enrolling device's own key (PoP, D3).
+// assertion is optional (#111): a cross-space identity assertion vouching
+// for the account named in proof, verified against this space's own key as
+// audience and the proof's device public key as the bound device. See the
+// doc comments below for exactly how it affects account creation and
 // issuer pinning - an assertion never adds a device to an ALREADY-known
 // account (D5).
-func (s *InvitationService) Join(tokenString, userPublicKey, userName, devicePublicKey, assertion string) (*JoinResult, error) {
-	log.Debug().
-		Str("username", userName).
-		Str("publicKey", userPublicKey[:min(20, len(userPublicKey))]+"...").
-		Msg("[INVITE] Join attempt started")
+func (s *InvitationService) Join(tokenString, proof, assertion string) (*JoinResult, error) {
+	log.Debug().Msg("[INVITE] Join attempt started")
 
 	// Validate token
 	claims, err := s.ValidateToken(tokenString)
@@ -498,6 +563,28 @@ func (s *InvitationService) Join(tokenString, userPublicKey, userName, devicePub
 	log.Debug().
 		Str("inviteId", claims.InviteID).
 		Msg("[INVITE] Token validated")
+
+	now := time.Now()
+
+	// [#110] Verify the join proof up front - it is the sole source of
+	// userPublicKey/userName/presentedDevicePublicKey below, bound to this
+	// invite (D4) and signed by the device it names (PoP, D3). Unlike the
+	// old {publicKey, username, devicePublicKey} request fields, a mismatch
+	// between the claimed account and the signing device is now
+	// structurally impossible to smuggle past this point.
+	proofClaims, err := verifyJoinProof(proof, claims.InviteID, now)
+	if err != nil {
+		log.Debug().Err(err).Msg("[JOIN] proof verification failed")
+		return nil, err
+	}
+	userPublicKey := proofClaims.PublicKey
+	userName := proofClaims.Username
+	presentedDevicePublicKey := proofClaims.DevicePublicKey
+
+	log.Debug().
+		Str("username", userName).
+		Str("publicKey", userPublicKey[:min(20, len(userPublicKey))]+"...").
+		Msg("[INVITE] Join proof verified")
 
 	// Check expiration
 	if claims.ExpiresAt != nil && time.Now().Unix() > *claims.ExpiresAt {
@@ -531,14 +618,12 @@ func (s *InvitationService) Join(tokenString, userPublicKey, userName, devicePub
 		return nil, fmt.Errorf("invitation has reached maximum uses")
 	}
 
-	now := time.Now()
-
-	// #111: devicePublicKey defaults to the presented publicKey when absent,
-	// for back-compat with clients that don't send a device roster key at
-	// all (device #1's key equals the account key).
-	presentedDevicePublicKey := devicePublicKey
-	if presentedDevicePublicKey == "" {
-		presentedDevicePublicKey = userPublicKey
+	// [D7] A preview-only invite never mints membership - reject before any
+	// write. Defence in depth: no real membership-free preview exists yet,
+	// this is what actually enforces the flag today.
+	if !invite.GrantsMembership {
+		log.Debug().Str("inviteId", invite.ID).Msg("[JOIN] Join failed: invitation does not grant membership")
+		return nil, ErrMembershipNotGranted
 	}
 
 	// #111: verify the assertion (if any) up front - it is never touched
@@ -563,6 +648,34 @@ func (s *InvitationService) Join(tokenString, userPublicKey, userName, devicePub
 	log.Debug().Str("publicKey", userPublicKey[:min(20, len(userPublicKey))]+"...").Str("username", userName).Msg("[JOIN_SERVICE] Checking if user exists")
 	existingUser, err := s.userRepository.GetUserByPublicKey(userPublicKey)
 	isNewAccount := err != nil || existingUser == nil
+
+	// [D6] grants_identity=false: a space that doesn't anchor new accounts
+	// must reject a brand-new, non-assertion-backed account outright -
+	// existing accounts and assertion-backed joins pass.
+	if isNewAccount && !assertionPresented && !invite.GrantsIdentity {
+		log.Debug().Msg("[JOIN] Join failed: invitation does not grant identity to a new account")
+		return nil, ErrIdentityNotGranted
+	}
+
+	// [G2] PoP gate for every non-assertion join, not just new accounts: the
+	// presented device key must either equal the account key, or already be
+	// an enrolled, unrevoked device of that SAME account. Without this an
+	// attacker could name a victim's publicKey while only proving possession
+	// of their own, unrelated device key - for a known account that enrolls
+	// the attacker's device against the victim's identity; for a brand-new
+	// account it mints one nobody but the attacker can ever authenticate
+	// into again. GetDevice returns nil for a key nobody has registered, so
+	// this single gate also subsumes D5 for brand-new accounts.
+	if !assertionPresented && presentedDevicePublicKey != userPublicKey {
+		d, err := s.userRepository.GetDevice(presentedDevicePublicKey)
+		if err != nil {
+			return nil, fmt.Errorf("failed to look up device: %w", err)
+		}
+		if d == nil || d.UserPublicKey != userPublicKey || d.RevokedAt != nil {
+			log.Debug().Msg("[JOIN] Join failed: presented device key not proven to belong to this account")
+			return nil, ErrAccountKeyNotProven
+		}
+	}
 
 	if isNewAccount {
 		log.Debug().Str("username", userName).Msg("[JOIN_SERVICE] User not found, creating member user")
@@ -739,6 +852,23 @@ func (s *InvitationService) Join(tokenString, userPublicKey, userName, devicePub
 		Str("inviteId", invite.ID).
 		Msg("[INVITE] Producing member_added event")
 
+	// [D11] Atomically claim a use before producing the event - the
+	// conditional UPDATE in IncrementUseCount closes the TOCTOU race the
+	// earlier precheck alone can't. This never ran for the already-a-member
+	// path above, which returns before reaching here.
+	// ponytail: a raced single-use invite can still orphan a created account
+	// if this claim fails after CreateUser already ran above - the account
+	// row persists but membership never happens (bounded blast radius: no
+	// membership grant). A proper fix claims the use before user creation
+	// and needs rework of the idempotent re-join path.
+	if err := s.repo.IncrementUseCount(invite.ID); err != nil {
+		log.Debug().
+			Str("inviteId", invite.ID).
+			Err(err).
+			Msg("[INVITE] Join failed: could not claim invitation use")
+		return nil, fmt.Errorf("failed to claim invitation use: %w", err)
+	}
+
 	// Produce event (validates, sequences, persists, and executes - no authorization needed)
 	// Authorization was already done by validating the invitation token
 	producedEvt, err := s.eventService.ProduceEvent(context.Background(), evt)
@@ -755,27 +885,13 @@ func (s *InvitationService) Join(tokenString, userPublicKey, userName, devicePub
 		Str("userPublicKey", userPublicKey[:min(20, len(userPublicKey))]+"...").
 		Msg("[INVITE] member_added event produced and executed")
 
-	// Begin transaction for invitation usage tracking
-	tx, err := s.db.Begin()
-	if err != nil {
-		return nil, fmt.Errorf("failed to begin transaction: %w", err)
-	}
-	defer tx.Rollback()
-
-	// Increment invitation used count
-	if err := s.repo.IncrementUseCount(invite.ID); err != nil {
-		return nil, fmt.Errorf("failed to increment use count: %w", err)
-	}
-
-	// Record usage in invitation_uses table
+	// Record usage in invitation_uses table. No transaction wrapper here -
+	// the previous s.db.Begin()/Commit() never actually enclosed
+	// IncrementUseCount and RecordUse in anything but its own connection;
+	// both repo calls use s.db directly, so it provided no atomicity.
 	useID := uuid.New().String()
 	if err := s.repo.RecordUse(invite.ID, userPublicKey, useID); err != nil {
 		return nil, fmt.Errorf("failed to record invitation use: %w", err)
-	}
-
-	// Commit transaction
-	if err := tx.Commit(); err != nil {
-		return nil, fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
 	log.Info().
