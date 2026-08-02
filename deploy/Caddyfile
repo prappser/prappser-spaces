@@ -1,0 +1,3 @@
+{$DOMAIN} {
+    reverse_proxy prappser-spaces:4545
+}

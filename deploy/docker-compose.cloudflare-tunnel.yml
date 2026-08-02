@@ -1,0 +1,11 @@
+services:
+  caddy:
+    # tunnel replaces caddy; assign an inactive profile so it never starts
+    profiles: ["disabled"]
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      - prappser-spaces
