@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/goccy/go-json"
 	"github.com/stretchr/testify/assert"
+	"github.com/valyala/fasthttp"
 )
 
 // mockUserRepository for testing
@@ -14,6 +16,10 @@ type mockUserRepository struct {
 		publicKey string
 		role      string
 	}
+	// passwordCredentialPublicKey/passwordCredentialErr let tests control
+	// GetPasswordCredential's return value (see TestGetProfile_* below).
+	passwordCredentialPublicKey string
+	passwordCredentialErr       error
 }
 
 func newMockUserRepository() *mockUserRepository {
@@ -56,6 +62,10 @@ func (m *mockUserRepository) UpdateUserRole(publicKey string, role string) error
 	return nil
 }
 
+func (m *mockUserRepository) UpdateAvatarStorageID(publicKey string, avatarStorageID *string) error {
+	return nil
+}
+func (m *mockUserRepository) UpdateUsername(publicKey, username string) error { return nil }
 func (m *mockUserRepository) UpdateUserIssuer(publicKey, issuer string) error { return nil }
 func (m *mockUserRepository) EnsureDevice(devicePublicKey, userPublicKey string, deviceName *string, createdAt int64) error {
 	return nil
@@ -73,7 +83,7 @@ func (m *mockUserRepository) SetPasswordCredentials(publicKey, passwordVerifier,
 	return nil
 }
 func (m *mockUserRepository) GetPasswordCredential(username string) (string, string, error) {
-	return "", "", nil
+	return m.passwordCredentialPublicKey, "", m.passwordCredentialErr
 }
 func (m *mockUserRepository) GetPasswordHandle(username string) (string, error) {
 	return "", nil
@@ -202,4 +212,80 @@ func TestUpdateUserRole_ShouldAllowMultipleRoleChanges(t *testing.T) {
 	finalUser, _ := repo.GetUserByPublicKey("test-public-key")
 	assert.Equal(t, "member", finalUser.Role)
 	assert.Len(t, repo.updateRoleCalls, 2)
+}
+
+func TestGetProfile_ShouldReportHasPasswordTrue_WhenCredentialBelongsToCaller(t *testing.T) {
+	// given
+	repo := newMockUserRepository()
+	repo.passwordCredentialPublicKey = "caller-key"
+	ue := UserEndpoints{userRepository: repo}
+	ctx := &fasthttp.RequestCtx{}
+	authenticatedUser := &User{PublicKey: "caller-key", Username: "alice"}
+	ctx.SetUserValue("user", authenticatedUser)
+
+	// when
+	ue.GetProfile(ctx)
+
+	// then
+	var resp User
+	assert.NoError(t, json.Unmarshal(ctx.Response.Body(), &resp))
+	assert.True(t, resp.HasPassword)
+	assert.Contains(t, string(ctx.Response.Body()), `"hasPassword":true`)
+	// the shared authenticatedUser pointer must never be mutated
+	assert.False(t, authenticatedUser.HasPassword)
+}
+
+func TestGetProfile_ShouldReportHasPasswordFalse_WhenNoCredentialSet(t *testing.T) {
+	// given
+	repo := newMockUserRepository()
+	ue := UserEndpoints{userRepository: repo}
+	ctx := &fasthttp.RequestCtx{}
+	ctx.SetUserValue("user", &User{PublicKey: "caller-key", Username: "alice"})
+
+	// when
+	ue.GetProfile(ctx)
+
+	// then
+	var resp User
+	assert.NoError(t, json.Unmarshal(ctx.Response.Body(), &resp))
+	assert.False(t, resp.HasPassword)
+	assert.NotContains(t, string(ctx.Response.Body()), "hasPassword")
+}
+
+func TestGetProfile_ShouldReportHasPasswordFalse_WhenCredentialBelongsToDifferentAccount(t *testing.T) {
+	// given: a different, password-enabled account happens to hold this username
+	// (see UpdateUsername's doc comment on non-password accounts sharing a
+	// username with a password-enabled one).
+	repo := newMockUserRepository()
+	repo.passwordCredentialPublicKey = "someone-elses-key"
+	ue := UserEndpoints{userRepository: repo}
+	ctx := &fasthttp.RequestCtx{}
+	ctx.SetUserValue("user", &User{PublicKey: "caller-key", Username: "alice"})
+
+	// when
+	ue.GetProfile(ctx)
+
+	// then
+	var resp User
+	assert.NoError(t, json.Unmarshal(ctx.Response.Body(), &resp))
+	assert.False(t, resp.HasPassword)
+	assert.NotContains(t, string(ctx.Response.Body()), "hasPassword")
+}
+
+func TestGetProfile_ShouldReportHasPasswordFalse_WhenLookupErrors(t *testing.T) {
+	// given
+	repo := newMockUserRepository()
+	repo.passwordCredentialErr = fmt.Errorf("lookup failed")
+	ue := UserEndpoints{userRepository: repo}
+	ctx := &fasthttp.RequestCtx{}
+	ctx.SetUserValue("user", &User{PublicKey: "caller-key", Username: "alice"})
+
+	// when
+	ue.GetProfile(ctx)
+
+	// then
+	var resp User
+	assert.NoError(t, json.Unmarshal(ctx.Response.Body(), &resp))
+	assert.False(t, resp.HasPassword)
+	assert.NotContains(t, string(ctx.Response.Body()), "hasPassword")
 }
