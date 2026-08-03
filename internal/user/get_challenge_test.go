@@ -33,8 +33,7 @@ func (r *getChallengeTestRepo) GetUserByPublicKey(publicKey string) (*User, erro
 	return r.users[publicKey], nil
 }
 
-func (r *getChallengeTestRepo) GetUserByUsername(username string) (*User, error) { return nil, nil }
-func (r *getChallengeTestRepo) UpdateUserRole(publicKey, role string) error      { return nil }
+func (r *getChallengeTestRepo) UpdateUserRole(publicKey, role string) error { return nil }
 func (r *getChallengeTestRepo) UpdateAvatarStorageID(publicKey string, avatarStorageID *string) error {
 	return nil
 }
@@ -65,11 +64,14 @@ func (r *getChallengeTestRepo) RenameDevice(devicePublicKey, deviceName string) 
 func (r *getChallengeTestRepo) TouchDeviceLastSeen(devicePublicKey string, ts int64) error {
 	return nil
 }
-func (r *getChallengeTestRepo) SetPasswordCredentials(publicKey, identifier, passwordVerifier, accountKeyBlob, userState string) error {
+func (r *getChallengeTestRepo) SetPasswordCredentials(publicKey, passwordVerifier, handle, accountKeyBlob, userState string) error {
 	return nil
 }
-func (r *getChallengeTestRepo) GetPasswordCredential(identifier string) (string, string, error) {
+func (r *getChallengeTestRepo) GetPasswordCredential(username string) (string, string, error) {
 	return "", "", nil
+}
+func (r *getChallengeTestRepo) GetPasswordHandle(username string) (string, error) {
+	return "", nil
 }
 func (r *getChallengeTestRepo) GetEscrow(publicKey string) (string, string, error) {
 	return "", "", nil

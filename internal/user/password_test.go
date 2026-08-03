@@ -9,49 +9,65 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestNormalizeIdentifier_ShouldAcceptValidIdentifiers(t *testing.T) {
-	// given
-	valid := []string{"alice", "  Alice  ", "ALICE123", "a1_2.3+4@5-6", "abc"}
-
-	for _, raw := range valid {
-		// when
-		normalized, err := NormalizeIdentifier(raw)
-
-		// then
-		assert.NoError(t, err, "expected %q to be accepted", raw)
-		assert.NotEmpty(t, normalized)
-	}
-}
-
-func TestNormalizeIdentifier_ShouldLowercaseAndTrim(t *testing.T) {
+func TestNormalizeUsername_ShouldTrimWhitespace(t *testing.T) {
 	// when
-	normalized, err := NormalizeIdentifier("  AliCe  ")
+	got, err := NormalizeUsername("  Alice  ")
 
 	// then
 	assert.NoError(t, err)
-	assert.Equal(t, "alice", normalized)
+	assert.Equal(t, "Alice", got)
 }
 
-func TestNormalizeIdentifier_ShouldRejectInvalidIdentifiers(t *testing.T) {
+func TestNormalizeUsername_ShouldRejectEmpty(t *testing.T) {
+	// when
+	_, err := NormalizeUsername("   ")
+
+	// then
+	assert.Error(t, err)
+}
+
+func TestNormalizeUsername_ShouldRejectControlCharacters(t *testing.T) {
+	// when
+	_, err := NormalizeUsername("Alice\x00Bob")
+
+	// then
+	assert.Error(t, err)
+}
+
+func TestNormalizeUsername_ShouldAcceptExactly64Runes(t *testing.T) {
 	// given
-	invalid := []string{
-		"",                      // empty
-		"ab",                    // too short (min 3 chars)
-		"_abc",                  // must start with alnum
-		"-abc",                  // must start with alnum
-		"has space",             // space not allowed
-		"has/slash",             // slash not allowed
-		strings.Repeat("a", 65), // exceeds max length (64)
-	}
+	name := strings.Repeat("a", 64)
 
-	for _, raw := range invalid {
-		// when
-		normalized, err := NormalizeIdentifier(raw)
+	// when
+	got, err := NormalizeUsername(name)
 
-		// then
-		assert.ErrorIs(t, err, ErrInvalidIdentifier, "expected %q to be rejected", raw)
-		assert.Empty(t, normalized)
-	}
+	// then
+	assert.NoError(t, err)
+	assert.Equal(t, name, got)
+}
+
+func TestNormalizeUsername_ShouldReject65Runes(t *testing.T) {
+	// when
+	_, err := NormalizeUsername(strings.Repeat("a", 65))
+
+	// then
+	assert.Error(t, err)
+}
+
+// TestNormalizeUsername_ShouldPreserveUnicodeAndInteriorSpaces covers the
+// deliberate difference from the deleted identifier-shape validator: a
+// username is a display name too, so multi-byte characters and interior
+// spaces must survive normalization untouched, counted by rune (not byte).
+func TestNormalizeUsername_ShouldPreserveUnicodeAndInteriorSpaces(t *testing.T) {
+	// given
+	name := "日本語 Name"
+
+	// when
+	got, err := NormalizeUsername(name)
+
+	// then
+	assert.NoError(t, err)
+	assert.Equal(t, name, got)
 }
 
 func TestDeterministicSalt_ShouldBeDeterministicForSameInput(t *testing.T) {

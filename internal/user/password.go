@@ -8,16 +8,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"regexp"
 	"strings"
+	"unicode"
 
 	"github.com/rs/zerolog/log"
 	"golang.org/x/crypto/hkdf"
 )
-
-// ErrInvalidIdentifier is returned when a supplied identifier fails the
-// shape check in NormalizeIdentifier.
-var ErrInvalidIdentifier = errors.New("invalid identifier")
 
 // ErrInvalidAuthSecret is returned when a supplied authSecret is not valid
 // std-base64 of exactly 32 bytes.
@@ -36,8 +32,6 @@ const (
 	maxAccountKeyBlobLen = 512
 	maxUserStateBlobLen  = 64 * 1024
 )
-
-var identifierPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._+@-]{2,63}$`)
 
 // validateEscrowBlob checks that blob is valid std-base64 and does not exceed
 // maxLen. An empty blob is always valid - it is the signal to CLEAR the
@@ -64,27 +58,51 @@ const (
 	verifierKeyInfo = "prappser/verifier/v1"
 )
 
-// NormalizeIdentifier trims and lowercases a user-supplied login identifier
-// and validates its shape. Normalization must happen before every use of an
-// identifier (salt derivation, storage, lookup) so the same human-entered
-// value always resolves to the same account regardless of case or
-// surrounding whitespace.
-func NormalizeIdentifier(raw string) (string, error) {
-	normalized := strings.ToLower(strings.TrimSpace(raw))
-	if !identifierPattern.MatchString(normalized) {
-		return "", fmt.Errorf("%w: identifier must match %s", ErrInvalidIdentifier, identifierPattern.String())
+// maxUsernameRunes caps a username - it doubles as both the account's
+// display name and its password-login handle (post-#126, there is no
+// separate identifier), long enough for any realistic name, short enough to
+// keep out of abuse territory.
+const maxUsernameRunes = 64
+
+// NormalizeUsername trims a user-supplied username and validates its shape:
+// non-empty after trim, no control characters, and no more than
+// maxUsernameRunes runes. It is the single shared validator for both display
+// names (profile.go's rename path) and password-login handles (this file,
+// password_endpoints.go) - the username IS the login handle, so both paths
+// must agree on what shape is acceptable.
+//
+// Deliberately does NOT lowercase: display names preserve whatever
+// case/spacing the user typed, and case-insensitive matching for the
+// password path happens via lower() in SQL (see user_repository.go) or via
+// an explicit strings.ToLower at the one call site that needs it
+// (deterministicSalt's input, below).
+func NormalizeUsername(raw string) (string, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return "", fmt.Errorf("username cannot be empty")
 	}
-	return normalized, nil
+	runeCount := 0
+	for _, r := range trimmed {
+		if unicode.IsControl(r) {
+			return "", fmt.Errorf("username cannot contain control characters")
+		}
+		runeCount++
+	}
+	if runeCount > maxUsernameRunes {
+		return "", fmt.Errorf("username cannot exceed %d characters", maxUsernameRunes)
+	}
+	return trimmed, nil
 }
 
-// deterministicSalt derives a per-identifier salt as HMAC-SHA256(secret,
-// normalized identifier). Deterministic on purpose: GetSalt must return the
-// same salt for the same identifier on every call, with no database lookup,
-// so it can answer identically for a real account and an unknown one (see
-// password_endpoints.go's GetSalt).
-func deterministicSalt(secret []byte, identifier string) []byte {
+// deterministicSalt derives a salt as HMAC-SHA256(secret, usernameLower).
+// Deterministic on purpose: GetSalt's anti-enumeration fallback must compute
+// the same value for the same username on every call, with no database
+// lookup, so it can answer identically for a real account and an unknown one
+// (see password_endpoints.go's GetSalt). usernameLower must already be
+// lowercased by the caller - this function does no normalization of its own.
+func deterministicSalt(secret []byte, usernameLower string) []byte {
 	mac := hmac.New(sha256.New, secret)
-	mac.Write([]byte(identifier))
+	mac.Write([]byte(usernameLower))
 	return mac.Sum(nil)
 }
 

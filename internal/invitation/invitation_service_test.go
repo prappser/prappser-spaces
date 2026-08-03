@@ -81,8 +81,7 @@ func (r *fakeUserRepo) CreateUser(u *user.User) error {
 func (r *fakeUserRepo) GetUserByPublicKey(publicKey string) (*user.User, error) {
 	return r.existingUser, nil
 }
-func (r *fakeUserRepo) GetUserByUsername(username string) (*user.User, error) { return nil, nil }
-func (r *fakeUserRepo) UpdateUserRole(publicKey, role string) error           { return nil }
+func (r *fakeUserRepo) UpdateUserRole(publicKey, role string) error { return nil }
 func (r *fakeUserRepo) UpdateAvatarStorageID(publicKey string, avatarStorageID *string) error {
 	return nil
 }
@@ -129,11 +128,14 @@ func (r *fakeUserRepo) ListDevices(userPublicKey string) ([]*user.Device, error)
 func (r *fakeUserRepo) RevokeDevice(devicePublicKey string, ts int64) error        { return nil }
 func (r *fakeUserRepo) RenameDevice(devicePublicKey, deviceName string) error      { return nil }
 func (r *fakeUserRepo) TouchDeviceLastSeen(devicePublicKey string, ts int64) error { return nil }
-func (r *fakeUserRepo) SetPasswordCredentials(publicKey, identifier, passwordVerifier, accountKeyBlob, userState string) error {
+func (r *fakeUserRepo) SetPasswordCredentials(publicKey, passwordVerifier, handle, accountKeyBlob, userState string) error {
 	return nil
 }
-func (r *fakeUserRepo) GetPasswordCredential(identifier string) (string, string, error) {
+func (r *fakeUserRepo) GetPasswordCredential(username string) (string, string, error) {
 	return "", "", nil
+}
+func (r *fakeUserRepo) GetPasswordHandle(username string) (string, error) {
+	return "", nil
 }
 func (r *fakeUserRepo) GetEscrow(publicKey string) (string, string, error) {
 	return "", "", nil

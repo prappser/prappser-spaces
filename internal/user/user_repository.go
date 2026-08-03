@@ -36,11 +36,10 @@ func (r *userRepository) CreateUser(user *User) error {
 func (r *userRepository) GetUserByPublicKey(publicKey string) (*User, error) {
 	var user User
 	var avatarStorageID sql.NullString
-	var identifier sql.NullString
 	err := r.db.QueryRow(
-		"SELECT public_key, username, role, created_at, avatar_storage_id, identifier, issuer FROM users WHERE public_key = $1",
+		"SELECT public_key, username, role, created_at, avatar_storage_id, issuer FROM users WHERE public_key = $1",
 		publicKey,
-	).Scan(&user.PublicKey, &user.Username, &user.Role, &user.CreatedAt, &avatarStorageID, &identifier, &user.Issuer)
+	).Scan(&user.PublicKey, &user.Username, &user.Role, &user.CreatedAt, &avatarStorageID, &user.Issuer)
 
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -50,33 +49,6 @@ func (r *userRepository) GetUserByPublicKey(publicKey string) (*User, error) {
 	}
 	if avatarStorageID.Valid {
 		user.AvatarStorageID = &avatarStorageID.String
-	}
-	if identifier.Valid {
-		user.Identifier = &identifier.String
-	}
-	return &user, nil
-}
-
-func (r *userRepository) GetUserByUsername(username string) (*User, error) {
-	var user User
-	var avatarStorageID sql.NullString
-	var identifier sql.NullString
-	err := r.db.QueryRow(
-		"SELECT public_key, username, role, created_at, avatar_storage_id, identifier, issuer FROM users WHERE username = $1",
-		username,
-	).Scan(&user.PublicKey, &user.Username, &user.Role, &user.CreatedAt, &avatarStorageID, &identifier, &user.Issuer)
-
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("failed to get user by username: %w", err)
-	}
-	if avatarStorageID.Valid {
-		user.AvatarStorageID = &avatarStorageID.String
-	}
-	if identifier.Valid {
-		user.Identifier = &identifier.String
 	}
 	return &user, nil
 }
@@ -116,6 +88,10 @@ func (r *userRepository) UpdateUsername(publicKey, username string) error {
 		username, publicKey,
 	)
 	if err != nil {
+		var pqErr *pq.Error
+		if errors.As(err, &pqErr) && pqErr.Code == pqUniqueViolation {
+			return ErrUsernameTaken
+		}
 		return fmt.Errorf("failed to update username: %w", err)
 	}
 	rows, err := result.RowsAffected()
@@ -144,40 +120,50 @@ func (r *userRepository) UpdateUserIssuer(publicKey, issuer string) error {
 	return nil
 }
 
-// SetPasswordCredentials sets the password-login identifier, verifier, and
+// SetPasswordCredentials sets the password-login verifier, handle, and
 // escrowed account-key/user-state blobs for an account in a single UPDATE.
-// The unique index on lower(identifier) (migration 000019) enforces
-// case-insensitive uniqueness at the database level.
+// The partial unique index on lower(username) WHERE password_verifier IS NOT
+// NULL (migration 000023) enforces case-insensitive uniqueness among
+// password-enabled accounts only - a non-password account may freely share a
+// username with anyone.
 //
 // The verifier and both escrow blobs are written together on purpose: an
 // omitted (empty string) blob clears that column via NULLIF rather than
 // leaving a stale value in place. A stale escrow blob under a wrapKey that no
 // longer matches the current verifier is worse than a cleared one - it would
 // look present to a client but fail to decrypt.
-func (r *userRepository) SetPasswordCredentials(publicKey, identifier, passwordVerifier, accountKeyBlob, userState string) error {
+//
+// handle is COALESCEd, not overwritten: LOAD-BEARING - once GetPasswordHandle
+// has handed a stored handle out to a client (via GetSalt), a later password
+// change (e.g. after a username rename) must not silently re-point it to the
+// new username. The client's escrow blob is sealed under a wrapKey derived
+// from the salt GetSalt computed from the ORIGINAL handle at set-password
+// time; re-pointing the handle would change that derived salt and make the
+// escrow permanently undecryptable.
+func (r *userRepository) SetPasswordCredentials(publicKey, passwordVerifier, handle, accountKeyBlob, userState string) error {
 	_, err := r.db.Exec(
-		"UPDATE users SET identifier = $1, password_verifier = $2, account_key_blob = NULLIF($3, ''), user_state_blob = NULLIF($4, '') WHERE public_key = $5",
-		identifier, passwordVerifier, accountKeyBlob, userState, publicKey,
+		"UPDATE users SET password_verifier = $1, password_handle = COALESCE(password_handle, $2), account_key_blob = NULLIF($3, ''), user_state_blob = NULLIF($4, '') WHERE public_key = $5",
+		passwordVerifier, handle, accountKeyBlob, userState, publicKey,
 	)
 	if err != nil {
 		var pqErr *pq.Error
 		if errors.As(err, &pqErr) && pqErr.Code == pqUniqueViolation {
-			return ErrIdentifierTaken
+			return ErrUsernameTaken
 		}
 		return fmt.Errorf("failed to set password credentials: %w", err)
 	}
 	return nil
 }
 
-// GetPasswordCredential returns "", "", nil when no account holds this
-// identifier - absence is a valid state here, not an error (see
-// UserRepository's doc comment). identifier must already be normalized by
-// the caller; the lower() comparison is a defense-in-depth match for the
-// case-insensitive unique index, not a substitute for normalization.
-func (r *userRepository) GetPasswordCredential(identifier string) (userPublicKey, verifier string, err error) {
+// GetPasswordCredential returns "", "", nil when no PASSWORD-ENABLED account
+// holds this username - absence is a valid state here, not an error (see
+// UserRepository's doc comment). username must already be normalized by the
+// caller; the lower() comparison is a defense-in-depth match for the
+// case-insensitive partial unique index, not a substitute for normalization.
+func (r *userRepository) GetPasswordCredential(username string) (userPublicKey, verifier string, err error) {
 	err = r.db.QueryRow(
-		"SELECT public_key, password_verifier FROM users WHERE lower(identifier) = $1",
-		identifier,
+		"SELECT public_key, password_verifier FROM users WHERE lower(username) = lower($1) AND password_verifier IS NOT NULL",
+		username,
 	).Scan(&userPublicKey, &verifier)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -186,6 +172,26 @@ func (r *userRepository) GetPasswordCredential(identifier string) (userPublicKey
 		return "", "", fmt.Errorf("failed to get password credential: %w", err)
 	}
 	return userPublicKey, verifier, nil
+}
+
+// GetPasswordHandle returns "" when no password-enabled account holds this
+// username - absence is a valid state here, not an error (see
+// GetPasswordCredential above for the same contract). The caller
+// (password_endpoints.go's GetSalt) falls back to lower(username) itself as
+// the HMAC input when this returns empty.
+func (r *userRepository) GetPasswordHandle(username string) (handle string, err error) {
+	var handleNull sql.NullString
+	err = r.db.QueryRow(
+		"SELECT password_handle FROM users WHERE lower(username) = lower($1) AND password_verifier IS NOT NULL",
+		username,
+	).Scan(&handleNull)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", nil
+		}
+		return "", fmt.Errorf("failed to get password handle: %w", err)
+	}
+	return handleNull.String, nil
 }
 
 // GetEscrow returns "", "", nil when the account has no row, or a row with

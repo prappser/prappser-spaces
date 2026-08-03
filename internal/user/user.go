@@ -33,15 +33,6 @@ type User struct {
 	SpaceID         string  `json:"spaceId,omitempty"`
 	CreatedAt       int64   `json:"createdAt"`
 	AvatarStorageID *string `json:"avatarStorageId,omitempty"`
-	// Identifier is the normalized login identifier for password-based
-	// login (see password.go, password_endpoints.go). NEVER add a
-	// PasswordVerifier field here - GetProfile JSON-encodes this whole
-	// struct, and the verifier must never reach a client response. NEVER add
-	// AccountKeyBlob/UserState fields either: GetUserByPublicKey runs on
-	// every authed request via ValidateJWT, and an up-to-64KiB blob column
-	// would bloat that hot path for the (rare) escrow read path - use
-	// UserRepository.GetEscrow instead.
-	Identifier *string `json:"identifier,omitempty"`
 	// Issuer is the public key that vouched for this account TO THIS SPACE.
 	// Equals PublicKey when the account registered/joined here directly;
 	// equals the issuing space's key when it arrived via a cross-space
@@ -70,9 +61,13 @@ type Device struct {
 type UserRepository interface {
 	CreateUser(user *User) error
 	GetUserByPublicKey(publicKey string) (*User, error)
-	GetUserByUsername(username string) (*User, error)
 	UpdateUserRole(publicKey string, role string) error
 	UpdateAvatarStorageID(publicKey string, avatarStorageID *string) error
+	// UpdateUsername renames an account's username - the same value doubles
+	// as its password-login handle. Returns ErrUsernameTaken when the new
+	// username collides (case-insensitively) with a DIFFERENT
+	// password-enabled account's username (see user_repository.go's partial
+	// unique index) - non-password accounts may freely share a username.
 	UpdateUsername(publicKey, username string) error
 	// UpdateUserIssuer re-pins issuer from self (issuer == public_key) to a
 	// vouching space's key, used only by the cross-space assertion re-pin
@@ -93,16 +88,22 @@ type UserRepository interface {
 	// the caller (device_endpoints.go), not this method.
 	RenameDevice(devicePublicKey, deviceName string) error
 	TouchDeviceLastSeen(devicePublicKey string, ts int64) error
-	// SetPasswordCredentials sets the password-login identifier, verifier, and
+	// SetPasswordCredentials sets the password-login verifier, handle, and
 	// escrowed account-key/user-state blobs for an account in a single write
-	// (see user_repository.go's doc comment for why the blobs move together
-	// with the verifier). Returns ErrIdentifierTaken if another account
-	// already holds that identifier (case-insensitive). An empty
-	// accountKeyBlob or userState clears that column.
-	SetPasswordCredentials(publicKey, identifier, passwordVerifier, accountKeyBlob, userState string) error
-	// GetPasswordCredential returns "", "", nil when no account holds this
-	// identifier (absence is a valid state, not an error).
-	GetPasswordCredential(identifier string) (userPublicKey, verifier string, err error)
+	// (see user_repository.go's doc comment for why they move together, and
+	// why handle is COALESCEd rather than overwritten). Returns
+	// ErrUsernameTaken if another account already holds that username as its
+	// password-login handle (case-insensitive). An empty accountKeyBlob or
+	// userState clears that column.
+	SetPasswordCredentials(publicKey, passwordVerifier, handle, accountKeyBlob, userState string) error
+	// GetPasswordCredential returns "", "", nil when no PASSWORD-ENABLED
+	// account holds this username (absence is a valid state, not an error).
+	GetPasswordCredential(username string) (userPublicKey, verifier string, err error)
+	// GetPasswordHandle returns "" when no password-enabled account holds
+	// this username (absence is a valid state, not an error) - the caller
+	// falls back to lower(username) itself as the HMAC input in that case
+	// (see password_endpoints.go's GetSalt).
+	GetPasswordHandle(username string) (handle string, err error)
 	// GetEscrow returns the account's escrowed account-key and user-state
 	// blobs, "", "", nil when unset or no such account (absence is a valid
 	// state, not an error). Deliberately NOT exposed via User/GetUserByPublicKey
@@ -110,9 +111,10 @@ type UserRepository interface {
 	GetEscrow(publicKey string) (accountKeyBlob, userState string, err error)
 }
 
-// ErrIdentifierTaken is returned by SetPasswordCredentials when the
-// requested identifier is already registered to a different account.
-var ErrIdentifierTaken = errors.New("identifier already taken")
+// ErrUsernameTaken is returned by SetPasswordCredentials and UpdateUsername
+// when the requested username is already used for password login on this
+// space (by a different, password-enabled account).
+var ErrUsernameTaken = errors.New("username already used for password login")
 
 // SpaceCreator creates a default space for new owners.
 type SpaceCreator interface {

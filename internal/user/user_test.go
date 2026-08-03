@@ -42,15 +42,6 @@ func (m *mockUserRepository) GetUserByPublicKey(publicKey string) (*User, error)
 	return user, nil
 }
 
-func (m *mockUserRepository) GetUserByUsername(username string) (*User, error) {
-	for _, user := range m.users {
-		if user.Username == username {
-			return user, nil
-		}
-	}
-	return nil, fmt.Errorf("user not found")
-}
-
 func (m *mockUserRepository) UpdateUserRole(publicKey string, role string) error {
 	m.updateRoleCalls = append(m.updateRoleCalls, struct {
 		publicKey string
@@ -78,11 +69,14 @@ func (m *mockUserRepository) RenameDevice(devicePublicKey, deviceName string) er
 func (m *mockUserRepository) TouchDeviceLastSeen(devicePublicKey string, ts int64) error {
 	return nil
 }
-func (m *mockUserRepository) SetPasswordCredentials(publicKey, identifier, passwordVerifier, accountKeyBlob, userState string) error {
+func (m *mockUserRepository) SetPasswordCredentials(publicKey, passwordVerifier, handle, accountKeyBlob, userState string) error {
 	return nil
 }
-func (m *mockUserRepository) GetPasswordCredential(identifier string) (string, string, error) {
+func (m *mockUserRepository) GetPasswordCredential(username string) (string, string, error) {
 	return "", "", nil
+}
+func (m *mockUserRepository) GetPasswordHandle(username string) (string, error) {
+	return "", nil
 }
 func (m *mockUserRepository) GetEscrow(publicKey string) (string, string, error) {
 	return "", "", nil

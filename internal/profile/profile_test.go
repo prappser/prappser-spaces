@@ -3,7 +3,6 @@ package profile
 import (
 	"context"
 	"fmt"
-	"strings"
 	"testing"
 
 	"github.com/prappser/prappser-spaces/internal/application"
@@ -86,48 +85,10 @@ func setAuthUser(ctx *fasthttp.RequestCtx, u *user.User) {
 	ctx.SetUserValue("user", u)
 }
 
-// ---- validateDisplayName ----
-
-func TestValidateDisplayName_ShouldTrimWhitespace(t *testing.T) {
-	got, err := validateDisplayName("  Alice  ")
-	assert.NoError(t, err)
-	assert.Equal(t, "Alice", got)
-}
-
-func TestValidateDisplayName_ShouldRejectEmpty(t *testing.T) {
-	_, err := validateDisplayName("   ")
-	assert.Error(t, err)
-}
-
-func TestValidateDisplayName_ShouldAcceptExactly64Runes(t *testing.T) {
-	name := strings.Repeat("a", 64)
-	got, err := validateDisplayName(name)
-	assert.NoError(t, err)
-	assert.Equal(t, name, got)
-}
-
-func TestValidateDisplayName_ShouldReject65Runes(t *testing.T) {
-	name := strings.Repeat("a", 65)
-	_, err := validateDisplayName(name)
-	assert.Error(t, err)
-}
-
-func TestValidateDisplayName_ShouldRejectControlCharacters(t *testing.T) {
-	_, err := validateDisplayName("Alice\x00Bob")
-	assert.Error(t, err)
-}
-
-func TestValidateDisplayName_ShouldAcceptMultiByteUnicodeByRuneCount(t *testing.T) {
-	// 64 multi-byte CJK runes: byte length is >64 (3 bytes each) but rune count is exactly 64.
-	name := strings.Repeat("日", 64)
-	got, err := validateDisplayName(name)
-	assert.NoError(t, err)
-	assert.Equal(t, name, got)
-
-	tooMany := strings.Repeat("日", 65)
-	_, err = validateDisplayName(tooMany)
-	assert.Error(t, err)
-}
+// Display-name shape validation (trim, empty, length, control chars,
+// unicode-by-rune-count) is covered by TestNormalizeUsername_* in
+// internal/user/password_test.go, now that profile.go delegates to
+// user.NormalizeUsername instead of its own validateDisplayName.
 
 // ---- UpdateProfile ----
 
@@ -185,6 +146,30 @@ func TestUpdateProfile_ShouldReturn500WhenRepoUpdateFails(t *testing.T) {
 	assert.Equal(t, fasthttp.StatusInternalServerError, ctx.Response.StatusCode())
 }
 
+// TestUpdateProfile_ShouldReturn409WhenUsernameTakenForPasswordLogin covers
+// #126's rename collision: renaming into a username another,
+// password-enabled account already holds surfaces as 409, not the generic
+// 500 TestUpdateProfile_ShouldReturn500WhenRepoUpdateFails above covers.
+func TestUpdateProfile_ShouldReturn409WhenUsernameTakenForPasswordLogin(t *testing.T) {
+	// given
+	repo := newMockUserRepo()
+	repo.updateUsernameErr = user.ErrUsernameTaken
+	repo.users["pk-1"] = &user.User{PublicKey: "pk-1", Username: "OldName"}
+	ep := NewProfileEndpoints(repo, &mockAppLister{}, &mockEventService{})
+	ctx := newTestRequestCtx("PATCH", `{"displayName":"TakenName"}`)
+	setAuthUser(ctx, &user.User{PublicKey: "pk-1", Username: "OldName"})
+
+	// when
+	ep.UpdateProfile(ctx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusConflict, ctx.Response.StatusCode())
+}
+
+// TestUpdateProfile_ShouldPersistTrimmedNameAndReturnUpdatedUser also
+// exercises the case where the caller has no password login at all - the
+// mock repo's UpdateUsername succeeds unconditionally, mirroring an account
+// for which the partial unique index never applies.
 func TestUpdateProfile_ShouldPersistTrimmedNameAndReturnUpdatedUser(t *testing.T) {
 	// given
 	repo := newMockUserRepo()

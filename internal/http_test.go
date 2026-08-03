@@ -18,7 +18,6 @@ type noopUserRepository struct{}
 
 func (noopUserRepository) CreateUser(u *user.User) error                           { return nil }
 func (noopUserRepository) GetUserByPublicKey(publicKey string) (*user.User, error) { return nil, nil }
-func (noopUserRepository) GetUserByUsername(username string) (*user.User, error)   { return nil, nil }
 func (noopUserRepository) UpdateUserRole(publicKey, role string) error             { return nil }
 func (noopUserRepository) UpdateAvatarStorageID(publicKey string, avatarStorageID *string) error {
 	return nil
@@ -37,11 +36,14 @@ func (noopUserRepository) RenameDevice(devicePublicKey, deviceName string) error
 func (noopUserRepository) TouchDeviceLastSeen(devicePublicKey string, ts int64) error {
 	return nil
 }
-func (noopUserRepository) SetPasswordCredentials(publicKey, identifier, passwordVerifier, accountKeyBlob, userState string) error {
+func (noopUserRepository) SetPasswordCredentials(publicKey, passwordVerifier, handle, accountKeyBlob, userState string) error {
 	return nil
 }
-func (noopUserRepository) GetPasswordCredential(identifier string) (string, string, error) {
+func (noopUserRepository) GetPasswordCredential(username string) (string, string, error) {
 	return "", "", nil
+}
+func (noopUserRepository) GetPasswordHandle(username string) (string, error) {
+	return "", nil
 }
 func (noopUserRepository) GetEscrow(publicKey string) (string, string, error) {
 	return "", "", nil

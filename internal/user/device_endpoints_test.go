@@ -4,6 +4,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/base64"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -16,33 +17,45 @@ import (
 
 // deviceTestRepo is a UserRepository stub for device endpoint tests. Devices,
 // accounts, and password credentials are pre-seeded directly into the maps
-// by each test.
+// by each test. Verifier is a per-account column (verifiers keyed by public
+// key, matching users.password_verifier);
+// GetPasswordCredential joins against each account's CURRENT username live -
+// the same way the real repository's query does - so a rename transparently
+// carries a previously-set password forward (see
+// TestRegisterDevice_ShouldEnrollWithPasswordSetBeforeRename below).
 type deviceTestRepo struct {
-	devices     map[string]*Device
-	accounts    map[string]*User
-	credentials map[string]struct{ userPublicKey, verifier string }   // keyed by normalized identifier
-	escrow      map[string]struct{ accountKeyBlob, userState string } // keyed by account public key
+	devices   map[string]*Device
+	accounts  map[string]*User
+	verifiers map[string]string                                     // keyed by public key
+	escrow    map[string]struct{ accountKeyBlob, userState string } // keyed by public key
 }
 
 func newDeviceTestRepo() *deviceTestRepo {
 	return &deviceTestRepo{
-		devices:     map[string]*Device{},
-		accounts:    map[string]*User{},
-		credentials: map[string]struct{ userPublicKey, verifier string }{},
-		escrow:      map[string]struct{ accountKeyBlob, userState string }{},
+		devices:   map[string]*Device{},
+		accounts:  map[string]*User{},
+		verifiers: map[string]string{},
+		escrow:    map[string]struct{ accountKeyBlob, userState string }{},
 	}
 }
 
-func (r *deviceTestRepo) CreateUser(u *User) error { return nil }
+func (r *deviceTestRepo) CreateUser(u *User) error {
+	r.accounts[u.PublicKey] = u
+	return nil
+}
 func (r *deviceTestRepo) GetUserByPublicKey(publicKey string) (*User, error) {
 	return r.accounts[publicKey], nil
 }
-func (r *deviceTestRepo) GetUserByUsername(username string) (*User, error) { return nil, nil }
-func (r *deviceTestRepo) UpdateUserRole(publicKey, role string) error      { return nil }
+func (r *deviceTestRepo) UpdateUserRole(publicKey, role string) error { return nil }
 func (r *deviceTestRepo) UpdateAvatarStorageID(publicKey string, avatarStorageID *string) error {
 	return nil
 }
-func (r *deviceTestRepo) UpdateUsername(publicKey, username string) error { return nil }
+func (r *deviceTestRepo) UpdateUsername(publicKey, username string) error {
+	if account, ok := r.accounts[publicKey]; ok {
+		account.Username = username
+	}
+	return nil
+}
 func (r *deviceTestRepo) UpdateUserIssuer(publicKey, issuer string) error { return nil }
 
 func (r *deviceTestRepo) EnsureDevice(devicePublicKey, userPublicKey string, deviceName *string, createdAt int64) error {
@@ -85,14 +98,24 @@ func (r *deviceTestRepo) RenameDevice(devicePublicKey, deviceName string) error 
 }
 func (r *deviceTestRepo) TouchDeviceLastSeen(devicePublicKey string, ts int64) error { return nil }
 
-func (r *deviceTestRepo) SetPasswordCredentials(publicKey, identifier, passwordVerifier, accountKeyBlob, userState string) error {
-	r.credentials[identifier] = struct{ userPublicKey, verifier string }{publicKey, passwordVerifier}
+func (r *deviceTestRepo) SetPasswordCredentials(publicKey, passwordVerifier, handle, accountKeyBlob, userState string) error {
+	if _, ok := r.accounts[publicKey]; !ok {
+		return fmt.Errorf("no account for public key %s", publicKey)
+	}
+	r.verifiers[publicKey] = passwordVerifier
 	r.escrow[publicKey] = struct{ accountKeyBlob, userState string }{accountKeyBlob, userState}
 	return nil
 }
-func (r *deviceTestRepo) GetPasswordCredential(identifier string) (string, string, error) {
-	cred := r.credentials[identifier]
-	return cred.userPublicKey, cred.verifier, nil
+func (r *deviceTestRepo) GetPasswordCredential(username string) (string, string, error) {
+	for pk, account := range r.accounts {
+		if r.verifiers[pk] != "" && strings.EqualFold(account.Username, username) {
+			return pk, r.verifiers[pk], nil
+		}
+	}
+	return "", "", nil
+}
+func (r *deviceTestRepo) GetPasswordHandle(username string) (string, error) {
+	return "", nil
 }
 func (r *deviceTestRepo) GetEscrow(publicKey string) (string, string, error) {
 	escrow := r.escrow[publicKey]
@@ -331,9 +354,9 @@ func validNewDevicePublicKey() string {
 }
 
 // seedPasswordCredential registers a password credential (and, optionally,
-// escrow blobs) for account "account-1" under identifier, returning the
+// escrow blobs) for account "account-1" under username, returning the
 // plaintext authSecret a caller can present to authenticate as it.
-func seedPasswordCredential(t *testing.T, repo *deviceTestRepo, verifierKey []byte, identifier string, accountKeyBlob, userState string) (authSecret string) {
+func seedPasswordCredential(t *testing.T, repo *deviceTestRepo, verifierKey []byte, username string, accountKeyBlob, userState string) (authSecret string) {
 	t.Helper()
 	secretBytes := make([]byte, 32)
 	_, err := rand.Read(secretBytes)
@@ -343,8 +366,8 @@ func seedPasswordCredential(t *testing.T, repo *deviceTestRepo, verifierKey []by
 	verifier, err := hashAuthSecret(verifierKey, authSecret)
 	assert.NoError(t, err)
 
-	repo.accounts["account-1"] = &User{PublicKey: "account-1", Username: "alice", Role: RoleUser}
-	assert.NoError(t, repo.SetPasswordCredentials("account-1", identifier, verifier, accountKeyBlob, userState))
+	repo.accounts["account-1"] = &User{PublicKey: "account-1", Username: username, Role: RoleUser}
+	assert.NoError(t, repo.SetPasswordCredentials("account-1", verifier, "", accountKeyBlob, userState))
 	return authSecret
 }
 
@@ -356,7 +379,7 @@ func TestRegisterDevice_ShouldEnrollWithValidPasswordCredential(t *testing.T) {
 	de := NewDeviceEndpoints(repo, verifierKey, "space-key")
 
 	ctx := newRegisterDeviceRequestCtx(t, registerDeviceRequest{
-		Identifier:      "alice",
+		Username:        "alice",
 		AuthSecret:      authSecret,
 		DevicePublicKey: validNewDevicePublicKey(),
 	})
@@ -381,7 +404,7 @@ func TestRegisterDevice_ShouldReturn401ForWrongAuthSecret(t *testing.T) {
 
 	wrongSecretBytes := make([]byte, 32)
 	ctx := newRegisterDeviceRequestCtx(t, registerDeviceRequest{
-		Identifier:      "alice",
+		Username:        "alice",
 		AuthSecret:      base64.StdEncoding.EncodeToString(wrongSecretBytes),
 		DevicePublicKey: validNewDevicePublicKey(),
 	})
@@ -393,11 +416,11 @@ func TestRegisterDevice_ShouldReturn401ForWrongAuthSecret(t *testing.T) {
 	assert.Equal(t, fasthttp.StatusUnauthorized, ctx.Response.StatusCode())
 }
 
-// TestRegisterDevice_ShouldReturn401WithByteIdenticalBodyForUnknownIdentifier
+// TestRegisterDevice_ShouldReturn401WithByteIdenticalBodyForUnknownUsername
 // is the anti-enumeration test for the password enroll path: an unknown
-// identifier and a wrong password for a real identifier must be
+// username and a wrong password for a real username must be
 // indistinguishable from the response alone.
-func TestRegisterDevice_ShouldReturn401WithByteIdenticalBodyForUnknownIdentifier(t *testing.T) {
+func TestRegisterDevice_ShouldReturn401WithByteIdenticalBodyForUnknownUsername(t *testing.T) {
 	// given
 	verifierKey := []byte("test-verifier-key")
 	repo := newDeviceTestRepo()
@@ -406,24 +429,62 @@ func TestRegisterDevice_ShouldReturn401WithByteIdenticalBodyForUnknownIdentifier
 
 	wrongSecretBytes := make([]byte, 32)
 	wrongPasswordCtx := newRegisterDeviceRequestCtx(t, registerDeviceRequest{
-		Identifier:      "alice",
+		Username:        "alice",
 		AuthSecret:      base64.StdEncoding.EncodeToString(wrongSecretBytes),
 		DevicePublicKey: validNewDevicePublicKey(),
 	})
-	unknownIdentifierCtx := newRegisterDeviceRequestCtx(t, registerDeviceRequest{
-		Identifier:      "does-not-exist",
+	unknownUsernameCtx := newRegisterDeviceRequestCtx(t, registerDeviceRequest{
+		Username:        "does-not-exist",
 		AuthSecret:      base64.StdEncoding.EncodeToString(wrongSecretBytes),
 		DevicePublicKey: validNewDevicePublicKey(),
 	})
 
 	// when
 	de.RegisterDevice(wrongPasswordCtx)
-	de.RegisterDevice(unknownIdentifierCtx)
+	de.RegisterDevice(unknownUsernameCtx)
 
 	// then
 	assert.Equal(t, fasthttp.StatusUnauthorized, wrongPasswordCtx.Response.StatusCode())
-	assert.Equal(t, fasthttp.StatusUnauthorized, unknownIdentifierCtx.Response.StatusCode())
-	assert.Equal(t, wrongPasswordCtx.Response.Body(), unknownIdentifierCtx.Response.Body())
+	assert.Equal(t, fasthttp.StatusUnauthorized, unknownUsernameCtx.Response.StatusCode())
+	assert.Equal(t, wrongPasswordCtx.Response.Body(), unknownUsernameCtx.Response.Body())
+}
+
+// TestRegisterDevice_ShouldEnrollWithPasswordSetBeforeRename covers a
+// rename's downstream effect on the password enroll path: the SAME verifier
+// (set before the rename) still authenticates the account under its NEW
+// username, because GetPasswordCredential joins against whichever username
+// currently sits on the account row - not a frozen copy from set-password
+// time. The OLD username must stop resolving once the rename lands.
+func TestRegisterDevice_ShouldEnrollWithPasswordSetBeforeRename(t *testing.T) {
+	// given
+	verifierKey := []byte("test-verifier-key")
+	repo := newDeviceTestRepo()
+	authSecret := seedPasswordCredential(t, repo, verifierKey, "alice", "", "")
+	assert.NoError(t, repo.UpdateUsername("account-1", "alice2"))
+	de := NewDeviceEndpoints(repo, verifierKey, "space-key")
+
+	// when - enroll using the NEW username with the password set BEFORE the rename
+	newUsernameCtx := newRegisterDeviceRequestCtx(t, registerDeviceRequest{
+		Username:        "alice2",
+		AuthSecret:      authSecret,
+		DevicePublicKey: validNewDevicePublicKey(),
+	})
+	de.RegisterDevice(newUsernameCtx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusCreated, newUsernameCtx.Response.StatusCode())
+	var resp registerDeviceResponse
+	assert.NoError(t, json.Unmarshal(newUsernameCtx.Response.Body(), &resp))
+	assert.Equal(t, "account-1", resp.UserPublicKey)
+
+	// and - the OLD username no longer resolves
+	oldUsernameCtx := newRegisterDeviceRequestCtx(t, registerDeviceRequest{
+		Username:        "alice",
+		AuthSecret:      authSecret,
+		DevicePublicKey: validNewDevicePublicKey(),
+	})
+	de.RegisterDevice(oldUsernameCtx)
+	assert.Equal(t, fasthttp.StatusUnauthorized, oldUsernameCtx.Response.StatusCode())
 }
 
 func TestRegisterDevice_ShouldReturn400WhenBothCredentialsPresent(t *testing.T) {
@@ -431,7 +492,7 @@ func TestRegisterDevice_ShouldReturn400WhenBothCredentialsPresent(t *testing.T) 
 	de := NewDeviceEndpoints(newDeviceTestRepo(), []byte("test-verifier-key"), "space-key")
 	ctx := newRegisterDeviceRequestCtx(t, registerDeviceRequest{
 		Delegation:      "some-delegation-jws",
-		Identifier:      "alice",
+		Username:        "alice",
 		AuthSecret:      base64.StdEncoding.EncodeToString(make([]byte, 32)),
 		DevicePublicKey: validNewDevicePublicKey(),
 	})
@@ -443,11 +504,11 @@ func TestRegisterDevice_ShouldReturn400WhenBothCredentialsPresent(t *testing.T) 
 	assert.Equal(t, fasthttp.StatusBadRequest, ctx.Response.StatusCode())
 }
 
-func TestRegisterDevice_ShouldReturn400WhenIdentifierWithoutAuthSecret(t *testing.T) {
+func TestRegisterDevice_ShouldReturn400WhenUsernameWithoutAuthSecret(t *testing.T) {
 	// given
 	de := NewDeviceEndpoints(newDeviceTestRepo(), []byte("test-verifier-key"), "space-key")
 	ctx := newRegisterDeviceRequestCtx(t, registerDeviceRequest{
-		Identifier:      "alice",
+		Username:        "alice",
 		DevicePublicKey: validNewDevicePublicKey(),
 	})
 
@@ -482,7 +543,7 @@ func TestRegisterDevice_ShouldReturnEscrowBlobsOnPasswordPath(t *testing.T) {
 	de := NewDeviceEndpoints(repo, verifierKey, "space-key")
 
 	ctx := newRegisterDeviceRequestCtx(t, registerDeviceRequest{
-		Identifier:      "alice",
+		Username:        "alice",
 		AuthSecret:      authSecret,
 		DevicePublicKey: validNewDevicePublicKey(),
 	})

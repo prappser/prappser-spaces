@@ -118,10 +118,10 @@ func NewDeviceEndpoints(userRepository UserRepository, verifierKey []byte, space
 
 // registerDeviceRequest is the request body for POST /users/devices.
 // Exactly one credential kind must be present: Delegation, or
-// Identifier+AuthSecret (see resolveEnrollCredential).
+// Username+AuthSecret (see resolveEnrollCredential).
 type registerDeviceRequest struct {
 	Delegation      string `json:"delegation,omitempty"`
-	Identifier      string `json:"identifier,omitempty"`
+	Username        string `json:"username,omitempty"`
 	AuthSecret      string `json:"authSecret,omitempty"`
 	DevicePublicKey string `json:"devicePublicKey"`
 	DeviceName      string `json:"deviceName,omitempty"`
@@ -247,26 +247,26 @@ func (de *DeviceEndpoints) RegisterDevice(ctx *fasthttp.RequestCtx) {
 
 // resolveEnrollCredential resolves the account public key a device
 // registration should attach to, from exactly one of two credential kinds:
-// a delegation JWS (an existing device vouching for the new one), or an
-// identifier+authSecret password credential. viaPassword is true only for
-// the identifier+authSecret branch (see registerDeviceResponse's doc
+// a delegation JWS (an existing device vouching for the new one), or a
+// username+authSecret password credential. viaPassword is true only for
+// the username+authSecret branch (see registerDeviceResponse's doc
 // comment for why RegisterDevice cares). statusCode and err.Error() are
 // only meaningful when err is non-nil, and are exactly what RegisterDevice
 // should respond with.
 func (de *DeviceEndpoints) resolveEnrollCredential(req *registerDeviceRequest) (accountPublicKey string, viaPassword bool, statusCode int, err error) {
 	delegationPresent := req.Delegation != ""
-	identifierPresent := req.Identifier != ""
+	usernamePresent := req.Username != ""
 	authSecretPresent := req.AuthSecret != ""
-	passwordPresent := identifierPresent || authSecretPresent
+	passwordPresent := usernamePresent || authSecretPresent
 
 	if delegationPresent && passwordPresent {
-		return "", false, fasthttp.StatusBadRequest, fmt.Errorf("provide either delegation or identifier+authSecret, not both")
+		return "", false, fasthttp.StatusBadRequest, fmt.Errorf("provide either delegation or username+authSecret, not both")
 	}
 	if !delegationPresent && !passwordPresent {
-		return "", false, fasthttp.StatusBadRequest, fmt.Errorf("delegation or identifier+authSecret is required")
+		return "", false, fasthttp.StatusBadRequest, fmt.Errorf("delegation or username+authSecret is required")
 	}
-	if passwordPresent && (!identifierPresent || !authSecretPresent) {
-		return "", false, fasthttp.StatusBadRequest, fmt.Errorf("identifier and authSecret are both required")
+	if passwordPresent && (!usernamePresent || !authSecretPresent) {
+		return "", false, fasthttp.StatusBadRequest, fmt.Errorf("username and authSecret are both required")
 	}
 
 	if delegationPresent {
@@ -278,18 +278,18 @@ func (de *DeviceEndpoints) resolveEnrollCredential(req *registerDeviceRequest) (
 		return signerDevice.UserPublicKey, false, 0, nil
 	}
 
-	identifier, normErr := NormalizeIdentifier(req.Identifier)
+	username, normErr := NormalizeUsername(req.Username)
 	if normErr != nil {
-		return "", false, fasthttp.StatusBadRequest, fmt.Errorf("identifier is invalid")
+		return "", false, fasthttp.StatusBadRequest, fmt.Errorf("username is invalid")
 	}
 
-	userPublicKey, verifier, lookupErr := de.userRepository.GetPasswordCredential(identifier)
+	userPublicKey, verifier, lookupErr := de.userRepository.GetPasswordCredential(username)
 	if lookupErr != nil {
 		log.Error().Err(lookupErr).Msg("[DEVICE] Failed to look up password credential")
 		return "", false, fasthttp.StatusInternalServerError, fmt.Errorf("internal server error")
 	}
 	// Miss, empty verifier, or mismatch all collapse to the same generic
-	// error - the body must be byte-identical for an unknown identifier and
+	// error - the body must be byte-identical for an unknown username and
 	// a wrong password (see password_endpoints.go's GetSalt for the same
 	// anti-enumeration rationale).
 	if userPublicKey == "" || verifier == "" || !verifyAuthSecret(de.verifierKey, verifier, req.AuthSecret) {
