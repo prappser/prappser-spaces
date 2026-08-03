@@ -44,6 +44,11 @@ type User struct {
 	// key equals the account key). Not part of the wire representation: it is
 	// request-scoped identity, not account data.
 	DevicePublicKey string `json:"-"`
+	// HasPassword reports whether this account has password-login credentials
+	// set. Populated only by GetProfile (looked up on demand, not stored on
+	// the account record) - omitempty so every other endpoint that serializes
+	// a User keeps emitting byte-identical payloads.
+	HasPassword bool `json:"hasPassword,omitempty"`
 }
 
 // Device is one entry in a user's device roster (see device_repository.go).
@@ -660,9 +665,23 @@ func (ue UserEndpoints) GetProfile(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
+	// Copy so the shared authenticatedUser pointer (held by other request
+	// middleware) is never mutated by this handler.
+	profile := *authenticatedUser
+	credPublicKey, _, err := ue.userRepository.GetPasswordCredential(authenticatedUser.Username)
+	if err != nil {
+		log.Debug().Err(err).Str("username", authenticatedUser.Username).Msg("[PROFILE] Failed to look up password credential")
+	} else {
+		// Compare to the caller's OWN public key rather than just checking
+		// credPublicKey != "": a different, password-enabled account can hold
+		// this same username (see UpdateUsername's doc comment on username
+		// sharing), which would otherwise register as a false positive.
+		profile.HasPassword = credPublicKey == authenticatedUser.PublicKey
+	}
+
 	ctx.SetStatusCode(fasthttp.StatusOK)
 	ctx.SetContentType("application/json")
-	json.NewEncoder(ctx).Encode(authenticatedUser)
+	json.NewEncoder(ctx).Encode(profile)
 }
 
 // GetSpacePublicKey returns the space's Ed25519 public key for JWT verification
