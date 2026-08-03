@@ -2,6 +2,7 @@ package user
 
 import (
 	"encoding/base64"
+	"strings"
 
 	"github.com/goccy/go-json"
 	"github.com/rs/zerolog/log"
@@ -28,35 +29,59 @@ type saltResponse struct {
 	Salt string `json:"salt"`
 }
 
-// GetSalt handles GET /users/salt?identifier=.... UNauthenticated and
-// deliberately does NOT touch the database: the salt is a pure function of
-// the identifier and the server-side saltSecret, so a real and an unknown
-// identifier produce byte-identical response shapes - there is no
-// database round trip whose timing or presence/absence could leak whether
-// an identifier is registered. The only 400 case is a shape-invalid
-// identifier, which is state-independent (true or false regardless of
-// what's in the database).
+// GetSalt handles GET /users/salt?username=.... UNauthenticated. Unlike the
+// pre-#126 pure-function design, this now runs ONE constant-shape DB query
+// (GetPasswordHandle) for every request, known or unknown username alike - a
+// deliberate trade for rename-safety: once a password-enabled account is
+// renamed, the string a client's salt must be derived from is the ORIGINAL
+// handle (== the username at set-password time), not the current username,
+// so a pure function of the current username alone can no longer answer
+// correctly on its own.
+//
+// Storing the HANDLE rather than a derived salt blob is what makes this
+// migration-safe: a handle is plain text a backfill UPDATE can compute
+// (lower(old identifier)), so every pre-existing password-enabled account
+// keeps producing the exact same salt it always has, with zero client
+// changes required.
+//
+// Anti-enumeration is still preserved: both branches - a real,
+// password-enabled username and an unknown one - run the exact same
+// GetPasswordHandle query and compute the exact same HMAC exactly once, so
+// the response is byte-indistinguishable regardless of whether the username
+// is registered; only which string fed the HMAC differs, and that never
+// surfaces to the caller. The only 400 case is a shape-invalid username,
+// which is state-independent (true or false regardless of what's in the
+// database).
 func (pe *PasswordEndpoints) GetSalt(ctx *fasthttp.RequestCtx) {
-	identifier, err := NormalizeIdentifier(string(ctx.QueryArgs().Peek("identifier")))
+	username, err := NormalizeUsername(string(ctx.QueryArgs().Peek("username")))
 	if err != nil {
-		log.Debug().Err(err).Msg("[PASSWORD] Invalid identifier for salt request")
-		ctx.Error("identifier is required and must be valid", fasthttp.StatusBadRequest)
+		log.Debug().Err(err).Msg("[PASSWORD] Invalid username for salt request")
+		ctx.Error("username is required and must be valid", fasthttp.StatusBadRequest)
 		return
 	}
 
-	salt := deterministicSalt(pe.saltSecret, identifier)
+	handle, err := pe.userRepository.GetPasswordHandle(username)
+	if err != nil {
+		log.Debug().Err(err).Msg("[PASSWORD] Failed to look up password handle for salt request")
+	}
+	input := strings.ToLower(username)
+	if handle != "" {
+		input = handle
+	}
+	salt := base64.StdEncoding.EncodeToString(deterministicSalt(pe.saltSecret, input))
 
 	ctx.SetStatusCode(fasthttp.StatusOK)
 	ctx.SetContentType("application/json")
-	json.NewEncoder(ctx).Encode(saltResponse{Salt: base64.StdEncoding.EncodeToString(salt)})
+	json.NewEncoder(ctx).Encode(saltResponse{Salt: salt})
 }
 
-// setPasswordRequest is the request body for POST /users/password.
-// AccountKeyBlob and UserState are the encrypted escrow blobs (see
-// escrow.go on the client) - both optional, and omitting either clears it
-// (see SetPasswordCredentials).
+// setPasswordRequest is the request body for POST /users/password. There is
+// no username field: the username is the authenticated caller's OWN
+// username (authenticatedUser.Username), never a client-supplied value - see
+// SetPassword. AccountKeyBlob and UserState are the encrypted escrow blobs
+// (see escrow.go on the client) - both optional, and omitting either clears
+// it (see SetPasswordCredentials).
 type setPasswordRequest struct {
-	Identifier     string `json:"identifier"`
 	AuthSecret     string `json:"authSecret"`
 	AccountKeyBlob string `json:"accountKeyBlob,omitempty"`
 	UserState      string `json:"userState,omitempty"`
@@ -64,7 +89,9 @@ type setPasswordRequest struct {
 
 // SetPassword handles POST /users/password. Requires auth: the account
 // setting its own password credentials must already be authenticated via
-// the existing device-key flow.
+// the existing device-key flow. The password-login handle is always
+// authenticatedUser.Username - there is no separate identifier to submit
+// (see setPasswordRequest).
 func (pe *PasswordEndpoints) SetPassword(ctx *fasthttp.RequestCtx) {
 	authenticatedUser, ok := ctx.UserValue("user").(*User)
 	if !ok || authenticatedUser == nil {
@@ -77,13 +104,6 @@ func (pe *PasswordEndpoints) SetPassword(ctx *fasthttp.RequestCtx) {
 	if err := json.Unmarshal(ctx.PostBody(), &req); err != nil {
 		log.Error().Err(err).Msg("[PASSWORD] Failed to parse set password request body")
 		ctx.Error("invalid request body", fasthttp.StatusBadRequest)
-		return
-	}
-
-	identifier, err := NormalizeIdentifier(req.Identifier)
-	if err != nil {
-		log.Debug().Err(err).Msg("[PASSWORD] Invalid identifier for set password request")
-		ctx.Error("identifier is invalid", fasthttp.StatusBadRequest)
 		return
 	}
 
@@ -106,16 +126,19 @@ func (pe *PasswordEndpoints) SetPassword(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	if err := pe.userRepository.SetPasswordCredentials(authenticatedUser.PublicKey, identifier, verifier, req.AccountKeyBlob, req.UserState); err != nil {
-		if err == ErrIdentifierTaken {
+	handle := strings.ToLower(authenticatedUser.Username)
+
+	if err := pe.userRepository.SetPasswordCredentials(authenticatedUser.PublicKey, verifier, handle, req.AccountKeyBlob, req.UserState); err != nil {
+		if err == ErrUsernameTaken {
 			// Residual enumeration oracle, accepted deliberately: this 409
-			// only fires for an AUTHENTICATED account choosing an identifier,
-			// so it can only ever confirm "someone else already claimed the
-			// identifier I just tried" - a much narrower leak than an
+			// only fires for an AUTHENTICATED account whose OWN username
+			// collides with another password-enabled account, so it can
+			// only ever confirm "someone else already claimed my username
+			// for password login" - a much narrower leak than an
 			// unauthenticated probe, and one an attacker already needs a
 			// live account to exploit.
-			log.Debug().Msg("[PASSWORD] Identifier already taken")
-			ctx.Error("identifier already taken", fasthttp.StatusConflict)
+			log.Debug().Msg("[PASSWORD] Username already used for password login")
+			ctx.Error("username already used for password login on this space", fasthttp.StatusConflict)
 			return
 		}
 		log.Error().Err(err).Msg("[PASSWORD] Failed to set password credentials")

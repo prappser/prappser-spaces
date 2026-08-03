@@ -1,6 +1,8 @@
 package profile
 
 import (
+	"errors"
+
 	"github.com/goccy/go-json"
 	"github.com/google/uuid"
 	"github.com/prappser/prappser-spaces/internal/event"
@@ -39,7 +41,7 @@ func (e *ProfileEndpoints) UpdateProfile(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	displayName, err := validateDisplayName(req.DisplayName)
+	displayName, err := user.NormalizeUsername(req.DisplayName)
 	if err != nil {
 		ctx.Error(err.Error(), fasthttp.StatusBadRequest)
 		return
@@ -54,6 +56,11 @@ func (e *ProfileEndpoints) UpdateProfile(ctx *fasthttp.RequestCtx) {
 	}
 
 	if err := e.userRepo.UpdateUsername(publicKey, displayName); err != nil {
+		if errors.Is(err, user.ErrUsernameTaken) {
+			log.Debug().Str("publicKey", publicKey).Msg("[PROFILE] Username already used for password login")
+			ctx.Error("username already used for password login on this space", fasthttp.StatusConflict)
+			return
+		}
 		log.Error().Err(err).Str("publicKey", publicKey).Msg("[PROFILE] Failed to update username")
 		ctx.Error("Failed to update profile", fasthttp.StatusInternalServerError)
 		return
