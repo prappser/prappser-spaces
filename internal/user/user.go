@@ -89,6 +89,9 @@ type UserRepository interface {
 	ListDevices(userPublicKey string) ([]*Device, error)
 	// RevokeDevice soft-revokes a device and deletes its push subscriptions.
 	RevokeDevice(devicePublicKey string, ts int64) error
+	// RenameDevice updates a device's display name. Ownership is checked by
+	// the caller (device_endpoints.go), not this method.
+	RenameDevice(devicePublicKey, deviceName string) error
 	TouchDeviceLastSeen(devicePublicKey string, ts int64) error
 	// SetPasswordCredentials sets the password-login identifier, verifier, and
 	// escrowed account-key/user-state blobs for an account in a single write
@@ -247,6 +250,18 @@ func NewEndpoints(userRepository UserRepository, config Config, privateKey ed255
 
 // OwnerRegister handles owner registration with JWE/JWS (existing flow)
 func (ue UserEndpoints) OwnerRegister(ctx *fasthttp.RequestCtx) {
+	// The body is currently the literal "{}" from the app, with an optional
+	// deviceName added for #127 - unmarshal errors and a missing/empty name
+	// are never fatal here, they just mean device #1 gets no display name.
+	var bodyReq struct {
+		DeviceName string `json:"deviceName"`
+	}
+	_ = json.Unmarshal(ctx.PostBody(), &bodyReq)
+	var deviceName *string
+	if normalized, ok := NormalizeDeviceName(bodyReq.DeviceName); ok {
+		deviceName = &normalized
+	}
+
 	authHeader := ctx.Request.Header.Peek(headerAuthorization)
 	if authHeader == nil {
 		log.Error().Msg("Missing authorization header")
@@ -301,7 +316,7 @@ func (ue UserEndpoints) OwnerRegister(ctx *fasthttp.RequestCtx) {
 
 			// Backfill device #1 for accounts created before the device roster
 			// existed (ON CONFLICT DO NOTHING makes this a no-op otherwise).
-			if err := ue.userRepository.EnsureDevice(existingUser.PublicKey, existingUser.PublicKey, nil, time.Now().Unix()); err != nil {
+			if err := ue.userRepository.EnsureDevice(existingUser.PublicKey, existingUser.PublicKey, deviceName, time.Now().Unix()); err != nil {
 				log.Error().Err(err).Msg("Failed to ensure device for upgraded owner")
 				ctx.Error("Failed to upgrade user to owner", fasthttp.StatusInternalServerError)
 				return
@@ -340,7 +355,7 @@ func (ue UserEndpoints) OwnerRegister(ctx *fasthttp.RequestCtx) {
 	}
 
 	// Device #1 for a brand-new owner: this owner's account key IS device #1's key.
-	if err := ue.userRepository.EnsureDevice(newUser.PublicKey, newUser.PublicKey, nil, newUser.CreatedAt); err != nil {
+	if err := ue.userRepository.EnsureDevice(newUser.PublicKey, newUser.PublicKey, deviceName, newUser.CreatedAt); err != nil {
 		log.Error().Err(err).Msg("Failed to ensure device for new owner")
 		ctx.Error("Failed to create owner", fasthttp.StatusInternalServerError)
 		return

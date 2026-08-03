@@ -125,6 +125,8 @@ func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, status
 				authMiddleware.RequireAuth(deviceEndpoints.ListDevices)(ctx)
 			case "DELETE":
 				authMiddleware.RequireAuth(deviceEndpoints.RevokeDevice)(ctx)
+			case "PATCH":
+				authMiddleware.RequireAuth(deviceEndpoints.RenameDevice)(ctx)
 			default:
 				ctx.Error("Method Not Allowed", fasthttp.StatusMethodNotAllowed)
 			}

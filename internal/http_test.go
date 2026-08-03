@@ -32,7 +32,8 @@ func (noopUserRepository) GetDevice(devicePublicKey string) (*user.Device, error
 func (noopUserRepository) ListDevices(userPublicKey string) ([]*user.Device, error) {
 	return nil, nil
 }
-func (noopUserRepository) RevokeDevice(devicePublicKey string, ts int64) error { return nil }
+func (noopUserRepository) RevokeDevice(devicePublicKey string, ts int64) error   { return nil }
+func (noopUserRepository) RenameDevice(devicePublicKey, deviceName string) error { return nil }
 func (noopUserRepository) TouchDeviceLastSeen(devicePublicKey string, ts int64) error {
 	return nil
 }

@@ -105,3 +105,30 @@ func TestUserRepository_ListDevices_ShouldHideRevoked_Integration(t *testing.T) 
 	assert.Len(t, devices, 1)
 	assert.Equal(t, "test-devrepo-list-device-2", devices[0].DevicePublicKey)
 }
+
+func TestUserRepository_RenameDevice_ShouldPersistNewName_Integration(t *testing.T) {
+	// given: fixture keys are unique to this test so concurrently-run
+	// packages' integration tests (also hitting this shared DB) can't collide.
+	db := getTestDB(t)
+	defer db.Close()
+	repo := NewUserRepository(db)
+	if _, err := db.Exec(
+		"INSERT INTO users (public_key, username, role, created_at) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING",
+		"test-devrepo-rename-user", "alice", "user", time.Now().Unix(),
+	); err != nil {
+		t.Fatalf("Failed to insert test user: %v", err)
+	}
+	name := "Old Name"
+	assert.NoError(t, repo.EnsureDevice("test-devrepo-rename-device", "test-devrepo-rename-user", &name, time.Now().Unix()))
+
+	// when
+	err := repo.RenameDevice("test-devrepo-rename-device", "New Name")
+
+	// then
+	assert.NoError(t, err)
+	device, err := repo.GetDevice("test-devrepo-rename-device")
+	assert.NoError(t, err)
+	if assert.NotNil(t, device.DeviceName) {
+		assert.Equal(t, "New Name", *device.DeviceName)
+	}
+}

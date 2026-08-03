@@ -73,7 +73,8 @@ func (m *mockUserRepository) GetDevice(devicePublicKey string) (*Device, error) 
 func (m *mockUserRepository) ListDevices(userPublicKey string) ([]*Device, error) {
 	return nil, nil
 }
-func (m *mockUserRepository) RevokeDevice(devicePublicKey string, ts int64) error { return nil }
+func (m *mockUserRepository) RevokeDevice(devicePublicKey string, ts int64) error   { return nil }
+func (m *mockUserRepository) RenameDevice(devicePublicKey, deviceName string) error { return nil }
 func (m *mockUserRepository) TouchDeviceLastSeen(devicePublicKey string, ts int64) error {
 	return nil
 }

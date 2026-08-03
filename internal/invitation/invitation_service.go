@@ -618,9 +618,16 @@ type JoinResult struct {
 // audience and the proof's device public key as the bound device. See the
 // doc comments below for exactly how it affects account creation and
 // issuer pinning - an assertion never adds a device to an ALREADY-known
-// account (D5).
-func (s *InvitationService) Join(tokenString, proof, assertion string) (*JoinResult, error) {
+// account (D5). deviceName is optional (#127): a display name for the
+// enrolling device, normalized once here into *string (nil when empty or
+// invalid) - lenient, since Join never fails over a cosmetic field.
+func (s *InvitationService) Join(tokenString, proof, assertion, deviceName string) (*JoinResult, error) {
 	log.Debug().Msg("[INVITE] Join attempt started")
+
+	var normalizedDeviceName *string
+	if normalized, ok := user.NormalizeDeviceName(deviceName); ok {
+		normalizedDeviceName = &normalized
+	}
 
 	// Validate token
 	claims, err := s.ValidateToken(tokenString)
@@ -799,7 +806,7 @@ func (s *InvitationService) Join(tokenString, proof, assertion string) (*JoinRes
 			// for a BRAND-NEW account, where the caller names its own
 			// account and device together (and, with an assertion present,
 			// the dpk binding already proved possession of that device).
-			if err := s.userRepository.EnsureDevice(presentedDevicePublicKey, userPublicKey, nil, now.Unix()); err != nil {
+			if err := s.userRepository.EnsureDevice(presentedDevicePublicKey, userPublicKey, normalizedDeviceName, now.Unix()); err != nil {
 				log.Error().Err(err).Str("username", userName).Msg("[JOIN_SERVICE] Failed to ensure device")
 				return nil, fmt.Errorf("failed to ensure device: %w", err)
 			}
@@ -853,7 +860,11 @@ func (s *InvitationService) Join(tokenString, proof, assertion string) (*JoinRes
 				return nil, fmt.Errorf("failed to list devices: %w", err)
 			}
 			if len(devices) == 0 {
-				if err := s.userRepository.EnsureDevice(userPublicKey, userPublicKey, nil, now.Unix()); err != nil {
+				// row is the account key, not necessarily this joining
+				// device - the name is only actually right when the joiner
+				// IS the account-key device. Cosmetic and renameable, so no
+				// branch to special-case the mismatch.
+				if err := s.userRepository.EnsureDevice(userPublicKey, userPublicKey, normalizedDeviceName, now.Unix()); err != nil {
 					log.Error().Err(err).Str("username", userName).Msg("[JOIN_SERVICE] Failed to ensure device")
 					return nil, fmt.Errorf("failed to ensure device: %w", err)
 				}
