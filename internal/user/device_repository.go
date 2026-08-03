@@ -125,6 +125,20 @@ func (r *userRepository) RevokeDevice(devicePublicKey string, ts int64) error {
 	return nil
 }
 
+// RenameDevice updates a device's display name. Ownership is checked by the
+// caller (device_endpoints.go's RenameDevice), matching the same repo/endpoint
+// split as RevokeDevice - this stays dumb and unconditional.
+func (r *userRepository) RenameDevice(devicePublicKey, deviceName string) error {
+	_, err := r.db.Exec(
+		`UPDATE user_devices SET device_name = $2 WHERE device_public_key = $1`,
+		devicePublicKey, deviceName,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to rename device: %w", err)
+	}
+	return nil
+}
+
 // TouchDeviceLastSeen updates a device's last_seen_at timestamp.
 func (r *userRepository) TouchDeviceLastSeen(devicePublicKey string, ts int64) error {
 	_, err := r.db.Exec(

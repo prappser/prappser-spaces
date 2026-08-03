@@ -272,6 +272,10 @@ type JoinRequest struct {
 	// Assertion is optional (#111): a cross-space identity assertion
 	// vouching for the account named in Proof, see InvitationService.Join.
 	Assertion string `json:"assertion,omitempty"`
+	// DeviceName is optional (#127): a display name for the enrolling
+	// device, normalized (and silently dropped if invalid) by Join - never
+	// a reason to fail the join.
+	DeviceName string `json:"deviceName,omitempty"`
 }
 
 // JoinApplication handles POST /invites/{token}/join
@@ -306,7 +310,7 @@ func (ie *InvitationEndpoints) JoinApplication(ctx *fasthttp.RequestCtx) {
 	log.Debug().Str("token", token).Msg("[JOIN] Joining application")
 
 	// Join via invitation service (handles proof verification, user creation, validation, event production)
-	result, err := ie.invitationService.Join(token, req.Proof, req.Assertion)
+	result, err := ie.invitationService.Join(token, req.Proof, req.Assertion, req.DeviceName)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to join application")
 

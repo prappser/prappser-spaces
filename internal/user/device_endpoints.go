@@ -4,6 +4,7 @@ import (
 	"crypto/ed25519"
 	"encoding/base64"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -12,6 +13,25 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/valyala/fasthttp"
 )
+
+// maxDeviceNameRunes caps a device's display name - long enough for any
+// realistic device label, short enough to keep it out of abuse territory.
+const maxDeviceNameRunes = 64
+
+// NormalizeDeviceName trims a user-supplied device name and validates its
+// shape. It is the single shared validator for every write path that stores
+// a device name (RegisterDevice, RenameDevice, OwnerRegister, invitation
+// Join) so "empty" and "too long" mean the same thing everywhere. ok is
+// false for an empty (post-trim) or over-length name; callers on lenient
+// paths (Join, OwnerRegister) treat that as "no name" rather than an error,
+// while RegisterDevice and RenameDevice reject it with 400.
+func NormalizeDeviceName(raw string) (name string, ok bool) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" || len([]rune(trimmed)) > maxDeviceNameRunes {
+		return "", false
+	}
+	return trimmed, true
+}
 
 // maxDelegationTTLSec bounds how long a delegation JWS (see verifyDelegation)
 // may be valid for, independent of its own exp claim - keeps a leaked or
@@ -178,7 +198,12 @@ func (de *DeviceEndpoints) RegisterDevice(ctx *fasthttp.RequestCtx) {
 
 	var deviceName *string
 	if req.DeviceName != "" {
-		deviceName = &req.DeviceName
+		normalized, ok := NormalizeDeviceName(req.DeviceName)
+		if !ok {
+			ctx.Error("deviceName is invalid", fasthttp.StatusBadRequest)
+			return
+		}
+		deviceName = &normalized
 	}
 	if err := de.userRepository.EnsureDevice(req.DevicePublicKey, accountPublicKey, deviceName, now); err != nil {
 		log.Error().Err(err).Msg("[DEVICE] Failed to ensure device")
@@ -452,5 +477,60 @@ func (de *DeviceEndpoints) RevokeDevice(ctx *fasthttp.RequestCtx) {
 	}
 
 	log.Debug().Str("devicePublicKey", targetDevicePublicKey).Msg("[DEVICE] Device revoked")
+	ctx.SetStatusCode(fasthttp.StatusNoContent)
+}
+
+// renameDeviceRequest is the request body for PATCH /users/devices.
+type renameDeviceRequest struct {
+	DevicePublicKey string `json:"devicePublicKey"`
+	DeviceName      string `json:"deviceName"`
+}
+
+// RenameDevice handles PATCH /users/devices. Requires auth; the ownership
+// guard mirrors RevokeDevice's, except renaming the CURRENT device is
+// allowed (unlike revoke, which refuses to cut off the device in use).
+func (de *DeviceEndpoints) RenameDevice(ctx *fasthttp.RequestCtx) {
+	authenticatedUser, ok := ctx.UserValue("user").(*User)
+	if !ok || authenticatedUser == nil {
+		log.Error().Msg("[DEVICE] Failed to get authenticated user from context")
+		ctx.Error("Unauthorized", fasthttp.StatusUnauthorized)
+		return
+	}
+
+	var req renameDeviceRequest
+	if err := json.Unmarshal(ctx.PostBody(), &req); err != nil {
+		log.Error().Err(err).Msg("[DEVICE] Failed to parse rename device request body")
+		ctx.Error("invalid request body", fasthttp.StatusBadRequest)
+		return
+	}
+
+	if req.DevicePublicKey == "" {
+		ctx.Error("devicePublicKey is required", fasthttp.StatusBadRequest)
+		return
+	}
+	deviceName, ok := NormalizeDeviceName(req.DeviceName)
+	if !ok {
+		ctx.Error("deviceName is invalid", fasthttp.StatusBadRequest)
+		return
+	}
+
+	target, err := de.userRepository.GetDevice(req.DevicePublicKey)
+	if err != nil {
+		log.Error().Err(err).Msg("[DEVICE] Failed to look up device for rename")
+		ctx.Error("internal server error", fasthttp.StatusInternalServerError)
+		return
+	}
+	if target == nil || target.RevokedAt != nil || target.UserPublicKey != authenticatedUser.PublicKey {
+		ctx.Error("device not found", fasthttp.StatusNotFound)
+		return
+	}
+
+	if err := de.userRepository.RenameDevice(req.DevicePublicKey, deviceName); err != nil {
+		log.Error().Err(err).Msg("[DEVICE] Failed to rename device")
+		ctx.Error("internal server error", fasthttp.StatusInternalServerError)
+		return
+	}
+
+	log.Debug().Str("devicePublicKey", req.DevicePublicKey).Msg("[DEVICE] Device renamed")
 	ctx.SetStatusCode(fasthttp.StatusNoContent)
 }

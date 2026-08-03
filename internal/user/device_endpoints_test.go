@@ -4,6 +4,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/base64"
+	"strings"
 	"testing"
 	"time"
 
@@ -72,6 +73,13 @@ func (r *deviceTestRepo) RevokeDevice(devicePublicKey string, ts int64) error {
 	if d, ok := r.devices[devicePublicKey]; ok {
 		revokedAt := ts
 		d.RevokedAt = &revokedAt
+	}
+	return nil
+}
+func (r *deviceTestRepo) RenameDevice(devicePublicKey, deviceName string) error {
+	if d, ok := r.devices[devicePublicKey]; ok {
+		name := deviceName
+		d.DeviceName = &name
 	}
 	return nil
 }
@@ -626,6 +634,215 @@ func TestRegisterDevice_ShouldReturn401ForDelegationWithWrongAud(t *testing.T) {
 	delegation := buildDelegationJWS(t, jwt.SigningMethodEdDSA, signerPriv, signerKeyB64, "jti-wrong-aud", now, now+300, newDeviceKeyB64, "some-other-space-key")
 	ctx := newRegisterDeviceRequestCtx(t, registerDeviceRequest{Delegation: delegation, DevicePublicKey: newDeviceKeyB64})
 	de.RegisterDevice(ctx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusUnauthorized, ctx.Response.StatusCode())
+}
+
+// ---- #127: NormalizeDeviceName ----
+
+func TestNormalizeDeviceName(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		wantName string
+		wantOk   bool
+	}{
+		{name: "plain name", input: "My Laptop", wantName: "My Laptop", wantOk: true},
+		{name: "trims surrounding whitespace", input: "  My Laptop  ", wantName: "My Laptop", wantOk: true},
+		{name: "empty is rejected", input: "", wantOk: false},
+		{name: "whitespace-only is rejected", input: "   ", wantOk: false},
+		{name: "exactly 64 runes is accepted", input: strings.Repeat("a", 64), wantName: strings.Repeat("a", 64), wantOk: true},
+		{name: "65 runes is rejected", input: strings.Repeat("a", 65), wantOk: false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			name, ok := NormalizeDeviceName(tc.input)
+			assert.Equal(t, tc.wantOk, ok)
+			if tc.wantOk {
+				assert.Equal(t, tc.wantName, name)
+			}
+		})
+	}
+}
+
+// ---- #127: RenameDevice endpoint ----
+
+// newRenameDeviceRequestCtx marshals body as the PATCH /users/devices
+// request and returns a ready-to-dispatch context, with authenticatedUser
+// set in ctx when non-nil (nil exercises the missing-user/401 branch).
+func newRenameDeviceRequestCtx(t *testing.T, authenticatedUser *User, body renameDeviceRequest) *fasthttp.RequestCtx {
+	t.Helper()
+	b, err := json.Marshal(body)
+	assert.NoError(t, err)
+	ctx := &fasthttp.RequestCtx{}
+	ctx.Request.Header.SetMethod("PATCH")
+	ctx.Request.SetBody(b)
+	if authenticatedUser != nil {
+		ctx.SetUserValue("user", authenticatedUser)
+	}
+	return ctx
+}
+
+func TestRenameDevice_ShouldReturn204AndUpdateRepoOnSuccess(t *testing.T) {
+	// given
+	repo := newDeviceTestRepo()
+	repo.devices["device-other"] = &Device{DevicePublicKey: "device-other", UserPublicKey: "account-1"}
+	de := NewDeviceEndpoints(repo, nil, "space-key")
+	ctx := newRenameDeviceRequestCtx(t, &User{PublicKey: "account-1", DevicePublicKey: "device-current"}, renameDeviceRequest{
+		DevicePublicKey: "device-other",
+		DeviceName:      "New Name",
+	})
+
+	// when
+	de.RenameDevice(ctx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusNoContent, ctx.Response.StatusCode())
+	if assert.NotNil(t, repo.devices["device-other"].DeviceName) {
+		assert.Equal(t, "New Name", *repo.devices["device-other"].DeviceName)
+	}
+}
+
+// TestRenameDevice_ShouldAllowRenamingCurrentDevice covers the one deliberate
+// difference from RevokeDevice's shape: renaming the device currently in use
+// is allowed (revoking it isn't).
+func TestRenameDevice_ShouldAllowRenamingCurrentDevice(t *testing.T) {
+	// given
+	repo := newDeviceTestRepo()
+	repo.devices["device-current"] = &Device{DevicePublicKey: "device-current", UserPublicKey: "account-1"}
+	de := NewDeviceEndpoints(repo, nil, "space-key")
+	ctx := newRenameDeviceRequestCtx(t, &User{PublicKey: "account-1", DevicePublicKey: "device-current"}, renameDeviceRequest{
+		DevicePublicKey: "device-current",
+		DeviceName:      "This One",
+	})
+
+	// when
+	de.RenameDevice(ctx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusNoContent, ctx.Response.StatusCode())
+}
+
+func TestRenameDevice_ShouldReturn404WhenNotOwnedByAuthenticatedAccount(t *testing.T) {
+	// given
+	repo := newDeviceTestRepo()
+	repo.devices["device-other"] = &Device{DevicePublicKey: "device-other", UserPublicKey: "some-other-account"}
+	de := NewDeviceEndpoints(repo, nil, "space-key")
+	ctx := newRenameDeviceRequestCtx(t, &User{PublicKey: "account-1", DevicePublicKey: "device-current"}, renameDeviceRequest{
+		DevicePublicKey: "device-other",
+		DeviceName:      "New Name",
+	})
+
+	// when
+	de.RenameDevice(ctx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusNotFound, ctx.Response.StatusCode())
+}
+
+func TestRenameDevice_ShouldReturn404WhenTargetRevoked(t *testing.T) {
+	// given
+	repo := newDeviceTestRepo()
+	revokedAt := time.Now().Unix()
+	repo.devices["device-other"] = &Device{DevicePublicKey: "device-other", UserPublicKey: "account-1", RevokedAt: &revokedAt}
+	de := NewDeviceEndpoints(repo, nil, "space-key")
+	ctx := newRenameDeviceRequestCtx(t, &User{PublicKey: "account-1", DevicePublicKey: "device-current"}, renameDeviceRequest{
+		DevicePublicKey: "device-other",
+		DeviceName:      "New Name",
+	})
+
+	// when
+	de.RenameDevice(ctx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusNotFound, ctx.Response.StatusCode())
+}
+
+func TestRenameDevice_ShouldReturn400ForEmptyName(t *testing.T) {
+	// given
+	repo := newDeviceTestRepo()
+	repo.devices["device-other"] = &Device{DevicePublicKey: "device-other", UserPublicKey: "account-1"}
+	de := NewDeviceEndpoints(repo, nil, "space-key")
+	ctx := newRenameDeviceRequestCtx(t, &User{PublicKey: "account-1", DevicePublicKey: "device-current"}, renameDeviceRequest{
+		DevicePublicKey: "device-other",
+		DeviceName:      "",
+	})
+
+	// when
+	de.RenameDevice(ctx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusBadRequest, ctx.Response.StatusCode())
+}
+
+func TestRenameDevice_ShouldReturn400ForWhitespaceOnlyName(t *testing.T) {
+	// given
+	repo := newDeviceTestRepo()
+	repo.devices["device-other"] = &Device{DevicePublicKey: "device-other", UserPublicKey: "account-1"}
+	de := NewDeviceEndpoints(repo, nil, "space-key")
+	ctx := newRenameDeviceRequestCtx(t, &User{PublicKey: "account-1", DevicePublicKey: "device-current"}, renameDeviceRequest{
+		DevicePublicKey: "device-other",
+		DeviceName:      "   ",
+	})
+
+	// when
+	de.RenameDevice(ctx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusBadRequest, ctx.Response.StatusCode())
+}
+
+func TestRenameDevice_ShouldReturn400ForOversizedName(t *testing.T) {
+	// given
+	repo := newDeviceTestRepo()
+	repo.devices["device-other"] = &Device{DevicePublicKey: "device-other", UserPublicKey: "account-1"}
+	de := NewDeviceEndpoints(repo, nil, "space-key")
+	ctx := newRenameDeviceRequestCtx(t, &User{PublicKey: "account-1", DevicePublicKey: "device-current"}, renameDeviceRequest{
+		DevicePublicKey: "device-other",
+		DeviceName:      strings.Repeat("a", 65),
+	})
+
+	// when
+	de.RenameDevice(ctx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusBadRequest, ctx.Response.StatusCode())
+}
+
+func TestRenameDevice_ShouldTrimSurroundingSpaces(t *testing.T) {
+	// given
+	repo := newDeviceTestRepo()
+	repo.devices["device-other"] = &Device{DevicePublicKey: "device-other", UserPublicKey: "account-1"}
+	de := NewDeviceEndpoints(repo, nil, "space-key")
+	ctx := newRenameDeviceRequestCtx(t, &User{PublicKey: "account-1", DevicePublicKey: "device-current"}, renameDeviceRequest{
+		DevicePublicKey: "device-other",
+		DeviceName:      "  Padded Name  ",
+	})
+
+	// when
+	de.RenameDevice(ctx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusNoContent, ctx.Response.StatusCode())
+	if assert.NotNil(t, repo.devices["device-other"].DeviceName) {
+		assert.Equal(t, "Padded Name", *repo.devices["device-other"].DeviceName)
+	}
+}
+
+func TestRenameDevice_ShouldReturn401WhenUnauthenticated(t *testing.T) {
+	// given
+	repo := newDeviceTestRepo()
+	repo.devices["device-other"] = &Device{DevicePublicKey: "device-other", UserPublicKey: "account-1"}
+	de := NewDeviceEndpoints(repo, nil, "space-key")
+	ctx := newRenameDeviceRequestCtx(t, nil, renameDeviceRequest{
+		DevicePublicKey: "device-other",
+		DeviceName:      "New Name",
+	})
+
+	// when
+	de.RenameDevice(ctx)
 
 	// then
 	assert.Equal(t, fasthttp.StatusUnauthorized, ctx.Response.StatusCode())

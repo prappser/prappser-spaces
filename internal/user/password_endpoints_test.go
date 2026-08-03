@@ -15,7 +15,7 @@ import (
 // ErrIdentifierTaken, matching the unique index on lower(identifier).
 type passwordTestRepo struct {
 	accounts    map[string]*User
-	credentials map[string]struct{ userPublicKey, verifier string } // keyed by normalized identifier
+	credentials map[string]struct{ userPublicKey, verifier string }   // keyed by normalized identifier
 	escrow      map[string]struct{ accountKeyBlob, userState string } // keyed by account public key
 }
 
@@ -46,6 +46,7 @@ func (r *passwordTestRepo) ListDevices(userPublicKey string) ([]*Device, error) 
 	return nil, nil
 }
 func (r *passwordTestRepo) RevokeDevice(devicePublicKey string, ts int64) error        { return nil }
+func (r *passwordTestRepo) RenameDevice(devicePublicKey, deviceName string) error      { return nil }
 func (r *passwordTestRepo) TouchDeviceLastSeen(devicePublicKey string, ts int64) error { return nil }
 
 func (r *passwordTestRepo) SetPasswordCredentials(publicKey, identifier, passwordVerifier, accountKeyBlob, userState string) error {

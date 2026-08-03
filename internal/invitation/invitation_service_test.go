@@ -110,7 +110,7 @@ func (r *fakeUserRepo) EnsureDevice(devicePublicKey, userPublicKey string, devic
 		r.devices = map[string]*user.Device{}
 	}
 	if _, exists := r.devices[devicePublicKey]; !exists {
-		r.devices[devicePublicKey] = &user.Device{DevicePublicKey: devicePublicKey, UserPublicKey: userPublicKey, CreatedAt: createdAt}
+		r.devices[devicePublicKey] = &user.Device{DevicePublicKey: devicePublicKey, UserPublicKey: userPublicKey, DeviceName: deviceName, CreatedAt: createdAt}
 	}
 	return nil
 }
@@ -127,6 +127,7 @@ func (r *fakeUserRepo) ListDevices(userPublicKey string) ([]*user.Device, error)
 	return out, nil
 }
 func (r *fakeUserRepo) RevokeDevice(devicePublicKey string, ts int64) error        { return nil }
+func (r *fakeUserRepo) RenameDevice(devicePublicKey, deviceName string) error      { return nil }
 func (r *fakeUserRepo) TouchDeviceLastSeen(devicePublicKey string, ts int64) error { return nil }
 func (r *fakeUserRepo) SetPasswordCredentials(publicKey, identifier, passwordVerifier, accountKeyBlob, userState string) error {
 	return nil
@@ -256,7 +257,7 @@ func TestJoin_ExistingAccount_ForeignDevicePublicKey_RejectedAsUnproven(t *testi
 	proof := buildJoinProof(t, attackerDevicePriv, "victim-pk", attackerDeviceB64, "victim", invite.ID, time.Now().Unix())
 
 	// when: caller presents the victim's account key plus an attacker-controlled device key
-	_, err := svc.Join(token, proof, "")
+	_, err := svc.Join(token, proof, "", "")
 
 	// then: rejected outright - no device row is ever touched
 	assert.ErrorIs(t, err, ErrAccountKeyNotProven)
@@ -276,7 +277,7 @@ func TestJoin_NewAccount_ForeignDevicePublicKey_RejectedAsUnproven(t *testing.T)
 	proof := buildJoinProof(t, devicePriv, "new-pk", deviceB64, "newuser", invite.ID, time.Now().Unix())
 
 	// when
-	_, err := svc.Join(token, proof, "")
+	_, err := svc.Join(token, proof, "", "")
 
 	// then
 	assert.ErrorIs(t, err, ErrAccountKeyNotProven)
@@ -301,13 +302,58 @@ func TestJoin_NewAccount_DevicePublicKeyEqualsAccountKey_Succeeds(t *testing.T) 
 	proof := buildJoinProof(t, acctPriv, acctB64, acctB64, "newuser2", invite.ID, time.Now().Unix())
 
 	// when
-	_, err = svc.Join(token, proof, "")
+	_, err = svc.Join(token, proof, "", "")
 
 	// then: device #1 == the account's own key
 	assert.NoError(t, err)
 	assert.Len(t, userRepo.ensureDeviceCalls, 1)
 	assert.Equal(t, acctB64, userRepo.ensureDeviceCalls[0].devicePublicKey)
 	assert.Equal(t, acctB64, userRepo.ensureDeviceCalls[0].userPublicKey)
+}
+
+// TestJoin_NewAccount_WithDeviceName_StoresNormalizedName covers #127: a
+// deviceName presented on Join is normalized (trimmed) and stored on the
+// new-account device row.
+func TestJoin_NewAccount_WithDeviceName_StoresNormalizedName(t *testing.T) {
+	acctPub, acctPriv, err := ed25519.GenerateKey(rand.Reader)
+	assert.NoError(t, err)
+	acctB64 := base64.StdEncoding.EncodeToString(acctPub)
+
+	invite := &Invitation{ID: "invite-devname-1", ApplicationID: "app-1", Role: "member", CreatedAt: time.Now().Unix(), GrantsMembership: true, GrantsIdentity: true}
+	userRepo := &fakeUserRepo{}
+	svc, token, _ := newJoinTestService(t, invite, userRepo, acctB64)
+
+	proof := buildJoinProof(t, acctPriv, acctB64, acctB64, "newuser3", invite.ID, time.Now().Unix())
+
+	// when
+	_, err = svc.Join(token, proof, "", "  My Laptop  ")
+
+	// then
+	assert.NoError(t, err)
+	if assert.NotNil(t, userRepo.devices[acctB64].DeviceName) {
+		assert.Equal(t, "My Laptop", *userRepo.devices[acctB64].DeviceName)
+	}
+}
+
+// TestJoin_NewAccount_WithoutDeviceName_StoresNilName covers #127's lenient
+// side: an empty deviceName never fails the join, it just means no name.
+func TestJoin_NewAccount_WithoutDeviceName_StoresNilName(t *testing.T) {
+	acctPub, acctPriv, err := ed25519.GenerateKey(rand.Reader)
+	assert.NoError(t, err)
+	acctB64 := base64.StdEncoding.EncodeToString(acctPub)
+
+	invite := &Invitation{ID: "invite-devname-2", ApplicationID: "app-1", Role: "member", CreatedAt: time.Now().Unix(), GrantsMembership: true, GrantsIdentity: true}
+	userRepo := &fakeUserRepo{}
+	svc, token, _ := newJoinTestService(t, invite, userRepo, acctB64)
+
+	proof := buildJoinProof(t, acctPriv, acctB64, acctB64, "newuser4", invite.ID, time.Now().Unix())
+
+	// when
+	_, err = svc.Join(token, proof, "", "")
+
+	// then
+	assert.NoError(t, err)
+	assert.Nil(t, userRepo.devices[acctB64].DeviceName)
 }
 
 // ---- #111: cross-space identity assertions on Join ----
@@ -328,7 +374,7 @@ func TestJoin_FirstContact_WithAssertion_CreatesUserWithIssuerAndEnrollsDevice(t
 	proof := buildJoinProof(t, devicePriv, "new-account-pk", deviceB64, "newbie", invite.ID, now)
 
 	// when
-	_, err = svc.Join(token, proof, assertion)
+	_, err = svc.Join(token, proof, assertion, "")
 
 	// then: the new account is pinned to the vouching space, and the
 	// presented device is enrolled.
@@ -356,7 +402,7 @@ func TestJoin_FirstContact_SelfSignedAssertion_PinsOwnKey(t *testing.T) {
 	proof := buildJoinProof(t, accountPriv, accountB64, accountB64, "selfanchored", invite.ID, now)
 
 	// when
-	_, err = svc.Join(token, proof, assertion)
+	_, err = svc.Join(token, proof, assertion, "")
 
 	// then: issuer is pinned to the account's own key, indistinguishable
 	// from a plain self-registration.
@@ -380,7 +426,7 @@ func TestJoin_WithAssertion_UserIDMismatch_Returns401(t *testing.T) {
 	proof := buildJoinProof(t, devicePriv, "victim-pk-2", deviceB64, "victim", invite.ID, now)
 
 	// when
-	_, err = svc.Join(token, proof, assertion)
+	_, err = svc.Join(token, proof, assertion, "")
 
 	// then
 	assert.ErrorIs(t, err, user.ErrInvalidAssertion)
@@ -404,7 +450,7 @@ func TestJoin_FirstContact_WithAssertion_DeviceOwnedByDifferentAccount_Returns40
 	proof := buildJoinProof(t, devicePriv, "new-conflict-pk", deviceB64, "newbie", invite.ID, now)
 
 	// when
-	_, err = svc.Join(token, proof, assertion)
+	_, err = svc.Join(token, proof, assertion, "")
 
 	// then
 	assert.ErrorIs(t, err, ErrDeviceConflict)
@@ -429,7 +475,7 @@ func TestJoin_FirstContact_WithAssertion_RevokedDevice_Returns409(t *testing.T) 
 	proof := buildJoinProof(t, devicePriv, "new-revoked-pk", deviceB64, "newbie", invite.ID, now)
 
 	// when
-	_, err = svc.Join(token, proof, assertion)
+	_, err = svc.Join(token, proof, assertion, "")
 
 	// then
 	assert.ErrorIs(t, err, ErrDeviceConflict)
@@ -456,7 +502,7 @@ func TestJoin_FirstContact_WithAssertion_CreateRaceConverges(t *testing.T) {
 	proof := buildJoinProof(t, devicePriv, "race-pk", deviceB64, "racer", invite.ID, now)
 
 	// when
-	result, err := svc.Join(token, proof, assertion)
+	result, err := svc.Join(token, proof, assertion, "")
 
 	// then: the race is not surfaced as an error - Join converges on the row
 	// that won
@@ -483,7 +529,7 @@ func TestJoin_KnownAccount_WithAssertion_AddsNoDevice(t *testing.T) {
 	proof := buildJoinProof(t, devicePriv, "known-pk", deviceB64, "known", invite.ID, now)
 
 	// when
-	_, err = svc.Join(token, proof, assertion)
+	_, err = svc.Join(token, proof, assertion, "")
 
 	// then
 	assert.NoError(t, err)
@@ -508,7 +554,7 @@ func TestJoin_KnownAccount_SelfPinned_WithAssertion_RepinsAndAddsNoDevice(t *tes
 	proof := buildJoinProof(t, devicePriv, "self-pk", deviceB64, "self", invite.ID, now)
 
 	// when
-	_, err = svc.Join(token, proof, assertion)
+	_, err = svc.Join(token, proof, assertion, "")
 
 	// then
 	assert.NoError(t, err)
@@ -535,7 +581,7 @@ func TestJoin_KnownAccount_Vouched_DifferentIssuer_PinUnchangedJoinSucceeds(t *t
 	proof := buildJoinProof(t, devicePriv, "vouched-pk", deviceB64, "vouched", invite.ID, now)
 
 	// when
-	_, err = svc.Join(token, proof, assertion)
+	_, err = svc.Join(token, proof, assertion, "")
 
 	// then
 	assert.NoError(t, err)
@@ -562,7 +608,7 @@ func TestJoin_LegacyBackfill_VouchedAccountWithEmptyRoster_DoesNotBackfill(t *te
 	// proof always carries an explicit devicePublicKey claim now, so this
 	// is the closest equivalent to the old "empty devicePublicKey" input)
 	proof := buildJoinProof(t, acctPriv, acctB64, acctB64, "vouched2", invite.ID, time.Now().Unix())
-	_, err = svc.Join(token, proof, "")
+	_, err = svc.Join(token, proof, "", "")
 
 	// then
 	assert.NoError(t, err)
@@ -584,7 +630,7 @@ func TestJoin_ShouldRejectNewAccountWhenIdentityNotGranted(t *testing.T) {
 	proof := buildJoinProof(t, devicePriv, "new-noidentity-pk", deviceB64, "newbie", invite.ID, time.Now().Unix())
 
 	// when: no assertion presented
-	_, err := svc.Join(token, proof, "")
+	_, err := svc.Join(token, proof, "", "")
 
 	// then: rejected before any user/device write
 	assert.ErrorIs(t, err, ErrIdentityNotGranted)
@@ -611,7 +657,7 @@ func TestJoin_ShouldAllowAssertionBackedAccountWhenIdentityNotGranted(t *testing
 	proof := buildJoinProof(t, devicePriv, "new-identity-assert-pk", deviceB64, "newbie", invite.ID, now)
 
 	// when
-	_, err = svc.Join(token, proof, assertion)
+	_, err = svc.Join(token, proof, assertion, "")
 
 	// then: identity gate does not fire for an assertion-backed join
 	assert.NoError(t, err)
@@ -628,7 +674,7 @@ func TestJoin_ShouldRejectWhenMembershipNotGranted(t *testing.T) {
 	proof := buildJoinProof(t, devicePriv, "preview-pk", deviceB64, "previewer", invite.ID, time.Now().Unix())
 
 	// when
-	_, err := svc.Join(token, proof, "")
+	_, err := svc.Join(token, proof, "", "")
 
 	// then: rejected before any user/device write
 	assert.ErrorIs(t, err, ErrMembershipNotGranted)
