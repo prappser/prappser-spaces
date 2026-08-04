@@ -121,6 +121,10 @@ func (r *deviceTestRepo) GetEscrow(publicKey string) (string, string, error) {
 	escrow := r.escrow[publicKey]
 	return escrow.accountKeyBlob, escrow.userState, nil
 }
+func (r *deviceTestRepo) ClaimOwner(publicKey, username, passwordVerifier, handle, accountKeyBlob, userState string, deviceName *string, createdAt int64) error {
+	return nil
+}
+func (r *deviceTestRepo) HasClaim() (bool, error) { return false, nil }
 
 // buildDelegationJWS signs a delegation payload with signerPriv using the
 // given signing method (EdDSA for valid delegations, something else to

@@ -81,6 +81,10 @@ func (m *mockUserRepository) GetPasswordHandle(username string) (string, error) 
 func (m *mockUserRepository) GetEscrow(publicKey string) (string, string, error) {
 	return "", "", nil
 }
+func (m *mockUserRepository) ClaimOwner(publicKey, username, passwordVerifier, handle, accountKeyBlob, userState string, deviceName *string, createdAt int64) error {
+	return nil
+}
+func (m *mockUserRepository) HasClaim() (bool, error) { return false, nil }
 
 func TestGenerateChallenge_ShouldGenerateUniqueChallenge(t *testing.T) {
 	// when

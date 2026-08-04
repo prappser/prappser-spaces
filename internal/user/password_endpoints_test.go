@@ -113,6 +113,10 @@ func (r *passwordTestRepo) GetEscrow(publicKey string) (string, string, error) {
 	escrow := r.escrow[publicKey]
 	return escrow.accountKeyBlob, escrow.userState, nil
 }
+func (r *passwordTestRepo) ClaimOwner(publicKey, username, passwordVerifier, handle, accountKeyBlob, userState string, deviceName *string, createdAt int64) error {
+	return nil
+}
+func (r *passwordTestRepo) HasClaim() (bool, error) { return false, nil }
 
 func newSaltRequestCtx(username string) *fasthttp.RequestCtx {
 	ctx := &fasthttp.RequestCtx{}

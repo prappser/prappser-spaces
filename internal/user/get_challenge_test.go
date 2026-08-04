@@ -76,6 +76,10 @@ func (r *getChallengeTestRepo) GetPasswordHandle(username string) (string, error
 func (r *getChallengeTestRepo) GetEscrow(publicKey string) (string, string, error) {
 	return "", "", nil
 }
+func (r *getChallengeTestRepo) ClaimOwner(publicKey, username, passwordVerifier, handle, accountKeyBlob, userState string, deviceName *string, createdAt int64) error {
+	return nil
+}
+func (r *getChallengeTestRepo) HasClaim() (bool, error) { return false, nil }
 
 func newGetChallengeTestEndpoints(repo UserRepository) *UserEndpoints {
 	pub, priv, _ := ed25519.GenerateKey(rand.Reader)

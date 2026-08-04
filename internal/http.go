@@ -83,7 +83,7 @@ func enrollUsernameKey(ctx *fasthttp.RequestCtx) string {
 	return strings.ToLower(username)
 }
 
-func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, statusEndpoints *status.StatusEndpoints, healthEndpoints *health.HealthEndpoints, userService *user.UserService, appEndpoints *application.ApplicationEndpoints, invitationEndpoints *invitation.InvitationEndpoints, eventEndpoints *event.EventEndpoints, setupEndpoints *setup.SetupEndpoints, storageEndpoints *storage.Endpoints, wsHandler *websocket.Handler, spaceEndpoints *space.SpaceEndpoints, pushEndpoints *push.PushEndpoints, profileEndpoints *profile.ProfileEndpoints, deviceEndpoints *user.DeviceEndpoints, passwordEndpoints *user.PasswordEndpoints, assertionEndpoints *user.AssertionEndpoints) fasthttp.RequestHandler {
+func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, statusEndpoints *status.StatusEndpoints, healthEndpoints *health.HealthEndpoints, userService *user.UserService, appEndpoints *application.ApplicationEndpoints, invitationEndpoints *invitation.InvitationEndpoints, eventEndpoints *event.EventEndpoints, setupEndpoints *setup.SetupEndpoints, storageEndpoints *storage.Endpoints, wsHandler *websocket.Handler, spaceEndpoints *space.SpaceEndpoints, pushEndpoints *push.PushEndpoints, profileEndpoints *profile.ProfileEndpoints, deviceEndpoints *user.DeviceEndpoints, passwordEndpoints *user.PasswordEndpoints, assertionEndpoints *user.AssertionEndpoints, ownerClaimEndpoints *user.OwnerClaimEndpoints) fasthttp.RequestHandler {
 	authMiddleware := middleware.NewAuthMiddleware(userService)
 	corsMiddleware := middleware.NewCORSMiddleware(config.AllowedOrigins)
 	ipRateLimiter := middleware.NewRateLimiter(ipRateLimitPerMinute, time.Minute, config.TrustProxyHeaders)
@@ -102,8 +102,13 @@ func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, status
 				ctx.Error("Method Not Allowed", fasthttp.StatusMethodNotAllowed)
 			}
 
-		case path == "/users/owners/register":
-			ipRateLimiter.LimitByIP(userEndpoints.OwnerRegister)(ctx)
+		case path == "/users/owners/claim":
+			method := string(ctx.Method())
+			if method == "POST" {
+				ipRateLimiter.LimitByIP(ownerClaimEndpoints.Claim)(ctx)
+			} else {
+				ctx.Error("Method Not Allowed", fasthttp.StatusMethodNotAllowed)
+			}
 		case path == "/users/challenge":
 			ipRateLimiter.LimitByIP(identifierRateLimiter.LimitByKey(userEndpoints.GetChallenge, challengePublicKeyKey))(ctx)
 		case path == "/users/auth":

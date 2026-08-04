@@ -12,7 +12,6 @@ import (
 
 	"github.com/goccy/go-json"
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/prappser/prappser-spaces/internal/user/owner"
 	"github.com/rs/zerolog/log"
 	"github.com/valyala/fasthttp"
 )
@@ -109,12 +108,36 @@ type UserRepository interface {
 	// state, not an error). Deliberately NOT exposed via User/GetUserByPublicKey
 	// - see the User struct's doc comment for why.
 	GetEscrow(publicKey string) (accountKeyBlob, userState string, err error)
+	// ClaimOwner creates the owner account, its first device, and its
+	// password-login credentials, then records the claim in a single
+	// transaction (see owner_claim_endpoints.go's Claim, the one-shot
+	// unauthenticated endpoint this backs). Returns ErrSpaceAlreadyClaimed if
+	// the space was already claimed - the space_owner_claim table's primary
+	// key (migration 000024) is the REAL protection against two concurrent
+	// claims both succeeding, not any check a caller runs beforehand (see
+	// ClaimOwner's doc comment for why). Returns ErrUsernameTaken if another
+	// password-enabled account already holds username.
+	ClaimOwner(publicKey, username, passwordVerifier, handle, accountKeyBlob, userState string, deviceName *string, createdAt int64) error
+	// HasClaim reports whether this space has already been claimed. Used by
+	// the claim endpoint as a cheap pre-check before spending Argon2id
+	// CPU/memory on an already-claimed space (see owner_claim_endpoints.go's
+	// Claim) - it is an optimization, not the concurrency guard (see
+	// ClaimOwner's doc comment). Reads the space_owner_claim table rather
+	// than users.role: migration 000024 backfills a claim row whenever an
+	// owner already exists, so the two are equivalent on legacy data, but
+	// only the claim table is authoritative for spaces claimed since #114.
+	HasClaim() (bool, error)
 }
 
 // ErrUsernameTaken is returned by SetPasswordCredentials and UpdateUsername
 // when the requested username is already used for password login on this
 // space (by a different, password-enabled account).
 var ErrUsernameTaken = errors.New("username already used for password login")
+
+// ErrSpaceAlreadyClaimed is returned by ClaimOwner when an owner account
+// already exists for this space - the one-shot owner-claim endpoint refuses
+// a second claim.
+var ErrSpaceAlreadyClaimed = errors.New("space already claimed")
 
 // SpaceCreator creates a default space for new owners.
 type SpaceCreator interface {
@@ -136,10 +159,9 @@ type UserEndpoints struct {
 }
 
 type Config struct {
-	MasterPassword          string
-	RegistrationTokenTTLSec int32
-	JWTExpirationHours      int
-	ChallengeTTLSec         int
+	MasterPassword     string
+	JWTExpirationHours int
+	ChallengeTTLSec    int
 }
 
 // JWS claims for user authentication
@@ -248,135 +270,6 @@ func NewEndpoints(userRepository UserRepository, config Config, privateKey ed255
 		spaceCreator:   spaceCreator,
 		challenges:     newChallengeStore(),
 	}
-}
-
-// OwnerRegister handles owner registration with JWE/JWS (existing flow)
-func (ue UserEndpoints) OwnerRegister(ctx *fasthttp.RequestCtx) {
-	// The body is currently the literal "{}" from the app, with an optional
-	// deviceName added for #127 - unmarshal errors and a missing/empty name
-	// are never fatal here, they just mean device #1 gets no display name.
-	var bodyReq struct {
-		DeviceName string `json:"deviceName"`
-	}
-	_ = json.Unmarshal(ctx.PostBody(), &bodyReq)
-	var deviceName *string
-	if normalized, ok := NormalizeDeviceName(bodyReq.DeviceName); ok {
-		deviceName = &normalized
-	}
-
-	authHeader := ctx.Request.Header.Peek(headerAuthorization)
-	if authHeader == nil {
-		log.Error().Msg("Missing authorization header")
-		ctx.Error("Unauthorized", fasthttp.StatusUnauthorized)
-		return
-	}
-
-	jwe, err := owner.ExtractJWEFromAuthorizationHeader(string(authHeader))
-	if err != nil {
-		log.Error().Err(err).Msg("Invalid authorization header")
-		ctx.Error("Invalid authorization header", fasthttp.StatusBadRequest)
-		return
-	}
-
-	registerJWEClaims, err := owner.DecryptJWE(jwe, ue.config.MasterPassword)
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to decrypt JWE")
-		ctx.Error("Failed to decrypt JWE", fasthttp.StatusUnauthorized)
-		return
-	}
-
-	registerJWSClaims, err := owner.VerifyJWS(registerJWEClaims.JWS, ue.config.RegistrationTokenTTLSec)
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to verify JWS")
-		ctx.Error("Failed to verify JWS", fasthttp.StatusUnauthorized)
-		return
-	}
-
-	// Validate that public key is not empty
-	if registerJWSClaims.PublicKey == "" {
-		log.Error().Msg("Public key is empty")
-		ctx.Error("Public key cannot be empty", fasthttp.StatusBadRequest)
-		return
-	}
-
-	// Check if user already exists
-	existingUser, err := ue.userRepository.GetUserByPublicKey(registerJWSClaims.PublicKey)
-	if err == nil && existingUser != nil {
-		// If user exists but is not an owner, upgrade them to owner
-		if existingUser.Role != RoleOwner {
-			log.Debug().
-				Str("publicKey", existingUser.PublicKey).
-				Str("oldRole", existingUser.Role).
-				Msg("Upgrading user to owner role")
-
-			err := ue.userRepository.UpdateUserRole(existingUser.PublicKey, RoleOwner)
-			if err != nil {
-				log.Error().Err(err).Msg("Failed to upgrade user to owner")
-				ctx.Error("Failed to upgrade user to owner", fasthttp.StatusInternalServerError)
-				return
-			}
-
-			// Backfill device #1 for accounts created before the device roster
-			// existed (ON CONFLICT DO NOTHING makes this a no-op otherwise).
-			if err := ue.userRepository.EnsureDevice(existingUser.PublicKey, existingUser.PublicKey, deviceName, time.Now().Unix()); err != nil {
-				log.Error().Err(err).Msg("Failed to ensure device for upgraded owner")
-				ctx.Error("Failed to upgrade user to owner", fasthttp.StatusInternalServerError)
-				return
-			}
-
-			// Auto-create default space for newly upgraded owner
-			if ue.spaceCreator != nil {
-				if err := ue.spaceCreator.CreateSpace(existingUser.Username+"'s space", &existingUser.PublicKey); err != nil {
-					log.Error().Err(err).Msg("Failed to create default space for upgraded owner")
-					// Non-fatal: owner is upgraded, space can be created later
-				} else {
-					log.Info().Str("publicKey", existingUser.PublicKey[:min(50, len(existingUser.PublicKey))]+"...").Msg("Default space created for upgraded owner")
-				}
-			}
-		}
-
-		ctx.SetStatusCode(fasthttp.StatusCreated)
-		ctx.SetContentType("application/json")
-		response := map[string]string{"message": "Owner registered successfully", "publicKey": existingUser.PublicKey}
-		json.NewEncoder(ctx).Encode(response)
-		return
-	}
-
-	newUser := &User{
-		PublicKey: registerJWSClaims.PublicKey,
-		Username:  registerJWSClaims.Username,
-		Role:      RoleOwner,
-		CreatedAt: time.Now().Unix(),
-	}
-
-	err = ue.userRepository.CreateUser(newUser)
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to create owner")
-		ctx.Error("Failed to create owner", fasthttp.StatusInternalServerError)
-		return
-	}
-
-	// Device #1 for a brand-new owner: this owner's account key IS device #1's key.
-	if err := ue.userRepository.EnsureDevice(newUser.PublicKey, newUser.PublicKey, deviceName, newUser.CreatedAt); err != nil {
-		log.Error().Err(err).Msg("Failed to ensure device for new owner")
-		ctx.Error("Failed to create owner", fasthttp.StatusInternalServerError)
-		return
-	}
-
-	// Auto-create default space for new owner
-	if ue.spaceCreator != nil {
-		if err := ue.spaceCreator.CreateSpace(newUser.Username+"'s space", &newUser.PublicKey); err != nil {
-			log.Error().Err(err).Msg("Failed to create default space for new owner")
-			// Non-fatal: owner is created, space can be created later
-		} else {
-			log.Info().Str("publicKey", newUser.PublicKey[:min(50, len(newUser.PublicKey))]+"...").Msg("Default space created for new owner")
-		}
-	}
-
-	ctx.SetStatusCode(fasthttp.StatusCreated)
-	ctx.SetContentType("application/json")
-	response := map[string]string{"message": "Owner registered successfully", "publicKey": registerJWSClaims.PublicKey}
-	json.NewEncoder(ctx).Encode(response)
 }
 
 // GetChallenge generates a challenge for user login

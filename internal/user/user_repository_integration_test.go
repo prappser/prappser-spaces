@@ -4,10 +4,15 @@ package user
 
 import (
 	"database/sql"
+	"errors"
+	"fmt"
 	"os"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/goccy/go-json"
 	_ "github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
 )
@@ -42,6 +47,16 @@ func getTestDB(t *testing.T) *sql.DB {
 	// uniqueness on username applies only among password-enabled rows
 	// (password_verifier IS NOT NULL) - non-password rows may freely share a
 	// username.
+	//
+	// space_owner_claim (migration 000024) is the authoritative concurrency
+	// guard for ClaimOwner (see user_repository.go's doc comment) - without
+	// it here, the concurrency test below would exercise a real Postgres
+	// race with nothing to actually catch the loser. Its shape is hand-written
+	// here rather than run from the migration file, matching how every other
+	// table in this schema is built; TestMigration_SpaceOwnerClaim_Integration
+	// below is the one test that runs the actual 000024 migration file
+	// against a real users table, since that migration's own idempotency and
+	// legacy-backfill behavior is the point of this rework.
 	schema := `
 		CREATE TABLE IF NOT EXISTS users (
 			public_key        TEXT PRIMARY KEY,
@@ -56,6 +71,11 @@ func getTestDB(t *testing.T) *sql.DB {
 			issuer            TEXT NOT NULL DEFAULT ''
 		);
 		CREATE UNIQUE INDEX IF NOT EXISTS users_password_username_idx ON users (lower(username)) WHERE password_verifier IS NOT NULL;
+		CREATE TABLE IF NOT EXISTS space_owner_claim (
+			id               TEXT PRIMARY KEY DEFAULT 'main',
+			owner_public_key TEXT NOT NULL,
+			claimed_at       BIGINT NOT NULL
+		);
 		CREATE TABLE IF NOT EXISTS user_devices (
 			device_public_key TEXT PRIMARY KEY,
 			user_public_key   TEXT NOT NULL REFERENCES users(public_key) ON DELETE CASCADE,
@@ -80,12 +100,19 @@ func getTestDB(t *testing.T) *sql.DB {
 		t.Fatalf("Failed to create test schema: %v", err)
 	}
 
-	// Clean slate before each test.
+	// Clean slate before each test. space_owner_claim's single row (id='main')
+	// is cleared unconditionally, not by a 'test-%' prefix like the tables
+	// below - every ClaimOwner call in this file writes that same row, so a
+	// prior test's claim would otherwise make every later ClaimOwner call
+	// return ErrSpaceAlreadyClaimed.
 	if _, err := db.Exec("DELETE FROM push_subscriptions"); err != nil {
 		t.Fatalf("Failed to clean push_subscriptions: %v", err)
 	}
 	if _, err := db.Exec("DELETE FROM user_devices WHERE device_public_key LIKE 'test-%'"); err != nil {
 		t.Fatalf("Failed to clean user_devices: %v", err)
+	}
+	if _, err := db.Exec("DELETE FROM space_owner_claim"); err != nil {
+		t.Fatalf("Failed to clean space_owner_claim: %v", err)
 	}
 	if _, err := db.Exec("DELETE FROM users WHERE public_key LIKE 'test-%'"); err != nil {
 		t.Fatalf("Failed to clean users: %v", err)
@@ -618,4 +645,289 @@ func TestUserRepository_UpdateUserIssuer_ShouldBeNoOpWhenAlreadyVouched_Integrat
 	got, err := repo.GetUserByPublicKey("test-user-1")
 	assert.NoError(t, err)
 	assert.Equal(t, "test-space-key-A", got.Issuer)
+}
+
+// ---- #114: ClaimOwner ----
+
+// TestUserRepository_ClaimOwner_ShouldWriteUserAndDeviceAtomically_Integration
+// covers ClaimOwner's whole transaction against a real Postgres: the owner
+// row (role, self-pinned issuer, verifier, handle) and its device #1 row
+// (keyed by the same public key) both land in a single call.
+func TestUserRepository_ClaimOwner_ShouldWriteUserAndDeviceAtomically_Integration(t *testing.T) {
+	// given
+	db := getTestDB(t)
+	defer db.Close()
+	repo := NewUserRepository(db)
+	createdAt := time.Now().Unix()
+
+	// when
+	err := repo.ClaimOwner("test-claim-user-1", "test-claim-alice", "hmac-sha256$AAAA", "test-claim-alice", "sealed-account-key", "sealed-user-state", nil, createdAt)
+
+	// then - the owner row
+	assert.NoError(t, err)
+	got, err := repo.GetUserByPublicKey("test-claim-user-1")
+	assert.NoError(t, err)
+	if assert.NotNil(t, got) {
+		assert.Equal(t, RoleOwner, got.Role)
+		assert.Equal(t, "test-claim-user-1", got.Issuer, "issuer must be self-pinned")
+		assert.Equal(t, "test-claim-alice", got.Username)
+	}
+
+	// then - device #1, keyed by the account key
+	device, err := repo.GetDevice("test-claim-user-1")
+	assert.NoError(t, err)
+	if assert.NotNil(t, device) {
+		assert.Equal(t, "test-claim-user-1", device.UserPublicKey)
+		assert.Equal(t, createdAt, device.CreatedAt)
+	}
+
+	// then - password credential and handle
+	userPublicKey, verifier, err := repo.GetPasswordCredential("test-claim-alice")
+	assert.NoError(t, err)
+	assert.Equal(t, "test-claim-user-1", userPublicKey)
+	assert.Equal(t, "hmac-sha256$AAAA", verifier)
+	handle, err := repo.GetPasswordHandle("test-claim-alice")
+	assert.NoError(t, err)
+	assert.Equal(t, "test-claim-alice", handle)
+}
+
+// TestUserRepository_ClaimOwner_ShouldRejectConcurrentClaimsExceptOne_Integration
+// is the real-Postgres proof for ClaimOwner's doc comment: space_owner_claim's
+// primary key (migration 000024), not any check on users, is what actually
+// serializes concurrent claims. N goroutines race ClaimOwner at once, each
+// with a DISTINCT public_key and username, so every users/user_devices
+// INSERT succeeds unconditionally for all of them - the only thing that can
+// catch a loser is the claim table's primary key. That precondition is
+// exactly why this can assert the mapping is exact rather than "some error":
+// every loser must be ErrSpaceAlreadyClaimed specifically, and the losers'
+// users/user_devices rows must be rolled back with it (see the owner-count
+// assertion below). The strictness is a property of this test's
+// distinct-username setup, not a general guarantee of ClaimOwner - a
+// same-username race (see
+// TestUserRepository_ClaimOwner_ShouldRejectConcurrentSameUsernameClaimsExceptOne_Integration
+// below) hits a DIFFERENT unique index first (usersPasswordUsernameIdx),
+// before any of them ever reach the claim table.
+func TestUserRepository_ClaimOwner_ShouldRejectConcurrentClaimsExceptOne_Integration(t *testing.T) {
+	// given
+	db := getTestDB(t)
+	defer db.Close()
+	repo := NewUserRepository(db)
+	const n = 10
+	errs := make([]error, n)
+	var wg sync.WaitGroup
+	wg.Add(n)
+
+	// when
+	for i := 0; i < n; i++ {
+		go func(i int) {
+			defer wg.Done()
+			pk := fmt.Sprintf("test-claim-concurrent-user-%d", i)
+			username := fmt.Sprintf("test-claim-concurrent-name-%d", i)
+			errs[i] = repo.ClaimOwner(pk, username, "hmac-sha256$AAAA", strings.ToLower(username), "", "", nil, time.Now().Unix())
+		}(i)
+	}
+	wg.Wait()
+
+	// then - exactly one nil, the rest ErrSpaceAlreadyClaimed and nothing else
+	nilCount, alreadyClaimedCount := 0, 0
+	for i, err := range errs {
+		switch {
+		case err == nil:
+			nilCount++
+		case errors.Is(err, ErrSpaceAlreadyClaimed):
+			alreadyClaimedCount++
+		default:
+			t.Errorf("errs[%d]: expected nil or ErrSpaceAlreadyClaimed, got %v", i, err)
+		}
+	}
+	assert.Equal(t, 1, nilCount)
+	assert.Equal(t, n-1, alreadyClaimedCount)
+
+	// then - exactly one owner row exists
+	var ownerCount int
+	assert.NoError(t, db.QueryRow("SELECT COUNT(*) FROM users WHERE role = 'owner'").Scan(&ownerCount))
+	assert.Equal(t, 1, ownerCount)
+}
+
+// TestUserRepository_ClaimOwner_ShouldRejectConcurrentSameUsernameClaimsExceptOne_Integration
+// pins the contract the distinct-username test above cannot: when every
+// goroutine also races on the SAME username, usersPasswordUsernameIdx (not
+// the claim table) is what a loser's users INSERT trips FIRST - ClaimOwner
+// writes password_verifier unconditionally, so every attempt here is
+// password-enabled and collides on username before any of them reach the
+// claim-row INSERT at all. Only the single winner's transaction ever gets
+// that far, so unlike the distinct-username test, every loser here must be
+// ErrUsernameTaken specifically, never ErrSpaceAlreadyClaimed.
+func TestUserRepository_ClaimOwner_ShouldRejectConcurrentSameUsernameClaimsExceptOne_Integration(t *testing.T) {
+	// given
+	db := getTestDB(t)
+	defer db.Close()
+	repo := NewUserRepository(db)
+	const n = 10
+	const username = "test-claim-concurrent-shared-name"
+	errs := make([]error, n)
+	var wg sync.WaitGroup
+	wg.Add(n)
+
+	// when
+	for i := 0; i < n; i++ {
+		go func(i int) {
+			defer wg.Done()
+			pk := fmt.Sprintf("test-claim-concurrent-shared-user-%d", i)
+			errs[i] = repo.ClaimOwner(pk, username, "hmac-sha256$AAAA", strings.ToLower(username), "", "", nil, time.Now().Unix())
+		}(i)
+	}
+	wg.Wait()
+
+	// then - exactly one nil, the rest ErrUsernameTaken and nothing else
+	nilCount, rejectedCount := 0, 0
+	for i, err := range errs {
+		switch {
+		case err == nil:
+			nilCount++
+		case errors.Is(err, ErrUsernameTaken):
+			rejectedCount++
+		default:
+			t.Errorf("errs[%d]: expected nil or ErrUsernameTaken, got %v", i, err)
+		}
+	}
+	assert.Equal(t, 1, nilCount)
+	assert.Equal(t, n-1, rejectedCount)
+
+	// then - exactly one owner row exists
+	var sharedOwnerCount int
+	assert.NoError(t, db.QueryRow("SELECT COUNT(*) FROM users WHERE role = 'owner'").Scan(&sharedOwnerCount))
+	assert.Equal(t, 1, sharedOwnerCount)
+}
+
+// TestUserRepository_ClaimOwner_ShouldRoundTripEscrowWithGetEscrow_Integration
+// is the real end-to-end contract with #113: the account-key/user-state
+// blobs handed to ClaimOwner come back byte-identical from GetEscrow, the
+// same call the password-login device-enroll path (#113) uses to hand them
+// back to a client.
+func TestUserRepository_ClaimOwner_ShouldRoundTripEscrowWithGetEscrow_Integration(t *testing.T) {
+	// given
+	db := getTestDB(t)
+	defer db.Close()
+	repo := NewUserRepository(db)
+	assert.NoError(t, repo.ClaimOwner("test-claim-escrow-user", "test-claim-escrow-name", "hmac-sha256$AAAA", "test-claim-escrow-name", "sealed-account-key", "sealed-user-state", nil, time.Now().Unix()))
+
+	// when
+	accountKeyBlob, userState, err := repo.GetEscrow("test-claim-escrow-user")
+
+	// then
+	assert.NoError(t, err)
+	assert.Equal(t, "sealed-account-key", accountKeyBlob)
+	assert.Equal(t, "sealed-user-state", userState)
+}
+
+// TestUserRepository_ClaimOwner_ShouldKeepSaltIdenticalAcrossClaim_Integration
+// is why ClaimOwner's caller (owner_claim_endpoints.go's Claim) always passes
+// handle = lower(username): GetSalt's anti-enumeration fallback (computed
+// from lower(username) alone, with no DB lookup, before any account exists)
+// must derive to the SAME salt GetSalt returns once the account is claimed
+// and GetPasswordHandle starts resolving a stored handle - otherwise a
+// client that fetched its salt before claiming would find its escrow
+// unwrapped under the wrong key afterwards.
+func TestUserRepository_ClaimOwner_ShouldKeepSaltIdenticalAcrossClaim_Integration(t *testing.T) {
+	// given
+	db := getTestDB(t)
+	defer db.Close()
+	repo := NewUserRepository(db)
+	saltSecret := []byte("salt-secret")
+	pe := NewPasswordEndpoints(repo, saltSecret, []byte("verifier-key"))
+	username := "test-claim-salt-name"
+
+	beforeCtx := newSaltRequestCtx(username)
+	pe.GetSalt(beforeCtx)
+	var before saltResponse
+	assert.NoError(t, json.Unmarshal(beforeCtx.Response.Body(), &before))
+
+	// when - claim the space under this same username, handle = lower(username)
+	assert.NoError(t, repo.ClaimOwner("test-claim-salt-user", username, "hmac-sha256$AAAA", strings.ToLower(username), "", "", nil, time.Now().Unix()))
+
+	afterCtx := newSaltRequestCtx(username)
+	pe.GetSalt(afterCtx)
+	var after saltResponse
+	assert.NoError(t, json.Unmarshal(afterCtx.Response.Body(), &after))
+
+	// then
+	assert.Equal(t, before.Salt, after.Salt)
+}
+
+// TestMigration_SpaceOwnerClaim_ShouldBackfillClaimFromLegacyMultiOwnerSpace_Integration
+// is the whole point of this rework (see
+// files/migrations/000024_space_owner_claim.up.sql's doc comment): a real
+// deployed space that predates #114's one-owner rule can hold several
+// role='owner' rows (the old POST /users/owners/register had no such guard),
+// and the migration must succeed against that data AND leave it alone -
+// nothing demoted - while still producing exactly one claim row, so a
+// subsequent ClaimOwner correctly refuses a second claim.
+//
+// This reads and executes the ACTUAL migration file from disk, not a
+// hand-copied inline SQL string, so a future edit to the migration is what
+// this test exercises, not a frozen snapshot of it that could silently drift
+// from the real file. It stops short of going through golang-migrate's own
+// version-tracking machinery, though: getTestDB's hand-written schema (the
+// same convention every other test in this file already relies on) stands in
+// for migrations 000001-000023 having already run, so this test only needs
+// to prove out 000024 itself against that baseline.
+func TestMigration_SpaceOwnerClaim_ShouldBackfillClaimFromLegacyMultiOwnerSpace_Integration(t *testing.T) {
+	// given - drop the space_owner_claim table getTestDB's schema creates, so
+	// this test starts exactly like a legacy pre-000024 database: nothing
+	// has created that table yet.
+	db := getTestDB(t)
+	defer db.Close()
+	repo := NewUserRepository(db)
+	if _, err := db.Exec("DROP TABLE IF EXISTS space_owner_claim"); err != nil {
+		t.Fatalf("Failed to drop space_owner_claim: %v", err)
+	}
+
+	now := time.Now().Unix()
+	owners := []struct {
+		pk, username string
+		createdAt    int64
+	}{
+		{"test-legacy-owner-1", "test-legacy-alice", now},
+		{"test-legacy-owner-2", "test-legacy-bob", now + 1},
+		{"test-legacy-owner-3", "test-legacy-carol", now + 2},
+	}
+	for _, o := range owners {
+		if _, err := db.Exec(
+			"INSERT INTO users (public_key, username, role, created_at) VALUES ($1,$2,'owner',$3)",
+			o.pk, o.username, o.createdAt,
+		); err != nil {
+			t.Fatalf("Failed to seed legacy owner %s: %v", o.pk, err)
+		}
+	}
+
+	migrationSQL, err := os.ReadFile("../../files/migrations/000024_space_owner_claim.up.sql")
+	if err != nil {
+		t.Fatalf("Failed to read migration 000024: %v", err)
+	}
+
+	// when
+	_, err = db.Exec(string(migrationSQL))
+
+	// then (a) - the migration succeeds
+	assert.NoError(t, err)
+
+	// then (b) - nothing was demoted, all three legacy owners are untouched
+	var ownerCount int
+	assert.NoError(t, db.QueryRow(
+		"SELECT COUNT(*) FROM users WHERE role = 'owner' AND public_key LIKE 'test-legacy-%'",
+	).Scan(&ownerCount))
+	assert.Equal(t, 3, ownerCount)
+
+	// then (c) - exactly one claim row exists, crediting the OLDEST owner
+	var claimCount int
+	assert.NoError(t, db.QueryRow("SELECT COUNT(*) FROM space_owner_claim").Scan(&claimCount))
+	assert.Equal(t, 1, claimCount)
+	var claimedOwner string
+	assert.NoError(t, db.QueryRow("SELECT owner_public_key FROM space_owner_claim WHERE id = 'main'").Scan(&claimedOwner))
+	assert.Equal(t, "test-legacy-owner-1", claimedOwner, "the oldest owner (by created_at) is recorded as the historical claimant")
+
+	// then (d) - a fresh claim attempt against this now-claimed legacy space is refused
+	err = repo.ClaimOwner("test-legacy-new-claimant", "test-legacy-newname", "hmac-sha256$AAAA", "test-legacy-newname", "", "", nil, time.Now().Unix())
+	assert.ErrorIs(t, err, ErrSpaceAlreadyClaimed)
 }
