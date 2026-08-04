@@ -17,8 +17,8 @@ scope:
 5. Use `github.com/stretchr/testify/assert` for assertions. Never use raw `t.Errorf` / `t.Fatalf` except in the `keys` package which uses stdlib testing style (both are acceptable).
 6. Mock repositories are hand-written structs in the test file implementing the repository interface. No mock generation libraries. Mock structs track calls for assertion (e.g. `updateRoleCalls []struct{...}`).
 7. Mock constructors are `newMock{Type}()` (unexported, camelCase).
-8. Integration tests are tagged with `//go:build integration` and live in `*_integration_test.go` files. They require a real database. Run with `go test -tags=integration ./...`.
-9. Unit tests have no build tags and run with `go test ./...`.
+8. Integration tests are tagged with `//go:build integration` and live in `*_integration_test.go` files. They require a real database. Run with `go test -tags=integration ./internal/... . -p 1` (see CLAUDE.md Quick Commands for why).
+9. Unit tests have no build tags and run with `go test ./internal/... .` (see CLAUDE.md Quick Commands for why not `./...`).
 10. Tests for pure functions (crypto, parsing) may use stdlib `t.Fatalf` / `t.Errorf` style directly.
 11. Do not test repository SQL directly in unit tests — use hand-written mocks. Integration tests cover actual SQL behaviour.
 12. `timeNowFunc` is a package-level variable in `user.go` (`var timeNowFunc = time.Now`) allowing tests to inject a fixed time for TTL/expiry testing.

@@ -12,10 +12,12 @@
 ## Quick Commands
 
 ```bash
-go run .                        # Dev server (requires DATABASE_URL + MASTER_PASSWORD env vars)
-go test ./...                   # Unit tests
-docker compose up -d && go test -tags=integration ./...  # Integration tests
+go run .                                          # Dev server (requires DATABASE_URL + MASTER_PASSWORD env vars)
+go test ./internal/... .                          # Unit tests
+docker compose up -d && go test -tags=integration ./internal/... . -p 1  # Integration tests
 ```
+
+`./internal/... .` is used instead of `./...` because a stray GOPATH-shaped `pkg/` dir at the repo root makes `./...` fail with `pattern ./...: directory pkg/mod/... outside main module`. `-p 1` only forces packages to run sequentially; it does not fully fix `internal/push` and `internal/user` racing to create the shared `users` and `push_subscriptions` tables in `prappser_test` with different column sets via `CREATE TABLE IF NOT EXISTS`, so whichever runs first wins the table shape and a database left in the wrong shape by an earlier run can still break the other package. A genuinely reliable suite needs per-package database or schema isolation; if you hit a failure, drop the affected tables so they get recreated: `DROP TABLE IF EXISTS push_subscriptions, user_devices, users CASCADE`.
 
 ## Required Environment Variables
 
