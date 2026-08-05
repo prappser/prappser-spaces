@@ -20,11 +20,11 @@ const maxDeviceNameRunes = 64
 
 // NormalizeDeviceName trims a user-supplied device name and validates its
 // shape. It is the single shared validator for every write path that stores
-// a device name (RegisterDevice, RenameDevice, OwnerRegister, invitation
-// Join) so "empty" and "too long" mean the same thing everywhere. ok is
+// a device name (RegisterDevice, RenameDevice, OwnerClaimEndpoints.Claim,
+// invitation Join) so "empty" and "too long" mean the same thing everywhere. ok is
 // false for an empty (post-trim) or over-length name; callers on lenient
-// paths (Join, OwnerRegister) treat that as "no name" rather than an error,
-// while RegisterDevice and RenameDevice reject it with 400.
+// paths (Join, OwnerClaimEndpoints.Claim) treat that as "no name" rather
+// than an error, while RegisterDevice and RenameDevice reject it with 400.
 func NormalizeDeviceName(raw string) (name string, ok bool) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" || len([]rune(trimmed)) > maxDeviceNameRunes {

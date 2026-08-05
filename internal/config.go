@@ -105,7 +105,6 @@ func LoadConfig() (*Config, error) {
 	envAllowedOrigins := os.Getenv("ALLOWED_ORIGINS")
 	envJWTExpirationHours := os.Getenv("JWT_EXPIRATION_HOURS")
 	envChallengeTTLSec := os.Getenv("CHALLENGE_TTL_SEC")
-	envRegistrationTokenTTLSec := os.Getenv("REGISTRATION_TOKEN_TTL_SEC")
 
 	// Validate required config
 	if envMasterPassword == "" {
@@ -150,13 +149,6 @@ func LoadConfig() (*Config, error) {
 	if envChallengeTTLSec != "" {
 		if seconds, err := strconv.Atoi(envChallengeTTLSec); err == nil {
 			config.Users.ChallengeTTLSec = seconds
-		}
-	}
-
-	config.Users.RegistrationTokenTTLSec = defaultRegistrationTokenTTLSec
-	if envRegistrationTokenTTLSec != "" {
-		if seconds, err := strconv.Atoi(envRegistrationTokenTTLSec); err == nil {
-			config.Users.RegistrationTokenTTLSec = int32(seconds)
 		}
 	}
 

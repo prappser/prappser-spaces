@@ -140,6 +140,10 @@ func (r *fakeUserRepo) GetPasswordHandle(username string) (string, error) {
 func (r *fakeUserRepo) GetEscrow(publicKey string) (string, string, error) {
 	return "", "", nil
 }
+func (r *fakeUserRepo) ClaimOwner(publicKey, username, passwordVerifier, handle, accountKeyBlob, userState string, deviceName *string, createdAt int64) error {
+	return nil
+}
+func (r *fakeUserRepo) HasClaim() (bool, error) { return false, nil }
 
 // buildAssertionJWS signs an identity-assertion JWT with signerPriv, matching
 // the frozen wire format VerifyAssertion expects (iss, user_id, aud,

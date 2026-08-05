@@ -48,6 +48,10 @@ func (noopUserRepository) GetPasswordHandle(username string) (string, error) {
 func (noopUserRepository) GetEscrow(publicKey string) (string, string, error) {
 	return "", "", nil
 }
+func (noopUserRepository) ClaimOwner(publicKey, username, passwordVerifier, handle, accountKeyBlob, userState string, deviceName *string, createdAt int64) error {
+	return nil
+}
+func (noopUserRepository) HasClaim() (bool, error) { return false, nil }
 
 // newTestRequestHandler builds the real NewRequestHandler with only
 // userEndpoints wired for real; every other endpoint dependency is nil,
@@ -59,7 +63,7 @@ func newTestRequestHandler(t *testing.T) fasthttp.RequestHandler {
 	assert.NoError(t, err)
 	userEndpoints := user.NewEndpoints(noopUserRepository{}, user.Config{ChallengeTTLSec: 300}, priv, pub, nil, nil)
 	cfg := &Config{TrustProxyHeaders: true}
-	return NewRequestHandler(cfg, userEndpoints, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	return NewRequestHandler(cfg, userEndpoints, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 }
 
 func newAuthRouteRequestCtx(path string) *fasthttp.RequestCtx {
@@ -75,7 +79,7 @@ func newAuthRouteRequestCtxWithMethod(method, path string) *fasthttp.RequestCtx 
 
 // TestRateLimiting_SharesIPBudgetAcrossAuthRoutes checks that the per-IP
 // limiter wired in NewRequestHandler is a single shared instance across
-// /users/challenge, /users/auth, /users/owners/register, and POST
+// /users/challenge, /users/auth, /users/owners/claim, and POST
 // /users/devices - not one budget per route - and that it actually trips.
 func TestRateLimiting_SharesIPBudgetAcrossAuthRoutes(t *testing.T) {
 	// given
@@ -86,7 +90,7 @@ func TestRateLimiting_SharesIPBudgetAcrossAuthRoutes(t *testing.T) {
 	}{
 		{"GET", "/users/challenge?publicKey=pk"},
 		{"POST", "/users/auth"},
-		{"POST", "/users/owners/register"},
+		{"POST", "/users/owners/claim"},
 		{"POST", "/users/devices"},
 	}
 
