@@ -149,3 +149,53 @@ func (pe *PasswordEndpoints) SetPassword(ctx *fasthttp.RequestCtx) {
 	log.Debug().Str("publicKey", authenticatedUser.PublicKey).Msg("[PASSWORD] Password credentials set")
 	ctx.SetStatusCode(fasthttp.StatusNoContent)
 }
+
+// updateUserStateRequest is the request body for PUT /users/me/user-state.
+type updateUserStateRequest struct {
+	UserState string `json:"userState"`
+}
+
+// UpdateUserState handles PUT /users/me/user-state. Requires auth, and only
+// the account-key device may call it (authenticatedUser.DevicePublicKey ==
+// authenticatedUser.PublicKey, the same "device #1" convention used
+// throughout this package - see User.DevicePublicKey's doc comment) -
+// refreshing the space's copy of the escrow is restricted to the device that
+// holds the account key, since that is the only device that can have derived
+// a correctly re-sealed blob to escrow (#137). An empty userState clears the
+// column (see UpdateUserState's NULLIF contract in user_repository.go).
+func (pe *PasswordEndpoints) UpdateUserState(ctx *fasthttp.RequestCtx) {
+	authenticatedUser, ok := ctx.UserValue("user").(*User)
+	if !ok || authenticatedUser == nil {
+		log.Error().Msg("[USER_STATE] Failed to get authenticated user from context")
+		ctx.Error("Unauthorized", fasthttp.StatusUnauthorized)
+		return
+	}
+
+	if authenticatedUser.DevicePublicKey != authenticatedUser.PublicKey {
+		log.Debug().Msg("[USER_STATE] Rejected: caller is not the account-key device")
+		ctx.Error("only the account-key device may refresh user state", fasthttp.StatusForbidden)
+		return
+	}
+
+	var req updateUserStateRequest
+	if err := json.Unmarshal(ctx.PostBody(), &req); err != nil {
+		log.Error().Err(err).Msg("[USER_STATE] Failed to parse update user state request body")
+		ctx.Error("invalid request body", fasthttp.StatusBadRequest)
+		return
+	}
+
+	if err := validateEscrowBlob(req.UserState, maxUserStateBlobLen); err != nil {
+		log.Debug().Err(err).Msg("[USER_STATE] Invalid userState")
+		ctx.Error("userState is invalid", fasthttp.StatusBadRequest)
+		return
+	}
+
+	if err := pe.userRepository.UpdateUserState(authenticatedUser.PublicKey, req.UserState); err != nil {
+		log.Error().Err(err).Msg("[USER_STATE] Failed to update user state")
+		ctx.Error("internal server error", fasthttp.StatusInternalServerError)
+		return
+	}
+
+	log.Debug().Str("publicKey", authenticatedUser.PublicKey).Msg("[USER_STATE] User state updated")
+	ctx.SetStatusCode(fasthttp.StatusNoContent)
+}

@@ -84,15 +84,19 @@ func getTestDB(t *testing.T) *sql.DB {
 			last_seen_at      BIGINT,
 			revoked_at        BIGINT
 		);
+		-- Must stay column-identical to push_repository_integration_test.go's copy:
+		-- whichever package's tests run first wins the IF NOT EXISTS.
 		CREATE TABLE IF NOT EXISTS push_subscriptions (
 			id                    TEXT PRIMARY KEY,
 			device_public_key     TEXT NOT NULL REFERENCES user_devices(device_public_key) ON DELETE CASCADE,
 			endpoint              TEXT NOT NULL UNIQUE,
 			p256dh                TEXT NOT NULL,
 			auth                  TEXT NOT NULL,
+			device_label          TEXT,
 			categories            JSONB NOT NULL DEFAULT '{}'::jsonb,
 			muted_application_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
 			created_at            BIGINT NOT NULL,
+			last_success_at       BIGINT,
 			failure_count         INTEGER NOT NULL DEFAULT 0
 		);
 	`

@@ -166,6 +166,13 @@ func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, status
 			} else {
 				ctx.Error("Method Not Allowed", fasthttp.StatusMethodNotAllowed)
 			}
+		case path == "/users/me/user-state":
+			method := string(ctx.Method())
+			if method == "PUT" {
+				ipRateLimiter.LimitByIP(authMiddleware.RequireAuth(passwordEndpoints.UpdateUserState))(ctx)
+			} else {
+				ctx.Error("Method Not Allowed", fasthttp.StatusMethodNotAllowed)
+			}
 
 		// #111: /space/publickey lets a client learn this space's key to use
 		// as the audience when requesting an assertion (D2); /identity/assertion

@@ -48,6 +48,15 @@ type User struct {
 	// the account record) - omitempty so every other endpoint that serializes
 	// a User keeps emitting byte-identical payloads.
 	HasPassword bool `json:"hasPassword,omitempty"`
+	// UserStateBlob is the account's escrowed user-state blob (see GetEscrow),
+	// exposed so the account-key device can union it with local state after
+	// another device's PasswordEndpoints.UpdateUserState call refreshes it
+	// (#137). Populated only by GetProfile, and only when the caller IS the
+	// account-key device (DevicePublicKey == PublicKey, same guard
+	// UpdateUserState uses) - secondary devices never consume this blob, so
+	// GetProfile skips the GetEscrow round-trip for them entirely. omitempty
+	// for the same byte-identical-payload reason as HasPassword above.
+	UserStateBlob string `json:"userStateBlob,omitempty"`
 }
 
 // Device is one entry in a user's device roster (see device_repository.go).
@@ -110,9 +119,16 @@ type UserRepository interface {
 	GetPasswordHandle(username string) (handle string, err error)
 	// GetEscrow returns the account's escrowed account-key and user-state
 	// blobs, "", "", nil when unset or no such account (absence is a valid
-	// state, not an error). Deliberately NOT exposed via User/GetUserByPublicKey
-	// - see the User struct's doc comment for why.
+	// state, not an error). accountKeyBlob is deliberately NOT exposed via
+	// User/GetUserByPublicKey; userState IS, but only via GetProfile's
+	// on-demand lookup (see the User struct's UserStateBlob doc comment) -
+	// GetUserByPublicKey itself never populates it.
 	GetEscrow(publicKey string) (accountKeyBlob, userState string, err error)
+	// UpdateUserState overwrites the account's escrowed user-state blob so
+	// the account-key device can refresh it after a local merge (#137,
+	// PasswordEndpoints.UpdateUserState). An empty userState clears the
+	// column, mirroring SetPasswordCredentials's per-column NULLIF contract.
+	UpdateUserState(publicKey, userState string) error
 	// ClaimOwner creates the owner account, its first device, and its
 	// password-login credentials, then records the claim in a single
 	// transaction (see owner_claim_endpoints.go's Claim, the one-shot
@@ -570,6 +586,18 @@ func (ue UserEndpoints) GetProfile(ctx *fasthttp.RequestCtx) {
 		// this same username (see UpdateUsername's doc comment on username
 		// sharing), which would otherwise register as a false positive.
 		profile.HasPassword = credPublicKey == authenticatedUser.PublicKey
+	}
+
+	// Only the account-key device ever consumes userStateBlob (secondary
+	// devices discard it) - same guard as UpdateUserState - so gate the
+	// lookup to skip the extra DB round-trip on every other device's poll.
+	if authenticatedUser.DevicePublicKey == authenticatedUser.PublicKey {
+		_, userState, err := ue.userRepository.GetEscrow(authenticatedUser.PublicKey)
+		if err != nil {
+			log.Debug().Err(err).Str("publicKey", authenticatedUser.PublicKey).Msg("[PROFILE] Failed to look up escrow")
+		} else {
+			profile.UserStateBlob = userState
+		}
 	}
 
 	ctx.SetStatusCode(fasthttp.StatusOK)

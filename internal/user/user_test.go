@@ -20,6 +20,10 @@ type mockUserRepository struct {
 	// GetPasswordCredential's return value (see TestGetProfile_* below).
 	passwordCredentialPublicKey string
 	passwordCredentialErr       error
+	// escrowUserState/escrowErr let tests control GetEscrow's userState
+	// return (see TestGetProfile_*UserStateBlob* below).
+	escrowUserState string
+	escrowErr       error
 }
 
 func newMockUserRepository() *mockUserRepository {
@@ -89,8 +93,9 @@ func (m *mockUserRepository) GetPasswordHandle(username string) (string, error) 
 	return "", nil
 }
 func (m *mockUserRepository) GetEscrow(publicKey string) (string, string, error) {
-	return "", "", nil
+	return "", m.escrowUserState, m.escrowErr
 }
+func (m *mockUserRepository) UpdateUserState(publicKey, userState string) error { return nil }
 func (m *mockUserRepository) ClaimOwner(publicKey, username, passwordVerifier, handle, accountKeyBlob, userState string, deviceName *string, createdAt int64) error {
 	return nil
 }
@@ -292,4 +297,86 @@ func TestGetProfile_ShouldReportHasPasswordFalse_WhenLookupErrors(t *testing.T) 
 	assert.NoError(t, json.Unmarshal(ctx.Response.Body(), &resp))
 	assert.False(t, resp.HasPassword)
 	assert.NotContains(t, string(ctx.Response.Body()), "hasPassword")
+}
+
+// TestGetProfile_ShouldIncludeUserStateBlob_WhenEscrowed covers #137: the
+// profile response surfaces the escrowed user-state blob for the
+// account-key device (DevicePublicKey == PublicKey) so it can union it into
+// its local state.
+func TestGetProfile_ShouldIncludeUserStateBlob_WhenEscrowed(t *testing.T) {
+	// given
+	repo := newMockUserRepository()
+	repo.escrowUserState = "sealed-user-state"
+	ue := UserEndpoints{userRepository: repo}
+	ctx := &fasthttp.RequestCtx{}
+	authenticatedUser := &User{PublicKey: "caller-key", DevicePublicKey: "caller-key", Username: "alice"}
+	ctx.SetUserValue("user", authenticatedUser)
+
+	// when
+	ue.GetProfile(ctx)
+
+	// then
+	var resp User
+	assert.NoError(t, json.Unmarshal(ctx.Response.Body(), &resp))
+	assert.Equal(t, "sealed-user-state", resp.UserStateBlob)
+	// the shared authenticatedUser pointer must never be mutated
+	assert.Empty(t, authenticatedUser.UserStateBlob)
+}
+
+// TestGetProfile_ShouldOmitUserStateBlob_ForSecondaryDevice covers the
+// simplify-pass guard: a secondary device (DevicePublicKey != PublicKey)
+// never consumes the blob, so GetProfile must skip the GetEscrow lookup
+// entirely for it - escrowUserState being set here and still absent from
+// the response proves the lookup was skipped, not just that it returned "".
+func TestGetProfile_ShouldOmitUserStateBlob_ForSecondaryDevice(t *testing.T) {
+	// given
+	repo := newMockUserRepository()
+	repo.escrowUserState = "sealed-user-state"
+	ue := UserEndpoints{userRepository: repo}
+	ctx := &fasthttp.RequestCtx{}
+	ctx.SetUserValue("user", &User{PublicKey: "caller-key", DevicePublicKey: "device-2", Username: "alice"})
+
+	// when
+	ue.GetProfile(ctx)
+
+	// then
+	var resp User
+	assert.NoError(t, json.Unmarshal(ctx.Response.Body(), &resp))
+	assert.Empty(t, resp.UserStateBlob)
+	assert.NotContains(t, string(ctx.Response.Body()), "userStateBlob")
+}
+
+func TestGetProfile_ShouldOmitUserStateBlob_WhenUnset(t *testing.T) {
+	// given
+	repo := newMockUserRepository()
+	ue := UserEndpoints{userRepository: repo}
+	ctx := &fasthttp.RequestCtx{}
+	ctx.SetUserValue("user", &User{PublicKey: "caller-key", DevicePublicKey: "caller-key", Username: "alice"})
+
+	// when
+	ue.GetProfile(ctx)
+
+	// then
+	var resp User
+	assert.NoError(t, json.Unmarshal(ctx.Response.Body(), &resp))
+	assert.Empty(t, resp.UserStateBlob)
+	assert.NotContains(t, string(ctx.Response.Body()), "userStateBlob")
+}
+
+func TestGetProfile_ShouldOmitUserStateBlob_WhenLookupErrors(t *testing.T) {
+	// given
+	repo := newMockUserRepository()
+	repo.escrowErr = fmt.Errorf("lookup failed")
+	ue := UserEndpoints{userRepository: repo}
+	ctx := &fasthttp.RequestCtx{}
+	ctx.SetUserValue("user", &User{PublicKey: "caller-key", DevicePublicKey: "caller-key", Username: "alice"})
+
+	// when
+	ue.GetProfile(ctx)
+
+	// then
+	var resp User
+	assert.NoError(t, json.Unmarshal(ctx.Response.Body(), &resp))
+	assert.Empty(t, resp.UserStateBlob)
+	assert.NotContains(t, string(ctx.Response.Body()), "userStateBlob")
 }

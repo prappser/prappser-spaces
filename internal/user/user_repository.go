@@ -226,6 +226,20 @@ func (r *userRepository) GetEscrow(publicKey string) (accountKeyBlob, userState 
 	return accountKeyBlobNull.String, userStateNull.String, nil
 }
 
+// UpdateUserState overwrites the account's escrowed user-state blob (#137,
+// see PasswordEndpoints.UpdateUserState). NULLIF mirrors
+// SetPasswordCredentials: an empty blob clears the column.
+func (r *userRepository) UpdateUserState(publicKey, userState string) error {
+	_, err := r.db.Exec(
+		"UPDATE users SET user_state_blob = NULLIF($1, '') WHERE public_key = $2",
+		userState, publicKey,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update user state: %w", err)
+	}
+	return nil
+}
+
 // ClaimOwner creates the owner account, device #1 (whose key IS the account
 // key, same as the pre-#114 owner flow), the password-login verifier,
 // handle, and escrow blobs, and the space's claim record, all in a single

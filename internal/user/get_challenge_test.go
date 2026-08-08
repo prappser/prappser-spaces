@@ -76,6 +76,7 @@ func (r *getChallengeTestRepo) GetPasswordHandle(username string) (string, error
 func (r *getChallengeTestRepo) GetEscrow(publicKey string) (string, string, error) {
 	return "", "", nil
 }
+func (r *getChallengeTestRepo) UpdateUserState(publicKey, userState string) error { return nil }
 func (r *getChallengeTestRepo) ClaimOwner(publicKey, username, passwordVerifier, handle, accountKeyBlob, userState string, deviceName *string, createdAt int64) error {
 	return nil
 }
