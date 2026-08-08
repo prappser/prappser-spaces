@@ -212,7 +212,10 @@ func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, status
 		case path == "/applications/register":
 			authMiddleware.RequireRole(appEndpoints.RegisterApplication, user.RoleOwner, user.RoleUser)(ctx)
 		case path == "/applications":
-			authMiddleware.RequireRole(appEndpoints.ListApplications, user.RoleOwner, user.RoleUser)(ctx)
+			// #138: guests (invite-joined, restored devices) must be able to re-discover
+			// applications they are already a member of. ListApplications is scoped to the
+			// caller's memberships (repository.GetApplicationsByMemberPublicKey), so this is safe.
+			authMiddleware.RequireRole(appEndpoints.ListApplications, user.RoleOwner, user.RoleUser, user.RoleGuest)(ctx)
 		case strings.HasPrefix(path, "/applications/") && strings.HasSuffix(path, "/state"):
 			parts := strings.Split(path, "/")
 			if len(parts) == 4 && parts[3] == "state" {
