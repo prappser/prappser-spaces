@@ -52,6 +52,7 @@ func (r *ownerClaimTestRepo) UpdateAvatarStorageID(publicKey string, avatarStora
 }
 func (r *ownerClaimTestRepo) UpdateUsername(publicKey, username string) error { return nil }
 func (r *ownerClaimTestRepo) UpdateUserIssuer(publicKey, issuer string) error { return nil }
+func (r *ownerClaimTestRepo) SetUserIssuer(publicKey, issuer string) error    { return nil }
 func (r *ownerClaimTestRepo) EnsureDevice(devicePublicKey, userPublicKey string, deviceName *string, createdAt int64) error {
 	return nil
 }

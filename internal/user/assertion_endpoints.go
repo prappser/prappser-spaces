@@ -10,22 +10,28 @@ import (
 	"github.com/valyala/fasthttp"
 )
 
-// AssertionEndpoints exposes the HTTP handler for minting cross-space
-// identity assertions (#111).
+// AssertionEndpoints exposes the HTTP handlers for minting cross-space
+// identity assertions (#111) and rebinding an account's issuer (#116 Phase
+// 5).
 type AssertionEndpoints struct {
-	// userRepository is currently unused by IssueAssertion (the
-	// authenticated user already comes from ctx via RequireAuth) - kept for
-	// a future per-account mint budget (#110).
+	// userRepository is unused by IssueAssertion (the authenticated user
+	// already comes from ctx via RequireAuth), but RebindIssuer writes
+	// through it via SetUserIssuer.
 	userRepository UserRepository
 	privateKey     ed25519.PrivateKey
 	spacePublicKey string
+	// usedJTIs provides jti replay protection for RebindIssuer, the same
+	// jtiStore mechanism DeviceEndpoints.usedJTIs uses for delegation JWSs
+	// (device_endpoints.go) - a rebind JWS is single-use.
+	usedJTIs *jtiStore
 }
 
 // NewAssertionEndpoints creates a new AssertionEndpoints. spacePublicKey is
 // this space's own base64-encoded Ed25519 public key (see main.go's
-// spacePublicKeyString) - it becomes every minted assertion's iss claim.
+// spacePublicKeyString) - it becomes every minted assertion's iss claim, and
+// is the expected aud on an incoming rebind.
 func NewAssertionEndpoints(userRepository UserRepository, privateKey ed25519.PrivateKey, spacePublicKey string) *AssertionEndpoints {
-	return &AssertionEndpoints{userRepository: userRepository, privateKey: privateKey, spacePublicKey: spacePublicKey}
+	return &AssertionEndpoints{userRepository: userRepository, privateKey: privateKey, spacePublicKey: spacePublicKey, usedJTIs: newJTIStore()}
 }
 
 // issueAssertionRequest is the request body for POST /identity/assertion.
@@ -89,4 +95,56 @@ func (ae *AssertionEndpoints) IssueAssertion(ctx *fasthttp.RequestCtx) {
 	ctx.SetStatusCode(fasthttp.StatusOK)
 	ctx.SetContentType("application/json")
 	json.NewEncoder(ctx).Encode(issueAssertionResponse{Assertion: assertion, ExpiresAt: expiresAt})
+}
+
+// rebindIssuerRequest is the request body for POST /identity/rebind.
+type rebindIssuerRequest struct {
+	Rebind string `json:"rebind"`
+}
+
+// RebindIssuer handles POST /identity/rebind. Requires auth: the caller must
+// be authenticated as the very account named by the rebind JWS's user_id
+// claim - VerifyRebind is passed the authenticated user's public key as
+// expectedUserID and enforces the match itself, before consuming the jti, so
+// a valid JWS submitted under the wrong session doesn't burn its jti. users.
+// issuer is provenance-only (see UserRepository's doc comment), so any
+// transition the account key signs for is accepted, including
+// vouched->self. Idempotent: when the account is already pinned to the
+// requested issuer, this is a 204 no-op with no repository write.
+func (ae *AssertionEndpoints) RebindIssuer(ctx *fasthttp.RequestCtx) {
+	authenticatedUser, ok := ctx.UserValue("user").(*User)
+	if !ok || authenticatedUser == nil {
+		log.Error().Msg("[REBIND] Failed to get authenticated user from context")
+		ctx.Error("Unauthorized", fasthttp.StatusUnauthorized)
+		return
+	}
+
+	var req rebindIssuerRequest
+	if err := json.Unmarshal(ctx.PostBody(), &req); err != nil {
+		log.Error().Err(err).Msg("[REBIND] Failed to parse rebind request body")
+		ctx.Error("invalid request body", fasthttp.StatusBadRequest)
+		return
+	}
+
+	claims, err := VerifyRebind(req.Rebind, ae.spacePublicKey, authenticatedUser.PublicKey, ae.usedJTIs, time.Now())
+	if err != nil {
+		log.Debug().Err(err).Msg("[REBIND] Rebind verification failed")
+		ctx.Error("invalid rebind", fasthttp.StatusUnauthorized)
+		return
+	}
+
+	if authenticatedUser.Issuer == claims.NewIssuer {
+		log.Debug().Str("publicKey", claims.UserID).Msg("[REBIND] Already pinned to requested issuer, no-op")
+		ctx.SetStatusCode(fasthttp.StatusNoContent)
+		return
+	}
+
+	if err := ae.userRepository.SetUserIssuer(claims.UserID, claims.NewIssuer); err != nil {
+		log.Error().Err(err).Msg("[REBIND] Failed to set user issuer")
+		ctx.Error("internal server error", fasthttp.StatusInternalServerError)
+		return
+	}
+
+	log.Debug().Str("publicKey", claims.UserID).Str("newIssuer", claims.NewIssuer).Msg("[REBIND] Issuer rebound")
+	ctx.SetStatusCode(fasthttp.StatusNoContent)
 }

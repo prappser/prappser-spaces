@@ -3,9 +3,13 @@
 package user
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/base64"
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -131,4 +135,58 @@ func TestUserRepository_RenameDevice_ShouldPersistNewName_Integration(t *testing
 	if assert.NotNil(t, device.DeviceName) {
 		assert.Equal(t, "New Name", *device.DeviceName)
 	}
+}
+
+// TestVerifyDelegation_AccountKeySelfDelegation_Integration exercises
+// verifyDelegation's account-key fallback (issue #116 phase 2) against the
+// REAL repository/DB, not the in-memory mock used by device_endpoints_test.go
+// - the mock's GetDevice/GetUserByPublicKey behavior on a miss could silently
+// drift from what the real SQL returns.
+func TestVerifyDelegation_AccountKeySelfDelegation_Integration(t *testing.T) {
+	// given: fixture keys are unique to this test so concurrently-run
+	// packages' integration tests (also hitting this shared DB) can't collide.
+	db := getTestDB(t)
+	defer db.Close()
+	repo := NewUserRepository(db)
+	de := NewDeviceEndpoints(repo, nil, "test-devrepo-selfdeleg-space")
+
+	accountPub, accountPriv, err := ed25519.GenerateKey(rand.Reader)
+	assert.NoError(t, err)
+	accountKeyB64 := base64.StdEncoding.EncodeToString(accountPub)
+	if _, err := db.Exec(
+		"INSERT INTO users (public_key, username, role, created_at) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING",
+		accountKeyB64, "test-devrepo-selfdeleg-alice", "user", time.Now().Unix(),
+	); err != nil {
+		t.Fatalf("Failed to insert test user: %v", err)
+	}
+
+	now := time.Now().Unix()
+	buildJWS := func(jti string) string {
+		claims := jwt.MapClaims{
+			"iss": accountKeyB64, "jti": jti, "iat": now, "exp": now + 300,
+			"dpk": "test-devrepo-selfdeleg-enrolling-device", "aud": "test-devrepo-selfdeleg-space",
+		}
+		signed, err := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims).SignedString(accountPriv)
+		assert.NoError(t, err)
+		return signed
+	}
+
+	// when: the account key vouches for itself, with no device row yet.
+	signer, err := de.verifyDelegation(buildJWS("test-devrepo-selfdeleg-jti-1"), "test-devrepo-selfdeleg-enrolling-device")
+
+	// then: accepted, synthesized as the account key's own device.
+	assert.NoError(t, err)
+	if assert.NotNil(t, signer) {
+		assert.Equal(t, accountKeyB64, signer.UserPublicKey)
+	}
+
+	// given: device #1 (the account key's own row) gets enrolled, then revoked.
+	assert.NoError(t, repo.EnsureDevice(accountKeyB64, accountKeyB64, nil, now))
+	assert.NoError(t, repo.RevokeDevice(accountKeyB64, now))
+
+	// when/then: the same self-delegation is now rejected - revoking device #1
+	// stays a permanent kill switch even though the issuer is still the
+	// account key.
+	_, err = de.verifyDelegation(buildJWS("test-devrepo-selfdeleg-jti-2"), "test-devrepo-selfdeleg-enrolling-device")
+	assert.Error(t, err)
 }

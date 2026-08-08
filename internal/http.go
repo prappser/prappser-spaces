@@ -191,6 +191,16 @@ func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, status
 			} else {
 				ctx.Error("Method Not Allowed", fasthttp.StatusMethodNotAllowed)
 			}
+		// #116 Phase 5: /identity/rebind lets an authenticated account
+		// re-pin its own issuer via an account-key-signed JWS - see
+		// AssertionEndpoints.RebindIssuer.
+		case path == "/identity/rebind":
+			method := string(ctx.Method())
+			if method == "POST" {
+				ipRateLimiter.LimitByIP(authMiddleware.RequireAuth(assertionEndpoints.RebindIssuer))(ctx)
+			} else {
+				ctx.Error("Method Not Allowed", fasthttp.StatusMethodNotAllowed)
+			}
 
 		case path == "/health":
 			healthEndpoints.Health(ctx)

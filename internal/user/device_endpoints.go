@@ -306,7 +306,9 @@ func (de *DeviceEndpoints) resolveEnrollCredential(req *registerDeviceRequest) (
 // must match devicePublicKey exactly; a delegation with no dpk claim skips
 // that check (see delegationClaims for why dpk is optional). aud is always
 // required and must match this space. Verify order: parse claims -> signer
-// device exists and is unrevoked -> signature verifies against the signer's
+// device exists and is unrevoked (falling back to self-delegation by a
+// registered account key when no device row exists at all - see the
+// LOAD-BEARING comment below) -> signature verifies against the signer's
 // own key (requiring EdDSA) -> dpk (if present) matches the enrolling device
 // and aud matches this space -> exp is in the future and the token's total
 // lifetime is within maxDelegationTTLSec -> jti has not been replayed.
@@ -349,7 +351,24 @@ func (de *DeviceEndpoints) verifyDelegation(signedJWT string, devicePublicKey st
 	if err != nil {
 		return nil, fmt.Errorf("failed to look up signer device: %w", err)
 	}
-	if signerDevice == nil || signerDevice.RevokedAt != nil {
+	if signerDevice == nil {
+		// A recovery-restored device holds the account key itself and may
+		// contact a space where only a secondary device was ever enrolled -
+		// no device row exists for the account key there. Accept the account
+		// key vouching for itself in that case. LOAD-BEARING: this synthesis
+		// only fires when there is NO device row at all (checked above) - an
+		// EXISTING but revoked device row falls to the RevokedAt check below
+		// instead, so revoking device #1 (the account key's own row) stays a
+		// permanent kill switch.
+		account, acctErr := de.userRepository.GetUserByPublicKey(claims.Issuer)
+		if acctErr != nil {
+			return nil, fmt.Errorf("failed to look up signer account: %w", acctErr)
+		}
+		if account == nil {
+			return nil, fmt.Errorf("signer device not found or revoked")
+		}
+		signerDevice = &Device{DevicePublicKey: claims.Issuer, UserPublicKey: claims.Issuer}
+	} else if signerDevice.RevokedAt != nil {
 		return nil, fmt.Errorf("signer device not found or revoked")
 	}
 

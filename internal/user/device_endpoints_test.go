@@ -57,6 +57,7 @@ func (r *deviceTestRepo) UpdateUsername(publicKey, username string) error {
 	return nil
 }
 func (r *deviceTestRepo) UpdateUserIssuer(publicKey, issuer string) error { return nil }
+func (r *deviceTestRepo) SetUserIssuer(publicKey, issuer string) error    { return nil }
 
 func (r *deviceTestRepo) EnsureDevice(devicePublicKey, userPublicKey string, deviceName *string, createdAt int64) error {
 	if _, exists := r.devices[devicePublicKey]; exists {
@@ -289,6 +290,68 @@ func TestVerifyDelegation(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestVerifyDelegation_AccountKeySelfDelegation covers the recovery-restored
+// device case (issue #116 phase 2): the issuer IS a registered account key
+// but has no device row at all, so verifyDelegation must synthesize one and
+// accept the self-delegation - unless a device row already exists for that
+// key and is revoked, which must still reject (device #1's permanent kill
+// switch).
+func TestVerifyDelegation_AccountKeySelfDelegation(t *testing.T) {
+	now := time.Now().Unix()
+
+	accountPub, accountPriv, err := ed25519.GenerateKey(rand.Reader)
+	assert.NoError(t, err)
+	accountKeyB64 := base64.StdEncoding.EncodeToString(accountPub)
+
+	unknownPub, unknownPriv, err := ed25519.GenerateKey(rand.Reader)
+	assert.NoError(t, err)
+	unknownKeyB64 := base64.StdEncoding.EncodeToString(unknownPub)
+
+	const (
+		enrollingDeviceKeyB64 = "enrolling-device-key"
+		spacePublicKeyB64     = "this-space-key"
+	)
+
+	t.Run("accepted when account exists but has no device row", func(t *testing.T) {
+		repo := newDeviceTestRepo()
+		repo.accounts[accountKeyB64] = &User{PublicKey: accountKeyB64}
+		de := NewDeviceEndpoints(repo, nil, spacePublicKeyB64)
+
+		jws := buildDelegationJWS(t, jwt.SigningMethodEdDSA, accountPriv, accountKeyB64, "jti-self-1", now, now+300, enrollingDeviceKeyB64, spacePublicKeyB64)
+
+		signer, err := de.verifyDelegation(jws, enrollingDeviceKeyB64)
+
+		assert.NoError(t, err)
+		assert.NotNil(t, signer)
+		assert.Equal(t, accountKeyB64, signer.UserPublicKey)
+	})
+
+	t.Run("rejected when the account key's own device row is revoked", func(t *testing.T) {
+		repo := newDeviceTestRepo()
+		repo.accounts[accountKeyB64] = &User{PublicKey: accountKeyB64}
+		revokedAt := now
+		repo.devices[accountKeyB64] = &Device{DevicePublicKey: accountKeyB64, UserPublicKey: accountKeyB64, RevokedAt: &revokedAt}
+		de := NewDeviceEndpoints(repo, nil, spacePublicKeyB64)
+
+		jws := buildDelegationJWS(t, jwt.SigningMethodEdDSA, accountPriv, accountKeyB64, "jti-self-2", now, now+300, enrollingDeviceKeyB64, spacePublicKeyB64)
+
+		_, err := de.verifyDelegation(jws, enrollingDeviceKeyB64)
+
+		assert.Error(t, err)
+	})
+
+	t.Run("rejected for an unknown key with no device and no account", func(t *testing.T) {
+		repo := newDeviceTestRepo()
+		de := NewDeviceEndpoints(repo, nil, spacePublicKeyB64)
+
+		jws := buildDelegationJWS(t, jwt.SigningMethodEdDSA, unknownPriv, unknownKeyB64, "jti-self-3", now, now+300, enrollingDeviceKeyB64, spacePublicKeyB64)
+
+		_, err := de.verifyDelegation(jws, enrollingDeviceKeyB64)
+
+		assert.Error(t, err)
+	})
 }
 
 func TestRevokeDevice_ShouldReturn403WhenTargetIsCurrentDevice(t *testing.T) {

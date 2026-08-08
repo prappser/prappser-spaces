@@ -39,6 +39,7 @@ func (r *getChallengeTestRepo) UpdateAvatarStorageID(publicKey string, avatarSto
 }
 func (r *getChallengeTestRepo) UpdateUsername(publicKey, username string) error { return nil }
 func (r *getChallengeTestRepo) UpdateUserIssuer(publicKey, issuer string) error { return nil }
+func (r *getChallengeTestRepo) SetUserIssuer(publicKey, issuer string) error    { return nil }
 
 func (r *getChallengeTestRepo) EnsureDevice(devicePublicKey, userPublicKey string, deviceName *string, createdAt int64) error {
 	return nil
