@@ -48,6 +48,7 @@ func (noopUserRepository) GetPasswordHandle(username string) (string, error) {
 func (noopUserRepository) GetEscrow(publicKey string) (string, string, error) {
 	return "", "", nil
 }
+func (noopUserRepository) UpdateUserState(publicKey, userState string) error { return nil }
 func (noopUserRepository) ClaimOwner(publicKey, username, passwordVerifier, handle, accountKeyBlob, userState string, deviceName *string, createdAt int64) error {
 	return nil
 }

@@ -140,6 +140,7 @@ func (r *fakeUserRepo) GetPasswordHandle(username string) (string, error) {
 func (r *fakeUserRepo) GetEscrow(publicKey string) (string, string, error) {
 	return "", "", nil
 }
+func (r *fakeUserRepo) UpdateUserState(publicKey, userState string) error { return nil }
 func (r *fakeUserRepo) ClaimOwner(publicKey, username, passwordVerifier, handle, accountKeyBlob, userState string, deviceName *string, createdAt int64) error {
 	return nil
 }

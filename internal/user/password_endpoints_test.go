@@ -113,6 +113,12 @@ func (r *passwordTestRepo) GetEscrow(publicKey string) (string, string, error) {
 	escrow := r.escrow[publicKey]
 	return escrow.accountKeyBlob, escrow.userState, nil
 }
+func (r *passwordTestRepo) UpdateUserState(publicKey, userState string) error {
+	escrow := r.escrow[publicKey]
+	escrow.userState = userState
+	r.escrow[publicKey] = escrow
+	return nil
+}
 func (r *passwordTestRepo) ClaimOwner(publicKey, username, passwordVerifier, handle, accountKeyBlob, userState string, deviceName *string, createdAt int64) error {
 	return nil
 }

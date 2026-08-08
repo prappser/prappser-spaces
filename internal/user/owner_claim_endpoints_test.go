@@ -93,6 +93,12 @@ func (r *ownerClaimTestRepo) GetEscrow(publicKey string) (string, string, error)
 	escrow := r.escrow[publicKey]
 	return escrow.accountKeyBlob, escrow.userState, nil
 }
+func (r *ownerClaimTestRepo) UpdateUserState(publicKey, userState string) error {
+	escrow := r.escrow[publicKey]
+	escrow.userState = userState
+	r.escrow[publicKey] = escrow
+	return nil
+}
 
 // ClaimOwner mirrors user_repository.go's ClaimOwner: the users row and
 // device row are written unconditionally (no WHERE-NOT-EXISTS guard), and
