@@ -651,6 +651,35 @@ func TestUserRepository_UpdateUserIssuer_ShouldBeNoOpWhenAlreadyVouched_Integrat
 	assert.Equal(t, "test-space-key-A", got.Issuer)
 }
 
+// TestUserRepository_SetUserIssuer_ShouldOverwriteUnconditionally_Integration
+// covers the #116 Phase 5 rebind lever: unlike UpdateUserIssuer, SetUserIssuer
+// has no WHERE issuer=public_key guard, so it moves the pin even when the
+// account is already vouched by someone else - the account key is root
+// authority (see UserRepository's doc comment).
+func TestUserRepository_SetUserIssuer_ShouldOverwriteUnconditionally_Integration(t *testing.T) {
+	// given
+	db := getTestDB(t)
+	defer db.Close()
+	repo := NewUserRepository(db)
+
+	if _, err := db.Exec(
+		"INSERT INTO users (public_key, username, role, created_at, issuer) VALUES ($1,$2,$3,$4,$5)",
+		"test-user-1", "Alice", "user", time.Now().Unix(), "test-space-key-A",
+	); err != nil {
+		t.Fatalf("Failed to insert test user: %v", err)
+	}
+
+	// when - already vouched by space A; SetUserIssuer moves it anyway,
+	// including back to self.
+	err := repo.SetUserIssuer("test-user-1", "test-user-1")
+
+	// then
+	assert.NoError(t, err)
+	got, err := repo.GetUserByPublicKey("test-user-1")
+	assert.NoError(t, err)
+	assert.Equal(t, "test-user-1", got.Issuer)
+}
+
 // ---- #114: ClaimOwner ----
 
 // TestUserRepository_ClaimOwner_ShouldWriteUserAndDeviceAtomically_Integration

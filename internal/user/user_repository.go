@@ -134,6 +134,26 @@ func (r *userRepository) UpdateUserIssuer(publicKey, issuer string) error {
 	return nil
 }
 
+// SetUserIssuer unconditionally overwrites issuer for an account - used only
+// by the account-key-signed rebind endpoint (#116 Phase 5, see
+// AssertionEndpoints.RebindIssuer). Unlike UpdateUserIssuer above, there is
+// no WHERE issuer=public_key guard: users.issuer is provenance-only (see
+// UserRepository's doc comment), never an authorization input, so the
+// account key is root authority and any transition it signs for is allowed
+// in either direction, including vouched->self. Do NOT relax
+// UpdateUserIssuer's guard instead of adding this method - it is
+// load-bearing for the join flow's one-way self->vouched upgrade.
+func (r *userRepository) SetUserIssuer(publicKey, issuer string) error {
+	_, err := r.db.Exec(
+		"UPDATE users SET issuer=$2 WHERE public_key=$1",
+		publicKey, issuer,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to set user issuer: %w", err)
+	}
+	return nil
+}
+
 // SetPasswordCredentials sets the password-login verifier, handle, and
 // escrowed account-key/user-state blobs for an account in a single UPDATE.
 // The partial unique index on lower(username) WHERE password_verifier IS NOT

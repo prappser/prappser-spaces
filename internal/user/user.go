@@ -89,6 +89,13 @@ type UserRepository interface {
 	// account is already vouched or doesn't exist - callers treat a no-op as
 	// fine.
 	UpdateUserIssuer(publicKey, issuer string) error
+	// SetUserIssuer unconditionally overwrites issuer for an account, used
+	// only by the account-key-signed rebind endpoint (#116 Phase 5, see
+	// AssertionEndpoints.RebindIssuer). Unlike UpdateUserIssuer, there is no
+	// guard: any transition is allowed, including vouched->self, because the
+	// account key itself is root authority over its own provenance-only
+	// issuer field.
+	SetUserIssuer(publicKey, issuer string) error
 	// EnsureDevice registers a device for an account if it doesn't already exist (no-op otherwise).
 	EnsureDevice(devicePublicKey, userPublicKey string, deviceName *string, createdAt int64) error
 	// GetDevice returns nil, nil when no device with that key exists.

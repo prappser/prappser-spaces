@@ -100,6 +100,7 @@ func (r *fakeUserRepo) UpdateUserIssuer(publicKey, issuer string) error {
 	}
 	return nil
 }
+func (r *fakeUserRepo) SetUserIssuer(publicKey, issuer string) error { return nil }
 func (r *fakeUserRepo) EnsureDevice(devicePublicKey, userPublicKey string, deviceName *string, createdAt int64) error {
 	r.ensureDeviceCalls = append(r.ensureDeviceCalls, struct {
 		devicePublicKey string
