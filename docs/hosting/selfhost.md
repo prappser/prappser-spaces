@@ -206,3 +206,46 @@ Uploaded files live in the `app_storage` named volume; back it up separately
 if you need file-level recovery, for example with `docker run --rm -v
 app_storage:/data -v $(pwd):/backup alpine tar czf /backup/storage.tar.gz -C
 /data .`
+
+## 9. Moving to new hosting
+
+A `pg_dump` restore (§8) carries everything, including `space_keys` -
+encrypted under the OLD host's `MASTER_PASSWORD`. If the new host boots with
+a different `MASTER_PASSWORD`, it can't decrypt that row. Export/import
+decouples the two: you export the space's identity keypair, wrapped under a
+passphrase you choose, and the new host unwraps and re-encrypts it under
+whatever `MASTER_PASSWORD` it's given.
+
+If you're keeping the same `MASTER_PASSWORD` on the new host, none of this
+is needed - skip straight to a normal restore. This exists so you *can*
+change it.
+
+1. On the OLD, still-running host: in the app, go to Settings → My Space →
+   Export identity key, choose a passphrase, and store the resulting blob
+   in a password manager. **This must happen before the move** - there is
+   no way to export from a host that's already offline.
+2. Take the `pg_dump` (§8) and back up the `app_storage` volume as usual.
+3. On the NEW host's `.env`, set the new `MASTER_PASSWORD` plus:
+   ```
+   SPACE_IDENTITY_IMPORT=PRAPSPACE1....
+   SPACE_IDENTITY_IMPORT_PASSPHRASE=...
+   ```
+4. Restore the dump into an empty database, then start the stack. Watch the
+   logs for `[KEYS] identity imported, re-encrypted under current
+   MASTER_PASSWORD`. A public-key mismatch between the restored dump and the
+   import blob aborts startup instead of silently swapping identities - if
+   you see that error, double check you're pointed at the right database
+   and the right export blob.
+5. Verify `GET /status` on the new host reports the same `identityPublicKey`
+   it reported on the old one before the move.
+6. Flip DNS. The `SPACE_IDENTITY_IMPORT*` vars can be removed at your
+   leisure afterwards - once the row decrypts under `MASTER_PASSWORD`,
+   `Initialize` short-circuits before ever looking at them, so leaving them
+   set is a no-op, not a repeat import.
+
+**Cutover warning:** existing members are unaffected by the move itself -
+their sessions and enrolled devices keep working, since the identity key
+(and therefore every JWT it signs) is unchanged. The one thing that *does*
+depend on timing is a brand-new device logging in for the first time during
+the cutover window - that has to wait until DNS actually points at the new
+host, since a new device has no existing session to fall back on.

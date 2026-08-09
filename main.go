@@ -110,11 +110,12 @@ func main() {
 	}
 
 	keyRepo := keys.NewKeyRepository(db)
-	keyService := keys.NewKeyService(keyRepo, config.MasterPassword)
+	keyService := keys.NewKeyService(keyRepo, config.MasterPassword, config.IdentityImport, config.IdentityImportPassphrase)
 	if err := keyService.Initialize(context.Background()); err != nil {
 		log.Fatal().Err(err).Msg("Failed to initialize space keys")
 		return
 	}
+	keyEndpoints := keys.NewKeyEndpoints(keyService)
 
 	privateKey := keyService.PrivateKey()
 	publicKey := keyService.PublicKey()
@@ -146,7 +147,7 @@ func main() {
 
 	appRepository := application.NewRepository(db)
 	storageRepo := storage.NewRepository(db)
-	statusEndpoints := status.NewEndpoints("1.0.0", config.Storage.MaxFileSize, config.Storage.ChunkSize, storageRepo, config.ExternalURL)
+	statusEndpoints := status.NewEndpoints("1.0.0", config.Storage.MaxFileSize, config.Storage.ChunkSize, storageRepo, config.ExternalURL, keyService)
 
 	wsHub := websocket.NewHub()
 	go wsHub.Run()
@@ -224,7 +225,7 @@ func main() {
 	ownerClaimEndpoints := user.NewOwnerClaimEndpoints(userRepository, verifierKey, config.Users.MasterPassword, &spaceCreatorAdapter{service: spaceService})
 	assertionEndpoints := user.NewAssertionEndpoints(userRepository, privateKey, spacePublicKeyString)
 
-	requestHandler := internal.NewRequestHandler(config, userEndpoints, statusEndpoints, healthEndpoints, userService, appEndpoints, invitationEndpoints, eventEndpoints, setupEndpoints, storageEndpoints, wsHandler, spaceEndpoints, pushEndpoints, profileEndpoints, deviceEndpoints, passwordEndpoints, assertionEndpoints, ownerClaimEndpoints)
+	requestHandler := internal.NewRequestHandler(config, userEndpoints, statusEndpoints, healthEndpoints, userService, appEndpoints, invitationEndpoints, eventEndpoints, setupEndpoints, storageEndpoints, wsHandler, spaceEndpoints, pushEndpoints, profileEndpoints, deviceEndpoints, passwordEndpoints, assertionEndpoints, ownerClaimEndpoints, keyEndpoints)
 
 	serverAddr := fmt.Sprintf(":%s", config.Port)
 	log.Info().Str("addr", serverAddr).Msg("Starting HTTP server")
