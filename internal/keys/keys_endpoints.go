@@ -2,7 +2,6 @@ package keys
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/goccy/go-json"
 	"github.com/rs/zerolog/log"
@@ -44,9 +43,7 @@ type exportIdentityRequest struct {
 // /space/identity/export. Blob is the PRAPSPACE1... export produced by
 // KeyService.ExportIdentity - NEVER logged (see ExportIdentity).
 type exportIdentityResponse struct {
-	Blob       string `json:"blob"`
-	PublicKey  string `json:"publicKey"`
-	ExportedAt int64  `json:"exportedAt"`
+	Blob string `json:"blob"`
 }
 
 // ExportIdentity handles POST /space/identity/export. Owner-only by
@@ -79,9 +76,5 @@ func (ke *KeyEndpoints) ExportIdentity(ctx *fasthttp.RequestCtx) {
 
 	ctx.SetStatusCode(fasthttp.StatusOK)
 	ctx.SetContentType("application/json")
-	json.NewEncoder(ctx).Encode(exportIdentityResponse{
-		Blob:       blob,
-		PublicKey:  publicKey,
-		ExportedAt: time.Now().Unix(),
-	})
+	json.NewEncoder(ctx).Encode(exportIdentityResponse{Blob: blob})
 }

@@ -44,9 +44,7 @@ func TestExportIdentity_ShouldReturn200WithBlobThatDecryptsBackToSameKey(t *test
 	assert.Equal(t, fasthttp.StatusOK, ctx.Response.StatusCode())
 	var resp exportIdentityResponse
 	assert.NoError(t, json.Unmarshal(ctx.Response.Body(), &resp))
-	assert.Equal(t, keyService.PublicKeyBase64(), resp.PublicKey)
 	assert.NotEmpty(t, resp.Blob)
-	assert.Greater(t, resp.ExportedAt, int64(0))
 
 	decoded, err := DecodeIdentityBlob(resp.Blob)
 	assert.NoError(t, err)
