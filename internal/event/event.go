@@ -50,6 +50,10 @@ type MemberAddedData struct {
 	InviteID            string  `json:"inviteId"`
 	UserDisplayName     string  `json:"userDisplayName"`
 	UserAvatarStorageID *string `json:"userAvatarStorageId,omitempty"`
+	// MembershipExpiresAt is the absolute per-joiner membership deadline
+	// (#117), set only when the invitation that produced this event carried
+	// a membershipDurationHours. nil means the membership never expires.
+	MembershipExpiresAt *int64 `json:"membershipExpiresAt,omitempty"`
 }
 
 // MemberRemovedData represents the data for a member_removed event

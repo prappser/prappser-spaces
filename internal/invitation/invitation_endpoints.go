@@ -50,6 +50,8 @@ type CreateInviteRequest struct {
 	// (see CreateInvitationOptions).
 	GrantsMembership *bool `json:"grantsMembership,omitempty"`
 	GrantsIdentity   *bool `json:"grantsIdentity,omitempty"`
+	// MembershipDurationHours is optional (#117); nil means no expiry.
+	MembershipDurationHours *int `json:"membershipDurationHours,omitempty"`
 }
 
 // CreateInvite handles POST /applications/{id}/invites
@@ -95,15 +97,16 @@ func (ie *InvitationEndpoints) CreateInvite(ctx *fasthttp.RequestCtx) {
 
 	// Create invitation
 	opts := CreateInvitationOptions{
-		ApplicationID:      appID,
-		CreatedByPublicKey: authenticatedUser.PublicKey,
-		Role:               req.Role,
-		MaxUses:            req.MaxUses,
-		ExpiresInHours:     req.ExpiresInHours,
-		SpaceID:            spaceIDPtr(authenticatedUser.SpaceID),
-		SpaceURL:           httputil.PublicURL(ctx, ie.externalURLOverride),
-		GrantsMembership:   req.GrantsMembership,
-		GrantsIdentity:     req.GrantsIdentity,
+		ApplicationID:           appID,
+		CreatedByPublicKey:      authenticatedUser.PublicKey,
+		Role:                    req.Role,
+		MaxUses:                 req.MaxUses,
+		ExpiresInHours:          req.ExpiresInHours,
+		SpaceID:                 spaceIDPtr(authenticatedUser.SpaceID),
+		SpaceURL:                httputil.PublicURL(ctx, ie.externalURLOverride),
+		GrantsMembership:        req.GrantsMembership,
+		GrantsIdentity:          req.GrantsIdentity,
+		MembershipDurationHours: req.MembershipDurationHours,
 	}
 
 	response, err := ie.invitationService.CreateInvitation(opts)

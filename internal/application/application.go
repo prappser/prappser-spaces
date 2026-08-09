@@ -58,6 +58,11 @@ type Member struct {
 	PublicKey           string     `json:"publicKey"`
 	UserDisplayName     *string    `json:"userDisplayName,omitempty"`
 	UserAvatarStorageID *string    `json:"userAvatarStorageId,omitempty"`
+	// MembershipExpiresAt is the absolute per-joiner membership deadline
+	// (#117); nil means the membership never expires. Enforcement is lazy -
+	// see activeMemberPredicate in repository.go - this field is never read
+	// by a scheduler, only filtered on at query time.
+	MembershipExpiresAt *int64 `json:"membershipExpiresAt,omitempty"`
 }
 
 // AppVersionInfo holds version tracking data for an application.

@@ -759,6 +759,73 @@ func TestCreateInvitation_ShouldForceIdentityOffWhenMembershipOff(t *testing.T) 
 	assert.Nil(t, repo.createdInvite.MaxUses)
 }
 
+// ---- #117: per-joiner membership duration on CreateInvitation/Join ----
+
+func TestCreateInvitation_ShouldPersistMembershipDurationHours(t *testing.T) {
+	// given
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	assert.NoError(t, err)
+	repo := &fakeInvitationRepo{}
+	svc := NewInvitationService(repo, priv, pub, application.NewMemoryRepository(), nil, &fakeUserRepo{}, fakeEventService{}, "space-key")
+	durationHours := 72
+
+	// when
+	_, err = svc.CreateInvitation(CreateInvitationOptions{
+		ApplicationID:           "app-1",
+		CreatedByPublicKey:      "creator-pk",
+		MembershipDurationHours: &durationHours,
+		SpaceURL:                "https://space.example",
+	})
+
+	// then: the duration is persisted verbatim on the invite row
+	assert.NoError(t, err)
+	if assert.NotNil(t, repo.createdInvite.MembershipDurationHours) {
+		assert.Equal(t, 72, *repo.createdInvite.MembershipDurationHours)
+	}
+}
+
+func TestCreateInvitation_ShouldRejectMembershipDurationHoursBelowMinimum(t *testing.T) {
+	// given
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	assert.NoError(t, err)
+	repo := &fakeInvitationRepo{}
+	svc := NewInvitationService(repo, priv, pub, application.NewMemoryRepository(), nil, &fakeUserRepo{}, fakeEventService{}, "space-key")
+	zero := 0
+
+	// when
+	_, err = svc.CreateInvitation(CreateInvitationOptions{
+		ApplicationID:           "app-1",
+		CreatedByPublicKey:      "creator-pk",
+		MembershipDurationHours: &zero,
+		SpaceURL:                "https://space.example",
+	})
+
+	// then
+	assert.Error(t, err)
+	assert.Nil(t, repo.createdInvite)
+}
+
+func TestCreateInvitation_ShouldRejectMembershipDurationHoursAboveMaximum(t *testing.T) {
+	// given
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	assert.NoError(t, err)
+	repo := &fakeInvitationRepo{}
+	svc := NewInvitationService(repo, priv, pub, application.NewMemoryRepository(), nil, &fakeUserRepo{}, fakeEventService{}, "space-key")
+	tooLong := MaxMembershipDurationHours + 1
+
+	// when
+	_, err = svc.CreateInvitation(CreateInvitationOptions{
+		ApplicationID:           "app-1",
+		CreatedByPublicKey:      "creator-pk",
+		MembershipDurationHours: &tooLong,
+		SpaceURL:                "https://space.example",
+	})
+
+	// then
+	assert.Error(t, err)
+	assert.Nil(t, repo.createdInvite)
+}
+
 // newAuthzTestService wires a real application.MemoryRepository seeded with
 // one application and, if role != "", a single member of that role for
 // memberPublicKey - the caller under test in the AuthorizeAppRole tests
@@ -866,4 +933,87 @@ func TestRevokeInvitation_ProducesInviteRevokedEvent(t *testing.T) {
 	assert.Equal(t, "owner-pk", events.produced.CreatorPublicKey)
 	assert.Equal(t, "app-1", events.produced.Data["applicationId"])
 	assert.Equal(t, "invite-1", events.produced.Data["inviteId"])
+}
+
+// newFreshJoinTestService wires a real application.MemoryRepository with NO
+// pre-seeded member row (unlike newJoinTestService above), so Join runs all
+// the way to producing the member_added event instead of short-circuiting on
+// the already-a-member path - which is exactly the path the #117
+// membershipExpiresAt tests below need to exercise.
+func newFreshJoinTestService(t *testing.T, invite *Invitation) (svc *InvitationService, token string, events *capturingEventService) {
+	t.Helper()
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	assert.NoError(t, err)
+
+	appRepo := application.NewMemoryRepository()
+	assert.NoError(t, appRepo.CreateApplication(&application.Application{ID: invite.ApplicationID, Name: "Test App"}))
+
+	invRepo := &fakeInvitationRepo{invite: invite}
+	events = &capturingEventService{}
+	svc = NewInvitationService(invRepo, priv, pub, appRepo, nil, &fakeUserRepo{}, events, "space-key")
+
+	token, err = svc.GenerateToken(invite.ID, "https://space.example", nil)
+	assert.NoError(t, err)
+
+	return svc, token, events
+}
+
+func TestJoin_WithMembershipDuration_SetsAbsoluteExpiryOnProducedEvent(t *testing.T) {
+	// given: an invite carrying a per-joiner membership duration (#117)
+	acctPub, acctPriv, err := ed25519.GenerateKey(rand.Reader)
+	assert.NoError(t, err)
+	acctB64 := base64.StdEncoding.EncodeToString(acctPub)
+
+	durationHours := 24
+	invite := &Invitation{
+		ID: "invite-expiry-1", ApplicationID: "app-expiry-1", Role: "member",
+		CreatedAt: time.Now().Unix(), GrantsMembership: true, GrantsIdentity: true,
+		MembershipDurationHours: &durationHours,
+	}
+	svc, token, events := newFreshJoinTestService(t, invite)
+
+	beforeJoin := time.Now()
+	proof := buildJoinProof(t, acctPriv, acctB64, acctB64, "expiryuser", invite.ID, time.Now().Unix())
+
+	// when
+	result, err := svc.Join(token, proof, "", "")
+
+	// then: the produced member_added event carries an absolute deadline
+	// computed from the invite's duration, roughly now + duration
+	assert.NoError(t, err)
+	assert.True(t, result.IsNewMember)
+	if assert.NotNil(t, events.produced) {
+		expiresAtRaw, ok := events.produced.Data["membershipExpiresAt"]
+		if assert.True(t, ok, "expected membershipExpiresAt in produced event data") {
+			expiresAt, ok := expiresAtRaw.(int64)
+			assert.True(t, ok, "expected membershipExpiresAt to be an int64")
+			assert.InDelta(t, beforeJoin.Add(24*time.Hour).Unix(), expiresAt, 5)
+		}
+	}
+}
+
+func TestJoin_WithoutMembershipDuration_OmitsExpiryFromProducedEvent(t *testing.T) {
+	// given: an invite with no membership duration - matches today's
+	// behavior of a membership that never expires.
+	acctPub, acctPriv, err := ed25519.GenerateKey(rand.Reader)
+	assert.NoError(t, err)
+	acctB64 := base64.StdEncoding.EncodeToString(acctPub)
+
+	invite := &Invitation{
+		ID: "invite-expiry-2", ApplicationID: "app-expiry-2", Role: "member",
+		CreatedAt: time.Now().Unix(), GrantsMembership: true, GrantsIdentity: true,
+	}
+	svc, token, events := newFreshJoinTestService(t, invite)
+
+	proof := buildJoinProof(t, acctPriv, acctB64, acctB64, "noexpiryuser", invite.ID, time.Now().Unix())
+
+	// when
+	_, err = svc.Join(token, proof, "", "")
+
+	// then
+	assert.NoError(t, err)
+	if assert.NotNil(t, events.produced) {
+		_, ok := events.produced.Data["membershipExpiresAt"]
+		assert.False(t, ok, "expected no membershipExpiresAt key when invite has no duration")
+	}
 }

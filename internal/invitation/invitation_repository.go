@@ -30,8 +30,8 @@ func (r *invitationRepository) Create(invite *Invitation) error {
 		INSERT INTO invitations (
 			id, application_id, created_by_public_key,
 			role, max_uses, used_count, created_at, space_id,
-			grants_membership, grants_identity
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+			grants_membership, grants_identity, membership_duration_hours
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 	`
 
 	_, err := r.db.Exec(query,
@@ -45,6 +45,7 @@ func (r *invitationRepository) Create(invite *Invitation) error {
 		invite.SpaceID,
 		invite.GrantsMembership,
 		invite.GrantsIdentity,
+		invite.MembershipDurationHours,
 	)
 
 	return err
@@ -54,7 +55,7 @@ func (r *invitationRepository) GetByID(id string) (*Invitation, error) {
 	query := `
 		SELECT id, application_id, created_by_public_key,
 		       role, max_uses, used_count, created_at, space_id,
-		       grants_membership, grants_identity
+		       grants_membership, grants_identity, membership_duration_hours
 		FROM invitations
 		WHERE id = $1
 	`
@@ -71,6 +72,7 @@ func (r *invitationRepository) GetByID(id string) (*Invitation, error) {
 		&invite.SpaceID,
 		&invite.GrantsMembership,
 		&invite.GrantsIdentity,
+		&invite.MembershipDurationHours,
 	)
 
 	if err == sql.ErrNoRows {
@@ -146,7 +148,7 @@ func (r *invitationRepository) GetByApplicationID(appID string) ([]*Invitation, 
 	query := `
 		SELECT id, application_id, created_by_public_key,
 		       role, max_uses, used_count, created_at, space_id,
-		       grants_membership, grants_identity
+		       grants_membership, grants_identity, membership_duration_hours
 		FROM invitations
 		WHERE application_id = $1
 		ORDER BY created_at DESC
@@ -172,6 +174,7 @@ func (r *invitationRepository) GetByApplicationID(appID string) ([]*Invitation, 
 			&invite.SpaceID,
 			&invite.GrantsMembership,
 			&invite.GrantsIdentity,
+			&invite.MembershipDurationHours,
 		)
 		if err != nil {
 			return nil, err

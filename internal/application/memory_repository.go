@@ -266,15 +266,33 @@ func (r *MemoryRepository) DeleteComponentGroup(groupID string) error {
 	return nil
 }
 
+// CreateMember mirrors the real repository's ON CONFLICT (application_id,
+// public_key) upsert (#117): a re-join for a pair already in r.members
+// updates that same row (role, expiry) in place rather than inserting a
+// second one keyed by the new event's member.ID.
 func (r *MemoryRepository) CreateMember(member *Member) error {
+	for _, existing := range r.members {
+		if existing.ApplicationID == member.ApplicationID && existing.PublicKey == member.PublicKey {
+			existing.Role = member.Role
+			existing.MembershipExpiresAt = member.MembershipExpiresAt
+			return nil
+		}
+	}
 	r.members[member.ID] = member
 	return nil
+}
+
+// isMemberActive mirrors activeMemberPredicate (repository.go): a nil
+// MembershipExpiresAt never expires, otherwise the deadline must still be
+// in the future.
+func isMemberActive(m *Member) bool {
+	return m.MembershipExpiresAt == nil || *m.MembershipExpiresAt > time.Now().Unix()
 }
 
 func (r *MemoryRepository) GetMembersByApplicationID(appID string) ([]*Member, error) {
 	var result []*Member
 	for _, member := range r.members {
-		if member.ApplicationID == appID {
+		if member.ApplicationID == appID && isMemberActive(member) {
 			result = append(result, member)
 		}
 	}
@@ -322,7 +340,7 @@ func (r *MemoryRepository) DeleteMember(memberID string) error {
 // GetMemberByPublicKey returns a member by public key for a specific application
 func (r *MemoryRepository) GetMemberByPublicKey(appID, publicKey string) (*Member, error) {
 	for _, member := range r.members {
-		if member.ApplicationID == appID && member.PublicKey == publicKey {
+		if member.ApplicationID == appID && member.PublicKey == publicKey && isMemberActive(member) {
 			return member, nil
 		}
 	}
@@ -334,7 +352,7 @@ func (r *MemoryRepository) GetApplicationsByMemberPublicKey(publicKey string) ([
 	// First, find all applications where user is a member
 	appIDSet := make(map[string]bool)
 	for _, member := range r.members {
-		if member.PublicKey == publicKey {
+		if member.PublicKey == publicKey && isMemberActive(member) {
 			appIDSet[member.ApplicationID] = true
 		}
 	}
@@ -365,7 +383,7 @@ func (r *MemoryRepository) GetApplicationsByMemberPublicKey(publicKey string) ([
 func (r *MemoryRepository) GetAppVersionsByMemberPublicKey(publicKey string) (map[string]AppVersionInfo, error) {
 	result := make(map[string]AppVersionInfo)
 	for _, member := range r.members {
-		if member.PublicKey != publicKey {
+		if member.PublicKey != publicKey || !isMemberActive(member) {
 			continue
 		}
 		app, exists := r.applications[member.ApplicationID]
@@ -382,7 +400,7 @@ func (r *MemoryRepository) GetAppVersionsByMemberPublicKey(publicKey string) (ma
 // IsMember checks if a user is a member of an application
 func (r *MemoryRepository) IsMember(appID, publicKey string) (bool, error) {
 	for _, member := range r.members {
-		if member.ApplicationID == appID && member.PublicKey == publicKey {
+		if member.ApplicationID == appID && member.PublicKey == publicKey && isMemberActive(member) {
 			return true, nil
 		}
 	}
@@ -404,7 +422,7 @@ func (r *MemoryRepository) UpdateLastSequence(appID string, sequence int64) erro
 func (r *MemoryRepository) GetMemberCount(appID string) (int, error) {
 	count := 0
 	for _, member := range r.members {
-		if member.ApplicationID == appID {
+		if member.ApplicationID == appID && isMemberActive(member) {
 			count++
 		}
 	}

@@ -16,6 +16,10 @@ type Invitation struct {
 	SpaceID            *string `json:"spaceId,omitempty"`
 	GrantsMembership   bool    `json:"grantsMembership"`
 	GrantsIdentity     bool    `json:"grantsIdentity"`
+	// MembershipDurationHours is the per-joiner membership lifetime (#117):
+	// when set, Join computes an absolute membership_expires_at from it at
+	// join time rather than storing the duration on the member itself.
+	MembershipDurationHours *int `json:"membershipDurationHours,omitempty"`
 }
 
 // InvitationUse tracks when a user joins via an invitation
@@ -55,6 +59,8 @@ type InviteInfo struct {
 	IsValid          bool    `json:"isValid"`
 	GrantsMembership bool    `json:"grantsMembership"`
 	GrantsIdentity   bool    `json:"grantsIdentity"`
+	// MembershipDurationHours mirrors Invitation.MembershipDurationHours, see there.
+	MembershipDurationHours *int `json:"membershipDurationHours,omitempty"`
 }
 
 // CheckInvitationResult contains status information about invitation usage
