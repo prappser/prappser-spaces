@@ -21,6 +21,11 @@ import (
 const (
 	MaxExpirationHours = 48
 
+	// MaxMembershipDurationHours caps how long a per-joiner membership grant
+	// (#117) can last - one year, matching the space's own general trust
+	// horizon rather than any specific product requirement.
+	MaxMembershipDurationHours = 8760
+
 	// pqUniqueViolation is the PostgreSQL SQLSTATE code for a unique
 	// constraint violation - defined locally rather than shared from
 	// internal/user, matching the same local-duplication convention as
@@ -110,6 +115,9 @@ type CreateInvitationOptions struct {
 	// nil defaults to true, matching the DB column defaults.
 	GrantsMembership *bool
 	GrantsIdentity   *bool
+	// MembershipDurationHours is the per-joiner membership lifetime (#117);
+	// nil means no expiry, matching today's behavior.
+	MembershipDurationHours *int
 }
 
 // CreateInvitation creates a new invitation and generates a JWT token
@@ -135,6 +143,11 @@ func (s *InvitationService) CreateInvitation(opts CreateInvitationOptions) (*Inv
 	// Validate max uses
 	if opts.MaxUses != nil && *opts.MaxUses < 1 {
 		return nil, fmt.Errorf("max uses must be at least 1")
+	}
+
+	// [#117] Validate membership duration
+	if opts.MembershipDurationHours != nil && (*opts.MembershipDurationHours < 1 || *opts.MembershipDurationHours > MaxMembershipDurationHours) {
+		return nil, fmt.Errorf("membership duration hours must be between 1 and %d", MaxMembershipDurationHours)
 	}
 
 	// [D8] grantsMembership/grantsIdentity default to true. A preview-only
@@ -165,16 +178,17 @@ func (s *InvitationService) CreateInvitation(opts CreateInvitationOptions) (*Inv
 	// Create invitation
 	now := time.Now().Unix()
 	invite := &Invitation{
-		ID:                 uuid.New().String(), // TODO: Use UUID v7
-		ApplicationID:      opts.ApplicationID,
-		CreatedByPublicKey: opts.CreatedByPublicKey,
-		Role:               opts.Role,
-		MaxUses:            maxUses,
-		UsedCount:          0,
-		CreatedAt:          now,
-		SpaceID:            opts.SpaceID,
-		GrantsMembership:   grantsMembership,
-		GrantsIdentity:     grantsIdentity,
+		ID:                      uuid.New().String(), // TODO: Use UUID v7
+		ApplicationID:           opts.ApplicationID,
+		CreatedByPublicKey:      opts.CreatedByPublicKey,
+		Role:                    opts.Role,
+		MaxUses:                 maxUses,
+		UsedCount:               0,
+		CreatedAt:               now,
+		SpaceID:                 opts.SpaceID,
+		GrantsMembership:        grantsMembership,
+		GrantsIdentity:          grantsIdentity,
+		MembershipDurationHours: opts.MembershipDurationHours,
 	}
 
 	// Save to database
@@ -367,16 +381,17 @@ func (s *InvitationService) GetInviteInfo(tokenString string) (*InviteInfo, erro
 	}
 
 	info := &InviteInfo{
-		InviteID:         invite.ID,
-		ApplicationName:  applicationName,
-		ApplicationIcon:  applicationIcon,
-		CreatorUsername:  creatorUsername,
-		Role:             invite.Role,
-		ExpiresAt:        claims.ExpiresAt,
-		IsExpired:        isExpired,
-		IsValid:          !isExpired && !isMaxUsesReached,
-		GrantsMembership: invite.GrantsMembership,
-		GrantsIdentity:   invite.GrantsIdentity,
+		InviteID:                invite.ID,
+		ApplicationName:         applicationName,
+		ApplicationIcon:         applicationIcon,
+		CreatorUsername:         creatorUsername,
+		Role:                    invite.Role,
+		ExpiresAt:               claims.ExpiresAt,
+		IsExpired:               isExpired,
+		IsValid:                 !isExpired && !isMaxUsesReached,
+		GrantsMembership:        invite.GrantsMembership,
+		GrantsIdentity:          invite.GrantsIdentity,
+		MembershipDurationHours: invite.MembershipDurationHours,
 	}
 
 	log.Debug().
@@ -910,6 +925,18 @@ func (s *InvitationService) Join(tokenString, proof, assertion, deviceName strin
 		memberAddedData["userAvatarStorageId"] = *existingUser.AvatarStorageID
 	}
 
+	// [#117] Per-joiner membership expiry: the invite carries a duration, not
+	// an absolute timestamp, so the expiry is computed here (from the same
+	// `now` captured at the top of Join, not a fresh time.Now()) and baked
+	// into the event data as the absolute deadline every replaying client
+	// and this space's own lazy filter (activeMemberPredicate) will enforce.
+	var membershipExpiresAt *int64
+	if invite.MembershipDurationHours != nil {
+		exp := now.Add(time.Duration(*invite.MembershipDurationHours) * time.Hour).Unix()
+		membershipExpiresAt = &exp
+		memberAddedData["membershipExpiresAt"] = exp
+	}
+
 	// Create member_added event and submit it for execution
 	// This creates the member record so the user can immediately access the application
 	evt := &event.Event{
@@ -979,6 +1006,7 @@ func (s *InvitationService) Join(tokenString, proof, assertion, deviceName strin
 		Str("username", userName).
 		Str("userPublicKey", userPublicKey[:min(20, len(userPublicKey))]+"...").
 		Str("role", invite.Role).
+		Interface("membershipExpiresAt", membershipExpiresAt).
 		Msg("[INVITE] Join successful - new member added")
 
 	return &JoinResult{

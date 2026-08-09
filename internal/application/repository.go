@@ -7,6 +7,10 @@ import (
 	"time"
 )
 
+// activeMemberPredicate is the whole of #117's enforcement: membership is
+// evaluated lazily at read time, never by a scheduler.
+const activeMemberPredicate = `(m.membership_expires_at IS NULL OR m.membership_expires_at > EXTRACT(EPOCH FROM NOW()))`
+
 type Repository struct {
 	db *sql.DB
 }
@@ -487,20 +491,25 @@ func (r *Repository) DeleteComponentGroup(groupID string) error {
 }
 
 func (r *Repository) CreateMember(member *Member) error {
-	query := `INSERT INTO members (id, application_id, role, public_key)
-			  VALUES ($1, $2, $3, $4)
-			  ON CONFLICT (id) DO UPDATE SET
-			    role = EXCLUDED.role`
+	// Conflict target is (application_id, public_key), not id: a re-join
+	// (new event, new member.ID) must update the SAME row for that
+	// application+key pair rather than insert a duplicate - that's what
+	// makes re-joining after expiry an upsert instead of a second row.
+	query := `INSERT INTO members (id, application_id, role, public_key, membership_expires_at)
+			  VALUES ($1, $2, $3, $4, $5)
+			  ON CONFLICT (application_id, public_key) DO UPDATE SET
+			    role = EXCLUDED.role, membership_expires_at = EXCLUDED.membership_expires_at`
 
-	_, err := r.db.Exec(query, member.ID, member.ApplicationID, string(member.Role), member.PublicKey)
+	_, err := r.db.Exec(query, member.ID, member.ApplicationID, string(member.Role), member.PublicKey, member.MembershipExpiresAt)
 	return err
 }
 
 func (r *Repository) GetMembersByApplicationID(appID string) ([]*Member, error) {
-	query := `SELECT m.id, m.application_id, m.role, m.public_key, u.username, u.avatar_storage_id
+	query := `SELECT m.id, m.application_id, m.role, m.public_key, u.username, u.avatar_storage_id, m.membership_expires_at
 			  FROM members m
 			  LEFT JOIN users u ON u.public_key = m.public_key
-			  WHERE m.application_id = $1 ORDER BY m.role`
+			  WHERE m.application_id = $1 AND ` + activeMemberPredicate + `
+			  ORDER BY m.role`
 
 	rows, err := r.db.Query(query, appID)
 	if err != nil {
@@ -514,6 +523,7 @@ func (r *Repository) GetMembersByApplicationID(appID string) ([]*Member, error) 
 		var roleStr string
 		var username sql.NullString
 		var avatarStorageID sql.NullString
+		var membershipExpiresAt sql.NullInt64
 
 		err := rows.Scan(
 			&member.ID,
@@ -522,6 +532,7 @@ func (r *Repository) GetMembersByApplicationID(appID string) ([]*Member, error) 
 			&member.PublicKey,
 			&username,
 			&avatarStorageID,
+			&membershipExpiresAt,
 		)
 		if err != nil {
 			return nil, err
@@ -533,6 +544,9 @@ func (r *Repository) GetMembersByApplicationID(appID string) ([]*Member, error) 
 		}
 		if avatarStorageID.Valid {
 			member.UserAvatarStorageID = &avatarStorageID.String
+		}
+		if membershipExpiresAt.Valid {
+			member.MembershipExpiresAt = &membershipExpiresAt.Int64
 		}
 
 		members = append(members, member)
@@ -607,9 +621,15 @@ func (r *Repository) DeleteMember(memberID string) error {
 	return nil
 }
 
+// GetMemberByPublicKey is used by executeMemberRemoved/executeMemberRoleChanged
+// (event_service.go) to resolve a member ID before acting on it - so an
+// already-expired member looks not-found there and those actions fail with
+// "member not found" instead of a second, unfiltered lookup path. Known
+// ceiling, acceptable for #117: nothing outside a scheduler is expected to
+// remove/role-change an expired member anyway.
 func (r *Repository) GetMemberByPublicKey(appID, publicKey string) (*Member, error) {
-	query := `SELECT id, application_id, role, public_key
-			  FROM members WHERE application_id = $1 AND public_key = $2`
+	query := `SELECT m.id, m.application_id, m.role, m.public_key
+			  FROM members m WHERE m.application_id = $1 AND m.public_key = $2 AND ` + activeMemberPredicate
 
 	member := &Member{}
 	var roleStr string
@@ -637,7 +657,7 @@ func (r *Repository) GetApplicationsByMemberPublicKey(publicKey string) ([]*Appl
 	query := `SELECT DISTINCT a.id, a.name, a.icon, a.space_public_key, a.space_id, a.created_at, a.updated_at, a.last_sequence
 			  FROM applications a
 			  INNER JOIN members m ON a.id = m.application_id
-			  WHERE m.public_key = $1 AND a.deleted_at IS NULL
+			  WHERE m.public_key = $1 AND a.deleted_at IS NULL AND ` + activeMemberPredicate + `
 			  ORDER BY a.created_at DESC`
 
 	rows, err := r.db.Query(query, publicKey)
@@ -707,7 +727,7 @@ func (r *Repository) GetAppVersionsByMemberPublicKey(publicKey string) (map[stri
 	query := `SELECT DISTINCT a.id, a.last_sequence
 			  FROM applications a
 			  INNER JOIN members m ON a.id = m.application_id
-			  WHERE m.public_key = $1 AND a.deleted_at IS NULL`
+			  WHERE m.public_key = $1 AND a.deleted_at IS NULL AND ` + activeMemberPredicate
 
 	rows, err := r.db.Query(query, publicKey)
 	if err != nil {
@@ -732,7 +752,7 @@ func (r *Repository) GetAppVersionsByMemberPublicKey(publicKey string) (map[stri
 }
 
 func (r *Repository) IsMember(appID, publicKey string) (bool, error) {
-	query := `SELECT COUNT(*) FROM members WHERE application_id = $1 AND public_key = $2`
+	query := `SELECT COUNT(*) FROM members m WHERE m.application_id = $1 AND m.public_key = $2 AND ` + activeMemberPredicate
 
 	var count int
 	err := r.db.QueryRow(query, appID, publicKey).Scan(&count)
@@ -744,7 +764,7 @@ func (r *Repository) IsMember(appID, publicKey string) (bool, error) {
 }
 
 func (r *Repository) GetMemberCount(appID string) (int, error) {
-	query := `SELECT COUNT(*) FROM members WHERE application_id = $1`
+	query := `SELECT COUNT(*) FROM members m WHERE m.application_id = $1 AND ` + activeMemberPredicate
 
 	var count int
 	err := r.db.QueryRow(query, appID).Scan(&count)

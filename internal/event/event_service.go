@@ -552,10 +552,11 @@ func (s *EventService) executeMemberAdded(ctx context.Context, event *Event) err
 	}
 
 	member := &application.Member{
-		ID:            uuid.New().String(),
-		ApplicationID: appID,
-		Role:          application.MemberRole(roleStr),
-		PublicKey:     memberPublicKey,
+		ID:                  uuid.New().String(),
+		ApplicationID:       appID,
+		Role:                application.MemberRole(roleStr),
+		PublicKey:           memberPublicKey,
+		MembershipExpiresAt: getInt64Ptr(event.Data, "membershipExpiresAt"),
 	}
 
 	return s.appRepo.CreateMember(member)
@@ -867,4 +868,22 @@ func getInt(m map[string]interface{}, key string) int {
 		return int(v)
 	}
 	return 0
+}
+
+// getInt64Ptr extracts an optional int64 from event data, or nil when the key
+// is absent. Unlike getInt, this has to handle two distinct shapes for the
+// SAME field: the produce path (InvitationService.Join) puts a real int64
+// straight into the map, while the replay/JSON path (events read back from
+// storage, or from another space over the wire) always yields a float64,
+// since encoding/json only ever decodes numbers into float64.
+func getInt64Ptr(m map[string]interface{}, key string) *int64 {
+	switch v := m[key].(type) {
+	case int64:
+		return &v
+	case float64:
+		i := int64(v)
+		return &i
+	default:
+		return nil
+	}
 }

@@ -414,3 +414,101 @@ func TestApplicationService_RegisterApplication_ShouldRoundTripMember(t *testing
 		t.Errorf("Expected member Role %q, got %q", MemberRoleOwner, retrievedApp.Members[0].Role)
 	}
 }
+
+// seedExpiryTestMembers creates one application with three members exercising
+// every MembershipExpiresAt state #117 cares about: already expired, expires
+// in the future, and never expires (nil) - used by the membership-expiry
+// filtering tests below.
+func seedExpiryTestMembers(t *testing.T, appRepo *MemoryRepository, appID string) {
+	t.Helper()
+	if err := appRepo.CreateApplication(&Application{ID: appID, Name: "Expiry Test App"}); err != nil {
+		t.Fatalf("Failed to create application: %v", err)
+	}
+
+	past := time.Now().Add(-1 * time.Hour).Unix()
+	future := time.Now().Add(1 * time.Hour).Unix()
+
+	members := []*Member{
+		{ID: "member-expired", ApplicationID: appID, Role: MemberRoleMember, PublicKey: "expired-pk", MembershipExpiresAt: &past},
+		{ID: "member-future", ApplicationID: appID, Role: MemberRoleMember, PublicKey: "future-pk", MembershipExpiresAt: &future},
+		{ID: "member-forever", ApplicationID: appID, Role: MemberRoleMember, PublicKey: "forever-pk"},
+	}
+	for _, m := range members {
+		if err := appRepo.CreateMember(m); err != nil {
+			t.Fatalf("Failed to create member %s: %v", m.PublicKey, err)
+		}
+	}
+}
+
+func TestMemoryRepository_GetMembersByApplicationID_ShouldExcludeExpiredMembers(t *testing.T) {
+	// given
+	appRepo := NewMemoryRepository()
+	appID := "expiry-test-app-1"
+	seedExpiryTestMembers(t, appRepo, appID)
+
+	// when
+	members, err := appRepo.GetMembersByApplicationID(appID)
+
+	// then: the expired member is filtered out, the future and never-expiring ones stay
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+	if len(members) != 2 {
+		t.Fatalf("Expected 2 active members, got %d", len(members))
+	}
+	for _, m := range members {
+		if m.PublicKey == "expired-pk" {
+			t.Errorf("Expected expired member to be excluded, but it was returned")
+		}
+	}
+}
+
+func TestMemoryRepository_IsMember_ShouldTreatExpiredMembershipAsNotAMember(t *testing.T) {
+	// given
+	appRepo := NewMemoryRepository()
+	appID := "expiry-test-app-2"
+	seedExpiryTestMembers(t, appRepo, appID)
+
+	// when / then
+	isMember, err := appRepo.IsMember(appID, "expired-pk")
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+	if isMember {
+		t.Error("Expected expired member to not be a member")
+	}
+
+	isMember, err = appRepo.IsMember(appID, "future-pk")
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+	if !isMember {
+		t.Error("Expected future-expiring member to still be a member")
+	}
+
+	isMember, err = appRepo.IsMember(appID, "forever-pk")
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+	if !isMember {
+		t.Error("Expected member with no expiry to still be a member")
+	}
+}
+
+func TestMemoryRepository_GetMemberCount_ShouldExcludeExpiredMembers(t *testing.T) {
+	// given
+	appRepo := NewMemoryRepository()
+	appID := "expiry-test-app-3"
+	seedExpiryTestMembers(t, appRepo, appID)
+
+	// when
+	count, err := appRepo.GetMemberCount(appID)
+
+	// then: only the future and never-expiring members count
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+	if count != 2 {
+		t.Errorf("Expected member count 2, got %d", count)
+	}
+}
