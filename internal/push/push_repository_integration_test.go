@@ -4,115 +4,37 @@ package push
 
 import (
 	"database/sql"
-	"os"
 	"testing"
 	"time"
 
 	_ "github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/prappser/prappser-spaces/internal/testdb"
 )
 
+// getTestDB returns a *sql.DB scoped to this package's own Postgres schema,
+// built from the real files/migrations (see internal/testdb) rather than a
+// hand-written copy - so this file can't drift from production schema.
 func getTestDB(t *testing.T) *sql.DB {
 	t.Helper()
-	dbURL := os.Getenv("TEST_DATABASE_URL")
-	if dbURL == "" {
-		dbURL = "postgres://test:test@localhost:5433/prappser_test?sslmode=disable"
-	}
-
-	db, err := sql.Open("postgres", dbURL)
-	if err != nil {
-		t.Fatalf("Failed to connect to database: %v", err)
-	}
-	if err := db.Ping(); err != nil {
-		t.Fatalf("Failed to ping database: %v", err)
-	}
-
-	// Minimal schema for integration tests (assumes migrations have run or we create inline).
-	// push_subscriptions is keyed by device_public_key (post-000018), joined
-	// through user_devices to resolve an owning account.
-	schema := `
-		CREATE TABLE IF NOT EXISTS users (
-			public_key TEXT PRIMARY KEY,
-			username   TEXT NOT NULL,
-			role       TEXT NOT NULL,
-			created_at BIGINT NOT NULL
-		);
-		CREATE TABLE IF NOT EXISTS user_devices (
-			device_public_key TEXT PRIMARY KEY,
-			user_public_key   TEXT NOT NULL REFERENCES users(public_key) ON DELETE CASCADE,
-			device_name       TEXT,
-			created_at        BIGINT NOT NULL,
-			last_seen_at      BIGINT,
-			revoked_at        BIGINT
-		);
-		CREATE INDEX IF NOT EXISTS idx_user_devices_user ON user_devices(user_public_key);
-		CREATE TABLE IF NOT EXISTS space_vapid (
-			id                SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
-			vapid_public_key  TEXT NOT NULL,
-			vapid_private_key TEXT NOT NULL,
-			created_at        BIGINT NOT NULL,
-			updated_at        BIGINT NOT NULL
-		);
-		CREATE TABLE IF NOT EXISTS push_subscriptions (
-			id                   TEXT PRIMARY KEY,
-			device_public_key    TEXT NOT NULL REFERENCES user_devices(device_public_key) ON DELETE CASCADE,
-			endpoint             TEXT NOT NULL UNIQUE,
-			p256dh               TEXT NOT NULL,
-			auth                 TEXT NOT NULL,
-			device_label         TEXT,
-			categories           JSONB NOT NULL DEFAULT '{}'::jsonb,
-			muted_application_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
-			created_at           BIGINT NOT NULL,
-			last_success_at      BIGINT,
-			failure_count        INTEGER NOT NULL DEFAULT 0
-		);
-		CREATE INDEX IF NOT EXISTS idx_push_subscriptions_device ON push_subscriptions(device_public_key);
-	`
-	if _, err := db.Exec(schema); err != nil {
-		t.Fatalf("Failed to create test schema: %v", err)
-	}
-
-	// Clean slate before each test.
-	if _, err := db.Exec("DELETE FROM push_subscriptions"); err != nil {
-		t.Fatalf("Failed to clean push_subscriptions: %v", err)
-	}
-	if _, err := db.Exec("DELETE FROM space_vapid"); err != nil {
-		t.Fatalf("Failed to clean space_vapid: %v", err)
-	}
-	if _, err := db.Exec("DELETE FROM user_devices WHERE device_public_key LIKE 'test-%'"); err != nil {
-		t.Fatalf("Failed to clean user_devices: %v", err)
-	}
-	if _, err := db.Exec("DELETE FROM users WHERE public_key LIKE 'test-%'"); err != nil {
-		t.Fatalf("Failed to clean users: %v", err)
-	}
+	db := testdb.Connect(t, "push")
 
 	// Insert a test user and its device #1 (same key, mirroring the free
-	// migration in 000018) so FK constraints pass. In one transaction: other
-	// packages' integration tests run concurrently against this same shared
-	// database and clean up via the same "test-%" pattern, so a non-atomic
-	// insert-user-then-insert-device here has a window where a concurrent
-	// DELETE FROM users can remove the just-inserted user before the device
-	// insert runs, tripping the user_devices FK.
-	tx, err := db.Begin()
-	if err != nil {
-		t.Fatalf("Failed to begin fixture transaction: %v", err)
-	}
-	if _, err := tx.Exec(
-		"INSERT INTO users (public_key, username, role, created_at) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING",
+	// migration in 000018) so FK constraints pass. Schema isolation means no
+	// other package's tests share this schema, so plain sequential inserts
+	// are enough - no need to guard against a concurrent cross-package DELETE.
+	if _, err := db.Exec(
+		"INSERT INTO users (public_key, username, role, created_at, issuer) VALUES ($1,$2,$3,$4,$1) ON CONFLICT DO NOTHING",
 		"test-user-1", "testuser", "user", time.Now().Unix(),
 	); err != nil {
-		tx.Rollback()
 		t.Fatalf("Failed to insert test user: %v", err)
 	}
-	if _, err := tx.Exec(
+	if _, err := db.Exec(
 		"INSERT INTO user_devices (device_public_key, user_public_key, created_at) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING",
 		"test-user-1", "test-user-1", time.Now().Unix(),
 	); err != nil {
-		tx.Rollback()
 		t.Fatalf("Failed to insert test device: %v", err)
-	}
-	if err := tx.Commit(); err != nil {
-		t.Fatalf("Failed to commit fixture transaction: %v", err)
 	}
 
 	return db

@@ -15,114 +15,16 @@ import (
 	"github.com/goccy/go-json"
 	_ "github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/prappser/prappser-spaces/internal/testdb"
 )
 
+// getTestDB returns a *sql.DB scoped to this package's own Postgres schema,
+// built from the real files/migrations (see internal/testdb) rather than a
+// hand-written copy - so this file can't drift from production schema.
 func getTestDB(t *testing.T) *sql.DB {
 	t.Helper()
-	dbURL := os.Getenv("TEST_DATABASE_URL")
-	if dbURL == "" {
-		dbURL = "postgres://test:test@localhost:5433/prappser_test?sslmode=disable"
-	}
-
-	db, err := sql.Open("postgres", dbURL)
-	if err != nil {
-		t.Fatalf("Failed to connect to database: %v", err)
-	}
-	if err := db.Ping(); err != nil {
-		t.Fatalf("Failed to ping database: %v", err)
-	}
-
-	// user_devices and push_subscriptions are included here (not just users)
-	// because RevokeDevice's push_subscriptions cleanup is a raw DELETE
-	// against that table (see device_repository.go) - the device
-	// repository integration tests below need it present.
-	//
-	// issuer has a test-only DEFAULT '' (the real migration 000021 adds it
-	// NOT NULL with no default) so the raw INSERTs elsewhere in this file
-	// that predate #112 keep compiling without listing every column;
-	// CreateUser's COALESCE(NULLIF($5,''),$1) is what guarantees a non-empty
-	// issuer in production.
-	//
-	// The unique index is now PARTIAL (migration 000023): case-insensitive
-	// uniqueness on username applies only among password-enabled rows
-	// (password_verifier IS NOT NULL) - non-password rows may freely share a
-	// username.
-	//
-	// space_owner_claim (migration 000024) is the authoritative concurrency
-	// guard for ClaimOwner (see user_repository.go's doc comment) - without
-	// it here, the concurrency test below would exercise a real Postgres
-	// race with nothing to actually catch the loser. Its shape is hand-written
-	// here rather than run from the migration file, matching how every other
-	// table in this schema is built; TestMigration_SpaceOwnerClaim_Integration
-	// below is the one test that runs the actual 000024 migration file
-	// against a real users table, since that migration's own idempotency and
-	// legacy-backfill behavior is the point of this rework.
-	schema := `
-		CREATE TABLE IF NOT EXISTS users (
-			public_key        TEXT PRIMARY KEY,
-			username          TEXT NOT NULL,
-			role              TEXT NOT NULL,
-			created_at        BIGINT NOT NULL,
-			avatar_storage_id TEXT,
-			password_verifier TEXT,
-			password_handle   TEXT,
-			account_key_blob  TEXT,
-			user_state_blob   TEXT,
-			issuer            TEXT NOT NULL DEFAULT ''
-		);
-		CREATE UNIQUE INDEX IF NOT EXISTS users_password_username_idx ON users (lower(username)) WHERE password_verifier IS NOT NULL;
-		CREATE TABLE IF NOT EXISTS space_owner_claim (
-			id               TEXT PRIMARY KEY DEFAULT 'main',
-			owner_public_key TEXT NOT NULL,
-			claimed_at       BIGINT NOT NULL
-		);
-		CREATE TABLE IF NOT EXISTS user_devices (
-			device_public_key TEXT PRIMARY KEY,
-			user_public_key   TEXT NOT NULL REFERENCES users(public_key) ON DELETE CASCADE,
-			device_name       TEXT,
-			created_at        BIGINT NOT NULL,
-			last_seen_at      BIGINT,
-			revoked_at        BIGINT
-		);
-		-- Must stay column-identical to push_repository_integration_test.go's copy:
-		-- whichever package's tests run first wins the IF NOT EXISTS.
-		CREATE TABLE IF NOT EXISTS push_subscriptions (
-			id                    TEXT PRIMARY KEY,
-			device_public_key     TEXT NOT NULL REFERENCES user_devices(device_public_key) ON DELETE CASCADE,
-			endpoint              TEXT NOT NULL UNIQUE,
-			p256dh                TEXT NOT NULL,
-			auth                  TEXT NOT NULL,
-			device_label          TEXT,
-			categories            JSONB NOT NULL DEFAULT '{}'::jsonb,
-			muted_application_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
-			created_at            BIGINT NOT NULL,
-			last_success_at       BIGINT,
-			failure_count         INTEGER NOT NULL DEFAULT 0
-		);
-	`
-	if _, err := db.Exec(schema); err != nil {
-		t.Fatalf("Failed to create test schema: %v", err)
-	}
-
-	// Clean slate before each test. space_owner_claim's single row (id='main')
-	// is cleared unconditionally, not by a 'test-%' prefix like the tables
-	// below - every ClaimOwner call in this file writes that same row, so a
-	// prior test's claim would otherwise make every later ClaimOwner call
-	// return ErrSpaceAlreadyClaimed.
-	if _, err := db.Exec("DELETE FROM push_subscriptions"); err != nil {
-		t.Fatalf("Failed to clean push_subscriptions: %v", err)
-	}
-	if _, err := db.Exec("DELETE FROM user_devices WHERE device_public_key LIKE 'test-%'"); err != nil {
-		t.Fatalf("Failed to clean user_devices: %v", err)
-	}
-	if _, err := db.Exec("DELETE FROM space_owner_claim"); err != nil {
-		t.Fatalf("Failed to clean space_owner_claim: %v", err)
-	}
-	if _, err := db.Exec("DELETE FROM users WHERE public_key LIKE 'test-%'"); err != nil {
-		t.Fatalf("Failed to clean users: %v", err)
-	}
-
-	return db
+	return testdb.Connect(t, "user")
 }
 
 func TestUserRepository_UpdateUsername_ShouldUpdateRow_Integration(t *testing.T) {
@@ -132,7 +34,7 @@ func TestUserRepository_UpdateUsername_ShouldUpdateRow_Integration(t *testing.T)
 	repo := NewUserRepository(db)
 
 	if _, err := db.Exec(
-		"INSERT INTO users (public_key, username, role, created_at) VALUES ($1,$2,$3,$4)",
+		"INSERT INTO users (public_key, username, role, created_at, issuer) VALUES ($1,$2,$3,$4,$1)",
 		"test-user-1", "OldName", "user", time.Now().Unix(),
 	); err != nil {
 		t.Fatalf("Failed to insert test user: %v", err)
@@ -170,7 +72,7 @@ func TestUserRepository_SetPasswordCredentials_ShouldRoundTripWithGetPasswordCre
 	repo := NewUserRepository(db)
 
 	if _, err := db.Exec(
-		"INSERT INTO users (public_key, username, role, created_at) VALUES ($1,$2,$3,$4)",
+		"INSERT INTO users (public_key, username, role, created_at, issuer) VALUES ($1,$2,$3,$4,$1)",
 		"test-user-1", "test-alice", "user", time.Now().Unix(),
 	); err != nil {
 		t.Fatalf("Failed to insert test user: %v", err)
@@ -197,7 +99,7 @@ func TestUserRepository_SetPasswordCredentials_ShouldRoundTripEscrowBlobsWithGet
 	repo := NewUserRepository(db)
 
 	if _, err := db.Exec(
-		"INSERT INTO users (public_key, username, role, created_at) VALUES ($1,$2,$3,$4)",
+		"INSERT INTO users (public_key, username, role, created_at, issuer) VALUES ($1,$2,$3,$4,$1)",
 		"test-user-1", "test-alice", "user", time.Now().Unix(),
 	); err != nil {
 		t.Fatalf("Failed to insert test user: %v", err)
@@ -224,7 +126,7 @@ func TestUserRepository_SetPasswordCredentials_ShouldClearEscrowBlobsWhenOmitted
 	repo := NewUserRepository(db)
 
 	if _, err := db.Exec(
-		"INSERT INTO users (public_key, username, role, created_at) VALUES ($1,$2,$3,$4)",
+		"INSERT INTO users (public_key, username, role, created_at, issuer) VALUES ($1,$2,$3,$4,$1)",
 		"test-user-1", "test-alice", "user", time.Now().Unix(),
 	); err != nil {
 		t.Fatalf("Failed to insert test user: %v", err)
@@ -281,7 +183,7 @@ func TestUserRepository_GetPasswordCredential_ShouldMatchCaseInsensitively_Integ
 	repo := NewUserRepository(db)
 
 	if _, err := db.Exec(
-		"INSERT INTO users (public_key, username, role, created_at) VALUES ($1,$2,$3,$4)",
+		"INSERT INTO users (public_key, username, role, created_at, issuer) VALUES ($1,$2,$3,$4,$1)",
 		"test-user-1", "test-CaseMix", "user", time.Now().Unix(),
 	); err != nil {
 		t.Fatalf("Failed to insert test user: %v", err)
@@ -308,7 +210,7 @@ func TestUserRepository_GetPasswordCredential_ShouldPickPasswordEnabledRowWhenNo
 	repo := NewUserRepository(db)
 
 	if _, err := db.Exec(
-		"INSERT INTO users (public_key, username, role, created_at) VALUES ($1,$2,$3,$4), ($5,$6,$7,$8)",
+		"INSERT INTO users (public_key, username, role, created_at, issuer) VALUES ($1,$2,$3,$4,$1), ($5,$6,$7,$8,$5)",
 		"test-user-1", "test-dupname", "user", time.Now().Unix(),
 		"test-user-2", "test-dupname", "user", time.Now().Unix(),
 	); err != nil {
@@ -336,7 +238,7 @@ func TestUserRepository_UsersTable_ShouldAllowSharedUsernameWhenNeitherHasPasswo
 
 	// when
 	_, err := db.Exec(
-		"INSERT INTO users (public_key, username, role, created_at) VALUES ($1,$2,$3,$4), ($5,$6,$7,$8)",
+		"INSERT INTO users (public_key, username, role, created_at, issuer) VALUES ($1,$2,$3,$4,$1), ($5,$6,$7,$8,$5)",
 		"test-user-1", "test-shared-name", "user", time.Now().Unix(),
 		"test-user-2", "test-shared-name", "user", time.Now().Unix(),
 	)
@@ -352,7 +254,7 @@ func TestUserRepository_SetPasswordCredentials_ShouldReturnErrUsernameTakenForDu
 	repo := NewUserRepository(db)
 
 	if _, err := db.Exec(
-		"INSERT INTO users (public_key, username, role, created_at) VALUES ($1,$2,$3,$4), ($5,$6,$7,$8)",
+		"INSERT INTO users (public_key, username, role, created_at, issuer) VALUES ($1,$2,$3,$4,$1), ($5,$6,$7,$8,$5)",
 		"test-user-1", "test-shared", "user", time.Now().Unix(),
 		"test-user-2", "TEST-SHARED", "user", time.Now().Unix(),
 	); err != nil {
@@ -380,7 +282,7 @@ func TestUserRepository_UpdateUsername_ShouldReturnErrUsernameTakenWhenRenamingI
 	repo := NewUserRepository(db)
 
 	if _, err := db.Exec(
-		"INSERT INTO users (public_key, username, role, created_at) VALUES ($1,$2,$3,$4), ($5,$6,$7,$8)",
+		"INSERT INTO users (public_key, username, role, created_at, issuer) VALUES ($1,$2,$3,$4,$1), ($5,$6,$7,$8,$5)",
 		"test-user-1", "test-passworded", "user", time.Now().Unix(),
 		"test-user-2", "test-renaming", "user", time.Now().Unix(),
 	); err != nil {
@@ -413,7 +315,7 @@ func TestUserRepository_UpdateUsername_ShouldSucceedWhenRenamingIntoPasswordEnab
 	repo := NewUserRepository(db)
 
 	if _, err := db.Exec(
-		"INSERT INTO users (public_key, username, role, created_at) VALUES ($1,$2,$3,$4), ($5,$6,$7,$8)",
+		"INSERT INTO users (public_key, username, role, created_at, issuer) VALUES ($1,$2,$3,$4,$1), ($5,$6,$7,$8,$5)",
 		"test-user-1", "test-passworded-2", "user", time.Now().Unix(),
 		"test-user-2", "test-renaming-3", "user", time.Now().Unix(),
 	); err != nil {
@@ -438,7 +340,7 @@ func TestUserRepository_UpdateUsername_ShouldSucceedWhenTargetNameHasNoPassword_
 	repo := NewUserRepository(db)
 
 	if _, err := db.Exec(
-		"INSERT INTO users (public_key, username, role, created_at) VALUES ($1,$2,$3,$4), ($5,$6,$7,$8)",
+		"INSERT INTO users (public_key, username, role, created_at, issuer) VALUES ($1,$2,$3,$4,$1), ($5,$6,$7,$8,$5)",
 		"test-user-1", "test-existing-name", "user", time.Now().Unix(),
 		"test-user-2", "test-renaming-2", "user", time.Now().Unix(),
 	); err != nil {
@@ -463,7 +365,7 @@ func TestUserRepository_GetPasswordHandle_ShouldRoundTripAndCoalesceOnResubmit_I
 	repo := NewUserRepository(db)
 
 	if _, err := db.Exec(
-		"INSERT INTO users (public_key, username, role, created_at) VALUES ($1,$2,$3,$4)",
+		"INSERT INTO users (public_key, username, role, created_at, issuer) VALUES ($1,$2,$3,$4,$1)",
 		"test-user-1", "test-handled", "user", time.Now().Unix(),
 	); err != nil {
 		t.Fatalf("Failed to insert test user: %v", err)
@@ -507,7 +409,7 @@ func TestUserRepository_GetPasswordHandle_ShouldReturnHandleIndependentOfUsernam
 	repo := NewUserRepository(db)
 
 	if _, err := db.Exec(
-		"INSERT INTO users (public_key, username, role, created_at, password_verifier, password_handle) VALUES ($1,$2,$3,$4,$5,$6)",
+		"INSERT INTO users (public_key, username, role, created_at, password_verifier, password_handle, issuer) VALUES ($1,$2,$3,$4,$5,$6,$1)",
 		"test-user-1", "test-displayname", "user", time.Now().Unix(), "hmac-sha256$GGGG", "test-old-identifier",
 	); err != nil {
 		t.Fatalf("Failed to insert test user: %v", err)
@@ -901,10 +803,11 @@ func TestUserRepository_ClaimOwner_ShouldKeepSaltIdenticalAcrossClaim_Integratio
 // hand-copied inline SQL string, so a future edit to the migration is what
 // this test exercises, not a frozen snapshot of it that could silently drift
 // from the real file. It stops short of going through golang-migrate's own
-// version-tracking machinery, though: getTestDB's hand-written schema (the
-// same convention every other test in this file already relies on) stands in
-// for migrations 000001-000023 having already run, so this test only needs
-// to prove out 000024 itself against that baseline.
+// version-tracking machinery, though: getTestDB already runs the real
+// migrations (including 000024 itself) via internal/testdb, providing the
+// migrations 000001-000023 baseline this test needs; dropping
+// space_owner_claim below re-creates the pre-000024 starting point so this
+// test can prove out 000024 itself against that baseline.
 func TestMigration_SpaceOwnerClaim_ShouldBackfillClaimFromLegacyMultiOwnerSpace_Integration(t *testing.T) {
 	// given - drop the space_owner_claim table getTestDB's schema creates, so
 	// this test starts exactly like a legacy pre-000024 database: nothing
@@ -927,7 +830,7 @@ func TestMigration_SpaceOwnerClaim_ShouldBackfillClaimFromLegacyMultiOwnerSpace_
 	}
 	for _, o := range owners {
 		if _, err := db.Exec(
-			"INSERT INTO users (public_key, username, role, created_at) VALUES ($1,$2,'owner',$3)",
+			"INSERT INTO users (public_key, username, role, created_at, issuer) VALUES ($1,$2,'owner',$3,$1)",
 			o.pk, o.username, o.createdAt,
 		); err != nil {
 			t.Fatalf("Failed to seed legacy owner %s: %v", o.pk, err)
