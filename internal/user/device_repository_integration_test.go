@@ -20,7 +20,7 @@ func TestUserRepository_EnsureDevice_ShouldBeIdempotent_Integration(t *testing.T
 	defer db.Close()
 	repo := NewUserRepository(db)
 	if _, err := db.Exec(
-		"INSERT INTO users (public_key, username, role, created_at) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING",
+		"INSERT INTO users (public_key, username, role, created_at, issuer) VALUES ($1,$2,$3,$4,$1) ON CONFLICT DO NOTHING",
 		"test-devrepo-ensure-user", "alice", "user", time.Now().Unix(),
 	); err != nil {
 		t.Fatalf("Failed to insert test user: %v", err)
@@ -47,7 +47,7 @@ func TestUserRepository_RevokeDevice_ShouldDeleteOnlyThatDevicesSubscriptions_In
 	defer db.Close()
 	repo := NewUserRepository(db)
 	if _, err := db.Exec(
-		"INSERT INTO users (public_key, username, role, created_at) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING",
+		"INSERT INTO users (public_key, username, role, created_at, issuer) VALUES ($1,$2,$3,$4,$1) ON CONFLICT DO NOTHING",
 		"test-devrepo-revoke-user", "alice", "user", time.Now().Unix(),
 	); err != nil {
 		t.Fatalf("Failed to insert test user: %v", err)
@@ -92,7 +92,7 @@ func TestUserRepository_ListDevices_ShouldHideRevoked_Integration(t *testing.T) 
 	defer db.Close()
 	repo := NewUserRepository(db)
 	if _, err := db.Exec(
-		"INSERT INTO users (public_key, username, role, created_at) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING",
+		"INSERT INTO users (public_key, username, role, created_at, issuer) VALUES ($1,$2,$3,$4,$1) ON CONFLICT DO NOTHING",
 		"test-devrepo-list-user", "alice", "user", time.Now().Unix(),
 	); err != nil {
 		t.Fatalf("Failed to insert test user: %v", err)
@@ -117,7 +117,7 @@ func TestUserRepository_RenameDevice_ShouldPersistNewName_Integration(t *testing
 	defer db.Close()
 	repo := NewUserRepository(db)
 	if _, err := db.Exec(
-		"INSERT INTO users (public_key, username, role, created_at) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING",
+		"INSERT INTO users (public_key, username, role, created_at, issuer) VALUES ($1,$2,$3,$4,$1) ON CONFLICT DO NOTHING",
 		"test-devrepo-rename-user", "alice", "user", time.Now().Unix(),
 	); err != nil {
 		t.Fatalf("Failed to insert test user: %v", err)
@@ -154,7 +154,7 @@ func TestVerifyDelegation_AccountKeySelfDelegation_Integration(t *testing.T) {
 	assert.NoError(t, err)
 	accountKeyB64 := base64.StdEncoding.EncodeToString(accountPub)
 	if _, err := db.Exec(
-		"INSERT INTO users (public_key, username, role, created_at) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING",
+		"INSERT INTO users (public_key, username, role, created_at, issuer) VALUES ($1,$2,$3,$4,$1) ON CONFLICT DO NOTHING",
 		accountKeyB64, "test-devrepo-selfdeleg-alice", "user", time.Now().Unix(),
 	); err != nil {
 		t.Fatalf("Failed to insert test user: %v", err)

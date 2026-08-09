@@ -5,50 +5,20 @@ package keys
 import (
 	"context"
 	"database/sql"
-	"os"
 	"testing"
 
 	_ "github.com/lib/pq"
+
+	"github.com/prappser/prappser-spaces/internal/testdb"
 )
 
-const createTableSQL = `
-CREATE TABLE IF NOT EXISTS space_keys (
-    id TEXT PRIMARY KEY DEFAULT 'main',
-    public_key BYTEA NOT NULL,
-    encrypted_private_key BYTEA NOT NULL,
-    salt BYTEA NOT NULL,
-    nonce BYTEA NOT NULL,
-    created_at BIGINT NOT NULL,
-    algorithm TEXT NOT NULL DEFAULT 'ed25519'
-);
-`
-
+// getTestDB returns a *sql.DB scoped to this package's own Postgres schema,
+// built from the real files/migrations (see internal/testdb) rather than a
+// hand-written copy - so this file can't drift from production schema.
+// space_keys comes from migrations 000001 and 000011.
 func getTestDB(t *testing.T) *sql.DB {
-	dbURL := os.Getenv("TEST_DATABASE_URL")
-	if dbURL == "" {
-		dbURL = "postgres://test:test@localhost:5433/prappser_test?sslmode=disable"
-	}
-
-	db, err := sql.Open("postgres", dbURL)
-	if err != nil {
-		t.Fatalf("Failed to connect to database: %v", err)
-	}
-
-	if err := db.Ping(); err != nil {
-		t.Fatalf("Failed to ping database: %v", err)
-	}
-
-	// Create table
-	if _, err := db.Exec(createTableSQL); err != nil {
-		t.Fatalf("Failed to create table: %v", err)
-	}
-
-	// Clean up before test
-	if _, err := db.Exec("DELETE FROM space_keys"); err != nil {
-		t.Fatalf("Failed to clean table: %v", err)
-	}
-
-	return db
+	t.Helper()
+	return testdb.Connect(t, "keys")
 }
 
 func TestKeyRepository_SaveAndGetSpaceKey_Integration(t *testing.T) {
