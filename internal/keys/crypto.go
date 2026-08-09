@@ -26,6 +26,11 @@ type EncryptedKey struct {
 	EncryptedPrivateKey []byte
 	Salt                []byte
 	Nonce               []byte
+	// LastSeenAt mirrors space_keys.last_seen_at (see migration 000026) -
+	// nil when the row has never been touched. Only GetSpaceKey populates
+	// this; EncodeIdentityBlob deliberately never reads it, so it can't
+	// leak into an identity export.
+	LastSeenAt *int64
 }
 
 func GenerateEd25519KeyPair() (ed25519.PrivateKey, ed25519.PublicKey, error) {

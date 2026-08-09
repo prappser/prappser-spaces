@@ -52,7 +52,7 @@ func newGuestTestRequestHandler(t *testing.T, guestPublicKey, appID string) (fas
 	appEndpoints := application.NewApplicationEndpoints(application.NewApplicationService(appRepo), "space-pk")
 
 	cfg := &Config{TrustProxyHeaders: true}
-	handler := NewRequestHandler(cfg, nil, nil, nil, userService, appEndpoints, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	handler := NewRequestHandler(cfg, nil, nil, nil, userService, appEndpoints, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	return handler, token
 }
 

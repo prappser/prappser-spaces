@@ -10,6 +10,7 @@ import (
 	"github.com/prappser/prappser-spaces/internal/event"
 	"github.com/prappser/prappser-spaces/internal/health"
 	"github.com/prappser/prappser-spaces/internal/invitation"
+	"github.com/prappser/prappser-spaces/internal/keys"
 	"github.com/prappser/prappser-spaces/internal/middleware"
 	"github.com/prappser/prappser-spaces/internal/profile"
 	"github.com/prappser/prappser-spaces/internal/push"
@@ -83,7 +84,7 @@ func enrollUsernameKey(ctx *fasthttp.RequestCtx) string {
 	return strings.ToLower(username)
 }
 
-func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, statusEndpoints *status.StatusEndpoints, healthEndpoints *health.HealthEndpoints, userService *user.UserService, appEndpoints *application.ApplicationEndpoints, invitationEndpoints *invitation.InvitationEndpoints, eventEndpoints *event.EventEndpoints, setupEndpoints *setup.SetupEndpoints, storageEndpoints *storage.Endpoints, wsHandler *websocket.Handler, spaceEndpoints *space.SpaceEndpoints, pushEndpoints *push.PushEndpoints, profileEndpoints *profile.ProfileEndpoints, deviceEndpoints *user.DeviceEndpoints, passwordEndpoints *user.PasswordEndpoints, assertionEndpoints *user.AssertionEndpoints, ownerClaimEndpoints *user.OwnerClaimEndpoints) fasthttp.RequestHandler {
+func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, statusEndpoints *status.StatusEndpoints, healthEndpoints *health.HealthEndpoints, userService *user.UserService, appEndpoints *application.ApplicationEndpoints, invitationEndpoints *invitation.InvitationEndpoints, eventEndpoints *event.EventEndpoints, setupEndpoints *setup.SetupEndpoints, storageEndpoints *storage.Endpoints, wsHandler *websocket.Handler, spaceEndpoints *space.SpaceEndpoints, pushEndpoints *push.PushEndpoints, profileEndpoints *profile.ProfileEndpoints, deviceEndpoints *user.DeviceEndpoints, passwordEndpoints *user.PasswordEndpoints, assertionEndpoints *user.AssertionEndpoints, ownerClaimEndpoints *user.OwnerClaimEndpoints, keyEndpoints *keys.KeyEndpoints) fasthttp.RequestHandler {
 	authMiddleware := middleware.NewAuthMiddleware(userService)
 	corsMiddleware := middleware.NewCORSMiddleware(config.AllowedOrigins)
 	ipRateLimiter := middleware.NewRateLimiter(ipRateLimitPerMinute, time.Minute, config.TrustProxyHeaders)
@@ -92,6 +93,12 @@ func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, status
 
 	handler := func(ctx *fasthttp.RequestCtx) {
 		path := string(ctx.Path())
+
+		// Every served request marks the space identity alive for GET
+		// /status's lastSeenAt (see docs/hosting/selfhost.md) - throttled
+		// internally, and nil-safe for callers (tests) that don't wire
+		// keyEndpoints.
+		keyEndpoints.TouchLastSeen()
 
 		switch {
 		case path == "/setup/railway":
@@ -198,6 +205,19 @@ func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, status
 			method := string(ctx.Method())
 			if method == "POST" {
 				ipRateLimiter.LimitByIP(authMiddleware.RequireAuth(assertionEndpoints.RebindIssuer))(ctx)
+			} else {
+				ctx.Error("Method Not Allowed", fasthttp.StatusMethodNotAllowed)
+			}
+
+		// #115: /space/identity/export lets the owner export this space's
+		// identity keypair for a hosting move - named under /space/... (this
+		// space instance itself) rather than /identity/... so it doesn't read
+		// as a sibling of /identity/rebind above, which is a different
+		// concern (re-pinning an account's issuer).
+		case path == "/space/identity/export":
+			method := string(ctx.Method())
+			if method == "POST" {
+				authMiddleware.RequireRole(keyEndpoints.ExportIdentity, user.RoleOwner)(ctx)
 			} else {
 				ctx.Error("Method Not Allowed", fasthttp.StatusMethodNotAllowed)
 			}

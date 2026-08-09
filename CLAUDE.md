@@ -31,6 +31,8 @@ docker compose up -d && go test -tags=integration ./internal/... .  # Integratio
 | `LOG_LEVEL` | No | `info` | debug/info/warn/error |
 | `STORAGE_TYPE` | No | `local` | `local` or `s3` |
 | `STORAGE_PATH` | No | `./storage` | Local storage path |
+| `SPACE_IDENTITY_IMPORT` | No | — | Import-only; `PRAPSPACE1...` blob from `POST /space/identity/export`, set during a hosting move (see `docs/hosting/selfhost.md`) |
+| `SPACE_IDENTITY_IMPORT_PASSPHRASE` | No | — | Passphrase that decrypts `SPACE_IDENTITY_IMPORT` |
 
 ## Tech Stack
 

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/goccy/go-json"
+	"github.com/prappser/prappser-spaces/internal/keys"
 	"github.com/rs/zerolog/log"
 	"github.com/valyala/fasthttp"
 )
@@ -21,15 +22,20 @@ type StatusEndpoints struct {
 	chunkSizeBytes   int64
 	storageRepo      StorageUsageGetter
 	externalURL      string
+	keyService       *keys.KeyService
 }
 
-func NewEndpoints(version string, maxFileSizeBytes, chunkSizeBytes int64, storageRepo StorageUsageGetter, externalURL string) *StatusEndpoints {
+// NewEndpoints creates a new StatusEndpoints. keyService is nil-safe (see
+// Status) so callers that don't need identityPublicKey/lastSeenAt (e.g.
+// tests) can pass nil.
+func NewEndpoints(version string, maxFileSizeBytes, chunkSizeBytes int64, storageRepo StorageUsageGetter, externalURL string, keyService *keys.KeyService) *StatusEndpoints {
 	return &StatusEndpoints{
 		version:          version,
 		maxFileSizeBytes: maxFileSizeBytes,
 		chunkSizeBytes:   chunkSizeBytes,
 		storageRepo:      storageRepo,
 		externalURL:      externalURL,
+		keyService:       keyService,
 	}
 }
 
@@ -39,6 +45,16 @@ type StatusResponse struct {
 	MaxFileSizeBytes int64  `json:"maxFileSizeBytes"`
 	ChunkSizeBytes   int64  `json:"chunkSizeBytes"`
 	StorageUsedBytes int64  `json:"storageUsedBytes"`
+	// IdentityPublicKey/LastSeenAt let an operator confirm, mid hosting
+	// move (see docs/hosting/selfhost.md), that the new host reports the
+	// same space identity as the old one. ponytail: lastSeenAt tracks this
+	// instance's own request traffic, so it reads as "now" while the space
+	// is healthy - the signal that actually matters is whether it stays
+	// continuous across the restart/cutover, not its value at any single
+	// healthy instant.
+	IdentityPublicKey string `json:"identityPublicKey"`
+	LastSeenAt        int64  `json:"lastSeenAt"`
+	UptimeSeconds     int    `json:"uptimeSeconds"`
 }
 
 func (se *StatusEndpoints) Status(ctx *fasthttp.RequestCtx) {
@@ -58,6 +74,11 @@ func (se *StatusEndpoints) Status(ctx *fasthttp.RequestCtx) {
 		MaxFileSizeBytes: se.maxFileSizeBytes,
 		ChunkSizeBytes:   se.chunkSizeBytes,
 		StorageUsedBytes: storageUsedBytes,
+		UptimeSeconds:    int(time.Since(startTime).Seconds()),
+	}
+	if se.keyService != nil {
+		response.IdentityPublicKey = se.keyService.PublicKeyBase64()
+		response.LastSeenAt = se.keyService.LastSeenAt()
 	}
 
 	ctx.SetContentType("application/json")

@@ -18,6 +18,13 @@ type Config struct {
 	AllowedOrigins    []string
 	MasterPassword    string
 	TrustProxyHeaders bool
+	// IdentityImport/IdentityImportPassphrase (SPACE_IDENTITY_IMPORT /
+	// SPACE_IDENTITY_IMPORT_PASSPHRASE) are optional, import-only: set both
+	// during a hosting move to re-encrypt an exported identity blob under
+	// this instance's MasterPassword (see keys.KeyService.Initialize and
+	// docs/hosting/selfhost.md). Both empty is the normal case.
+	IdentityImport           string
+	IdentityImportPassphrase string
 }
 
 type StorageConfig struct {
@@ -90,6 +97,8 @@ func (c *Config) String() string {
 	masked.Users.MasterPassword = maskSecret(c.Users.MasterPassword)
 	masked.Storage.S3AccessKey = maskSecret(c.Storage.S3AccessKey)
 	masked.Storage.S3SecretKey = maskSecret(c.Storage.S3SecretKey)
+	masked.IdentityImport = maskSecret(c.IdentityImport)
+	masked.IdentityImportPassphrase = maskSecret(c.IdentityImportPassphrase)
 	b, err := json.MarshalIndent(masked, "", "  ")
 	if err != nil {
 		return fmt.Sprintf("%+v", masked)
@@ -166,6 +175,10 @@ func LoadConfig() (*Config, error) {
 	// since production runs behind Railway's proxy; set TRUST_PROXY=false
 	// for local dev / direct exposure where the header is attacker-controlled.
 	config.TrustProxyHeaders = os.Getenv("TRUST_PROXY") != "false"
+
+	// Optional, import-only hosting-move vars - see Config.IdentityImport doc.
+	config.IdentityImport = os.Getenv("SPACE_IDENTITY_IMPORT")
+	config.IdentityImportPassphrase = os.Getenv("SPACE_IDENTITY_IMPORT_PASSPHRASE")
 
 	maxFileSizeMBStr := os.Getenv("STORAGE_MAX_FILE_SIZE_MB")
 	if maxFileSizeMBStr != "" {
