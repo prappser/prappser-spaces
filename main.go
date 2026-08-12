@@ -23,6 +23,7 @@ import (
 	"os"
 	"strings"
 	"time"
+	_ "time/tzdata" // embeds the IANA zone database - the container has no system zoneinfo
 
 	_ "github.com/lib/pq"
 	"github.com/prappser/prappser-spaces/internal"
@@ -33,6 +34,7 @@ import (
 	"github.com/prappser/prappser-spaces/internal/keys"
 	"github.com/prappser/prappser-spaces/internal/profile"
 	"github.com/prappser/prappser-spaces/internal/push"
+	"github.com/prappser/prappser-spaces/internal/reminder"
 	"github.com/prappser/prappser-spaces/internal/setup"
 	"github.com/prappser/prappser-spaces/internal/space"
 	"github.com/prappser/prappser-spaces/internal/status"
@@ -167,6 +169,9 @@ func main() {
 	eventService := event.NewEventService(eventRepository, appRepository, wsHub, pushService)
 	eventEndpoints := event.NewEventEndpoints(eventService)
 
+	reminderRepository := reminder.NewRepository(db)
+	eventService.SetReminderStore(reminderRepository)
+
 	appService := application.NewApplicationService(appRepository)
 	spacePublicKeyString := base64.StdEncoding.EncodeToString(publicKey)
 
@@ -175,6 +180,10 @@ func main() {
 	cleanupScheduler := event.NewCleanupScheduler(eventService, 7)
 	cleanupScheduler.Start()
 	log.Info().Msg("Event cleanup scheduler started")
+
+	reminderScheduler := reminder.NewScheduler(db, eventService, spacePublicKeyString)
+	reminderScheduler.Start()
+	log.Info().Msg("Reminder scheduler started")
 
 	invitationRepository := invitation.NewInvitationRepository(db)
 	invitationService := invitation.NewInvitationService(invitationRepository, privateKey, publicKey, appRepository, db, userRepository, eventService, spacePublicKeyString)

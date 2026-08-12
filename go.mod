@@ -14,6 +14,7 @@ require (
 	github.com/minio/minio-go/v7 v7.0.98
 	github.com/rs/zerolog v1.33.0
 	github.com/stretchr/testify v1.10.0
+	github.com/teambition/rrule-go v1.8.2
 	github.com/valyala/fasthttp v1.58.0
 	golang.org/x/crypto v0.46.0
 )

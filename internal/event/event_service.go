@@ -24,11 +24,20 @@ type EventPusher interface {
 	Push(event *Event, appName string, creatorDisplayName string, recipientPublicKeys []string)
 }
 
+// ReminderStore applies a reminder_changed rule update to the reminder
+// table. Declared here (not in internal/reminder) and injected the same way
+// as appRepo: internal/reminder imports internal/event for its wire types,
+// so event cannot import reminder back without a cycle.
+type ReminderStore interface {
+	ApplyRuleChange(ctx context.Context, data *ReminderChangedData) error
+}
+
 type EventService struct {
-	repo        *EventRepository
-	appRepo     application.ApplicationRepository
-	broadcaster EventBroadcaster
-	pusher      EventPusher // optional; nil disables web push
+	repo          *EventRepository
+	appRepo       application.ApplicationRepository
+	broadcaster   EventBroadcaster
+	pusher        EventPusher   // optional; nil disables web push
+	reminderStore ReminderStore // optional; nil disables reminder_changed execution
 }
 
 func NewEventService(repo *EventRepository, appRepo application.ApplicationRepository, broadcaster EventBroadcaster, pusher EventPusher) *EventService {
@@ -38,6 +47,14 @@ func NewEventService(repo *EventRepository, appRepo application.ApplicationRepos
 		broadcaster: broadcaster,
 		pusher:      pusher,
 	}
+}
+
+// SetReminderStore wires the reminder store after construction, mirroring
+// how main.go builds these services: EventService is constructed before
+// reminder.NewRepository(db) needs a *sql.DB that isn't relevant to the rest
+// of EventService's dependencies.
+func (s *EventService) SetReminderStore(store ReminderStore) {
+	s.reminderStore = store
 }
 
 func (s *EventService) AcceptEvent(ctx context.Context, event *Event, submitter *user.User) (*Event, error) {
@@ -337,6 +354,21 @@ func (s *EventService) produceUserScopedEvent(ctx context.Context, event *Event)
 	return event, nil
 }
 
+// explicitRecipientEventTypes is the allowlist of event types whose
+// data.recipients is trusted as the exact push list, instead of "all
+// members except creator". It must stay an explicit allowlist keyed on
+// event.Type, never "does event.Data contain a recipients key": most
+// validators in event_validator.go (e.g. validateComponentDataChangedData)
+// deliberately accept unknown data keys, since they trust client data for
+// everything else those event types carry. Without this allowlist, any
+// member could submit e.g. a component_data_changed with a forged
+// "recipients" key to suppress push to the real members or aim push at a
+// public key that isn't even a member of the app (GetSubscriptionsForUsers
+// doesn't check membership - it just resolves whatever keys it's given).
+var explicitRecipientEventTypes = map[EventType]bool{
+	EventTypeReminderFired: true,
+}
+
 // broadcastEvent sends an event to all relevant WebSocket clients and queues web push
 // notifications for offline members.
 // For application_deleted events, it additionally broadcasts to each member's user channel
@@ -366,12 +398,24 @@ func (s *EventService) broadcastEvent(event *Event) {
 		}
 	}
 
-	// Web push: notify all members except the event creator.
+	// Web push: notify the explicit recipient list if the event's type is
+	// allowlisted for it (e.g. reminder_fired, targeted at whoever the
+	// client assigned the reminder to - not "all members"), otherwise all
+	// members except the event creator. The allowlisted events are
+	// space-produced, so CreatorPublicKey is the space's own key and would
+	// never match a member's, meaning recipients would reach everyone if the
+	// code fell through to the default branch.
 	if s.pusher != nil && event.ApplicationID != "" {
-		recipientKeys := make([]string, 0, len(members))
-		for _, member := range members {
-			if member.PublicKey != event.CreatorPublicKey {
-				recipientKeys = append(recipientKeys, member.PublicKey)
+		var recipientKeys []string
+		if explicitRecipientEventTypes[event.Type] {
+			recipientKeys = extractRecipients(event.Data)
+		}
+		if len(recipientKeys) == 0 {
+			recipientKeys = make([]string, 0, len(members))
+			for _, member := range members {
+				if member.PublicKey != event.CreatorPublicKey {
+					recipientKeys = append(recipientKeys, member.PublicKey)
+				}
 			}
 		}
 
@@ -506,6 +550,14 @@ func (s *EventService) executeEvent(ctx context.Context, event *Event) error {
 	case "application_after_edit_mode_changed":
 		log.Debug().Str("eventId", event.ID).Msg("[EVENT] Handler: application_after_edit_mode_changed")
 		return s.executeApplicationAfterEditModeChanged(ctx, event)
+	case EventTypeReminderChanged:
+		log.Debug().Str("eventId", event.ID).Msg("[EVENT] Handler: reminder_changed")
+		return s.executeReminderChanged(ctx, event)
+	case EventTypeReminderFired:
+		// Delivery already happened via broadcastEvent/ProduceEvent; the fired
+		// event carries no database state to update on its own.
+		log.Debug().Str("eventId", event.ID).Msg("[EVENT] Handler: reminder_fired (no-op)")
+		return nil
 	case "user_settings_changed":
 		log.Debug().Str("eventId", event.ID).Msg("[EVENT] Handler: user_settings_changed")
 		return s.executeUserSettingsChanged(event)
@@ -714,6 +766,24 @@ func (s *EventService) executeComponentDataChanged(ctx context.Context, event *E
 	return s.appRepo.UpdateComponentData(componentID, component.Data)
 }
 
+// executeReminderChanged applies a reminder_changed rule update to the
+// reminder table via the injected ReminderStore. A nil store (no reminder
+// package wired up, e.g. in tests that construct EventService directly) is
+// a no-op rather than an error, so existing callers keep working unchanged.
+func (s *EventService) executeReminderChanged(ctx context.Context, event *Event) error {
+	if s.reminderStore == nil {
+		log.Debug().Str("eventId", event.ID).Msg("[EVENT] No reminder store wired, skipping reminder_changed")
+		return nil
+	}
+
+	var data ReminderChangedData
+	if err := UnmarshalData(event.Data, &data); err != nil {
+		return fmt.Errorf("failed to unmarshal reminder_changed data: %w", err)
+	}
+
+	return s.reminderStore.ApplyRuleChange(ctx, &data)
+}
+
 // executeApplicationAfterEditModeChanged applies a batch of structural changes
 func (s *EventService) executeApplicationAfterEditModeChanged(ctx context.Context, event *Event) error {
 	changesRaw, ok := event.Data["changes"].([]interface{})
@@ -868,6 +938,27 @@ func getInt(m map[string]interface{}, key string) int {
 		return int(v)
 	}
 	return 0
+}
+
+// extractRecipients reads an optional "recipients" list from event data.
+// []interface{} is the shape MarshalData/JSON always produces (recipients
+// round-trips through json.Marshal/Unmarshal there); []string is accepted
+// too so callers that build the map by hand (tests) don't need to care.
+func extractRecipients(data map[string]interface{}) []string {
+	switch v := data["recipients"].(type) {
+	case []string:
+		return v
+	case []interface{}:
+		keys := make([]string, 0, len(v))
+		for _, item := range v {
+			if s, ok := item.(string); ok && s != "" {
+				keys = append(keys, s)
+			}
+		}
+		return keys
+	default:
+		return nil
+	}
 }
 
 // getInt64Ptr extracts an optional int64 from event data, or nil when the key

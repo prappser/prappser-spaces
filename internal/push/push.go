@@ -16,8 +16,9 @@ type SpaceVapid struct {
 // Categories controls which buckets of events trigger a push for a subscription.
 // Unknown keys are treated as false (forward-compatible).
 type Categories struct {
-	Member bool `json:"member"`
-	Edit   bool `json:"edit"`
+	Member   bool `json:"member"`
+	Edit     bool `json:"edit"`
+	Reminder bool `json:"reminder"`
 }
 
 // Has returns true if the named category is enabled.
@@ -28,6 +29,8 @@ func (c Categories) Has(name string) bool {
 		return c.Member
 	case "edit":
 		return c.Edit
+	case "reminder":
+		return c.Reminder
 	default:
 		return false
 	}
@@ -85,11 +88,15 @@ type PushRepository interface {
 // Returns ("", false) for event types that should not trigger any push notification.
 //
 // Category buckets:
-//   - "member":  member lifecycle events
-//   - "edit":    application content-change events
+//   - "member":   member lifecycle events
+//   - "edit":     application content-change events
+//   - "reminder": timer-fired notifications
 //
 // No-push types: application_created, user_settings_changed, application_deleted
 // (application_created is already covered by onboarding UX; the others have no meaningful push story)
+//
+// reminder_changed (editing a rule) is edit noise, not a notification, so it
+// deliberately has no category here - only reminder_fired pushes.
 func CategoryForEventType(eventType string) (categoryName string, ok bool) {
 	switch event.EventType(eventType) {
 	case event.EventTypeMemberAdded,
@@ -105,9 +112,13 @@ func CategoryForEventType(eventType string) (categoryName string, ok bool) {
 		event.EventTypeApplicationAfterEditModeChanged:
 		return "edit", true
 
+	case event.EventTypeReminderFired:
+		return "reminder", true
+
 	default:
 		// application_created, user_settings_changed, application_deleted,
-		// member_details_changed, and any future unknown types: no push.
+		// member_details_changed, reminder_changed, and any future unknown
+		// types: no push.
 		return "", false
 	}
 }

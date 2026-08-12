@@ -8,19 +8,24 @@ import (
 type EventType string
 
 const (
-	EventTypeMemberAdded                    EventType = "member_added"
-	EventTypeMemberRemoved                  EventType = "member_removed"
-	EventTypeMemberRoleChanged              EventType = "member_role_changed"
-	EventTypeApplicationDataChanged         EventType = "application_data_changed"
-	EventTypeApplicationDeleted             EventType = "application_deleted"
-	EventTypeInviteRevoked                  EventType = "invite_revoked"
-	EventTypeComponentDataChanged           EventType = "component_data_changed"
+	EventTypeMemberAdded                     EventType = "member_added"
+	EventTypeMemberRemoved                   EventType = "member_removed"
+	EventTypeMemberRoleChanged               EventType = "member_role_changed"
+	EventTypeApplicationDataChanged          EventType = "application_data_changed"
+	EventTypeApplicationDeleted              EventType = "application_deleted"
+	EventTypeInviteRevoked                   EventType = "invite_revoked"
+	EventTypeComponentDataChanged            EventType = "component_data_changed"
 	EventTypeApplicationAfterEditModeChanged EventType = "application_after_edit_mode_changed"
-	EventTypeUserSettingsChanged            EventType = "user_settings_changed"
-	EventTypeMemberDetailsChanged           EventType = "member_details_changed"
-	EventTypeApplicationCreated             EventType = "application_created"
-	EventTypeApplicationFileCreated         EventType = "application_file_created"
-	EventTypeApplicationFileDeleted         EventType = "application_file_deleted"
+	EventTypeUserSettingsChanged             EventType = "user_settings_changed"
+	EventTypeMemberDetailsChanged            EventType = "member_details_changed"
+	EventTypeApplicationCreated              EventType = "application_created"
+	EventTypeApplicationFileCreated          EventType = "application_file_created"
+	EventTypeApplicationFileDeleted          EventType = "application_file_deleted"
+	// EventTypeReminderChanged carries the current state of a reminder rule
+	// (component-agnostic; the component owns the meaning of targetKey).
+	EventTypeReminderChanged EventType = "reminder_changed"
+	// EventTypeReminderFired is space-produced only, by the reminder scheduler.
+	EventTypeReminderFired EventType = "reminder_fired"
 )
 
 // IsUserScoped returns true for event types that are user-scoped (no applicationId)
@@ -75,9 +80,9 @@ type MemberRoleChangedData struct {
 
 // ApplicationDataChangedData represents the data for an application_data_changed event
 type ApplicationDataChangedData struct {
-	Version        int      `json:"version"`
-	ApplicationID  string   `json:"applicationId"`
-	ChangedFields  []string `json:"changedFields,omitempty"`
+	Version       int      `json:"version"`
+	ApplicationID string   `json:"applicationId"`
+	ChangedFields []string `json:"changedFields,omitempty"`
 }
 
 // ApplicationDeletedData represents the data for an application_deleted event
@@ -158,6 +163,41 @@ type ApplicationFileDeletedData struct {
 	Version       int    `json:"version"`
 	ApplicationID string `json:"applicationId"`
 	FileID        string `json:"fileId"`
+}
+
+// ReminderChangedData represents the data for a reminder_changed event: the
+// full current state of a rule, keyed by an opaque targetKey the owning
+// component defines. Rev guards out-of-order sync; state is pending or
+// cancelled.
+type ReminderChangedData struct {
+	Version       int      `json:"version"`
+	ID            string   `json:"id"`
+	ApplicationID string   `json:"applicationId"`
+	ComponentID   string   `json:"componentId"`
+	TargetKey     string   `json:"targetKey"`
+	Title         string   `json:"title"`
+	DueAt         int64    `json:"dueAt"`
+	TZ            string   `json:"tz"`
+	Offsets       []string `json:"offsets"`
+	RRule         *string  `json:"rrule"`
+	Recipients    []string `json:"recipients"`
+	State         string   `json:"state"`
+	Rev           int64    `json:"rev"`
+}
+
+// ReminderFiredData represents the data for a reminder_fired event, produced
+// by the space's reminder scheduler (never submitted by a client).
+type ReminderFiredData struct {
+	Version       int      `json:"version"`
+	ApplicationID string   `json:"applicationId"`
+	ComponentID   string   `json:"componentId"`
+	TargetKey     string   `json:"targetKey"`
+	RuleID        string   `json:"ruleId"`
+	OccurrenceAt  int64    `json:"occurrenceAt"`
+	Kind          string   `json:"kind"`
+	Offset        string   `json:"offset"`
+	ItemTitle     string   `json:"itemTitle"`
+	Recipients    []string `json:"recipients"`
 }
 
 // MemberDetailsChangedData represents the data for a member_details_changed event (future use)
