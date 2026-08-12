@@ -21,6 +21,8 @@ var (
 //   - member_role_changed: Only owners can change member roles
 //   - application_data_changed: Any member can update application data
 //   - invite_revoked: Only owners can revoke invitations
+//   - reminder_changed: Any member can create/edit/cancel a reminder rule
+//   - reminder_fired: Space-produced only; unreachable through AcceptEvent
 //
 // Returns ErrUnauthorized if:
 //   - Submitter is nil
@@ -79,6 +81,10 @@ func AuthorizeEvent(event *Event, submitter *user.User, app *application.Applica
 	case EventTypeComponentDataChanged:
 		// Any member can update component data
 
+	case EventTypeReminderChanged:
+		// Any member can create/edit/cancel a reminder rule, same tier as
+		// component_data_changed
+
 	case EventTypeApplicationAfterEditModeChanged:
 		// Any member can modify application structure
 
@@ -91,6 +97,9 @@ func AuthorizeEvent(event *Event, submitter *user.User, app *application.Applica
 
 	case EventTypeApplicationFileCreated, EventTypeApplicationFileDeleted:
 		return fmt.Errorf("%w: file events are space-produced and cannot be submitted by clients", ErrUnauthorized)
+
+	case EventTypeReminderFired:
+		return fmt.Errorf("%w: reminder_fired is space-produced and cannot be submitted by clients", ErrUnauthorized)
 
 	default:
 		return fmt.Errorf("%w: unknown event type: %s", ErrUnauthorized, event.Type)
