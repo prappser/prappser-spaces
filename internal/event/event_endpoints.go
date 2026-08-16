@@ -1,6 +1,7 @@
 package event
 
 import (
+	"errors"
 	"strconv"
 
 	"github.com/goccy/go-json"
@@ -108,10 +109,10 @@ func (ee *EventEndpoints) SubmitEvent(ctx *fasthttp.RequestCtx) {
 		var reason string
 
 		switch {
-		case err == ErrUnauthorized || err.Error() == "unauthorized":
+		case errors.Is(err, ErrUnauthorized) || err.Error() == "unauthorized":
 			statusCode = fasthttp.StatusForbidden
 			reason = "unauthorized"
-		case err == ErrValidation || err.Error() == "validation error":
+		case errors.Is(err, ErrValidation) || err.Error() == "validation error":
 			statusCode = fasthttp.StatusBadRequest
 			reason = "validation_failed"
 		default:
