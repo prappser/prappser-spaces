@@ -26,11 +26,14 @@ const (
 	EventTypeReminderChanged EventType = "reminder_changed"
 	// EventTypeReminderFired is space-produced only, by the reminder scheduler.
 	EventTypeReminderFired EventType = "reminder_fired"
+	// EventTypeTemplateChanged carries the current state of one account-owned
+	// template row (tombstones included) between an account's own devices.
+	EventTypeTemplateChanged EventType = "template_changed"
 )
 
 // IsUserScoped returns true for event types that are user-scoped (no applicationId)
 func IsUserScoped(eventType EventType) bool {
-	return eventType == EventTypeUserSettingsChanged || eventType == EventTypeApplicationCreated
+	return eventType == EventTypeUserSettingsChanged || eventType == EventTypeApplicationCreated || eventType == EventTypeTemplateChanged
 }
 
 // Event represents a system event for application lifecycle changes

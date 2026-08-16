@@ -125,6 +125,17 @@ func AuthorizeUserScopedEvent(event *Event, submitter *user.User) error {
 		if !ok || userPK != submitter.PublicKey {
 			return fmt.Errorf("%w: can only create application events for own user", ErrUnauthorized)
 		}
+	case EventTypeTemplateChanged:
+		userPK, ok := event.Data["userPublicKey"].(string)
+		if !ok || userPK != submitter.PublicKey {
+			return fmt.Errorf("%w: can only sync own templates", ErrUnauthorized)
+		}
+		// Backlog replay routes user-scoped events by creator_public_key
+		// (event_repository.go:150), which the endpoint copies verbatim from
+		// the request body, so it must be pinned to the submitter too.
+		if event.CreatorPublicKey != submitter.PublicKey {
+			return fmt.Errorf("%w: creatorPublicKey must be the submitter", ErrUnauthorized)
+		}
 	default:
 		return fmt.Errorf("%w: unknown user-scoped event type: %s", ErrUnauthorized, event.Type)
 	}

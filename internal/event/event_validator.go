@@ -1,8 +1,10 @@
 package event
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"regexp"
 	"time"
 )
@@ -56,6 +58,8 @@ func ValidateEvent(event *Event) error {
 		return validateReminderChangedData(event.Data)
 	case EventTypeReminderFired:
 		return validateReminderFiredData(event.Data)
+	case EventTypeTemplateChanged:
+		return validateTemplateChangedData(event.Data)
 	default:
 		return fmt.Errorf("%w: unknown event type: %s", ErrValidation, event.Type)
 	}
@@ -305,5 +309,70 @@ func validateApplicationCreatedData(data map[string]interface{}) error {
 	if _, ok := data["applicationName"].(string); !ok || data["applicationName"] == "" {
 		return fmt.Errorf("%w: applicationName is required", ErrValidation)
 	}
+	return nil
+}
+
+// maxTemplateDocBytes caps the size of the opaque template "doc" blob. The
+// client already caps the whole encoded payload at 64 KiB before sending
+// (template_sync_service.dart), so this bound is strictly looser for the
+// same event while still bounding the only field that matters for
+// event-log growth.
+const maxTemplateDocBytes = 64 * 1024
+
+// validateTemplateChangedData validates the shipped flat wire shape
+// (template_changed_event.dart / .g.dart): userPublicKey, id, doc, source,
+// state and rev are the server's real gates. name/description/icon are
+// deliberately NOT validated - the server never reads them, description and
+// icon legitimately arrive as explicit JSON null, and pinning the client's
+// UI limits here would create silent sync breakage if the app ever raises
+// them. The document itself stays opaque JSON; only its size is checked.
+func validateTemplateChangedData(data map[string]interface{}) error {
+	if _, ok := data["userPublicKey"].(string); !ok || data["userPublicKey"] == "" {
+		return fmt.Errorf("%w: userPublicKey is required", ErrValidation)
+	}
+	if _, ok := data["id"].(string); !ok || data["id"] == "" {
+		return fmt.Errorf("%w: id is required", ErrValidation)
+	}
+
+	rev, ok := numberValue(data["rev"])
+	if !ok || rev < 0 {
+		return fmt.Errorf("%w: rev must be >= 0", ErrValidation)
+	}
+	if rev != math.Trunc(rev) {
+		return fmt.Errorf("%w: rev must be an integer", ErrValidation)
+	}
+
+	state, _ := data["state"].(string)
+	if state != "active" && state != "deleted" {
+		return fmt.Errorf("%w: state must be active or deleted", ErrValidation)
+	}
+
+	source, _ := data["source"].(string)
+	if source != "user" && source != "imported" {
+		return fmt.Errorf("%w: source must be user or imported", ErrValidation)
+	}
+
+	doc, ok := data["doc"].(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("%w: doc is required and must be an object", ErrValidation)
+	}
+	docJSON, err := json.Marshal(doc)
+	if err != nil {
+		return fmt.Errorf("%w: doc could not be marshalled: %v", ErrValidation, err)
+	}
+	if len(docJSON) > maxTemplateDocBytes {
+		return fmt.Errorf("%w: doc exceeds maximum size of %d bytes", ErrValidation, maxTemplateDocBytes)
+	}
+
+	createdAt, ok := numberValue(data["createdAt"])
+	if !ok || createdAt < 0 {
+		return fmt.Errorf("%w: createdAt must be a number >= 0", ErrValidation)
+	}
+
+	updatedAt, ok := numberValue(data["updatedAt"])
+	if !ok || updatedAt < 0 {
+		return fmt.Errorf("%w: updatedAt must be a number >= 0", ErrValidation)
+	}
+
 	return nil
 }

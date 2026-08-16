@@ -3,7 +3,6 @@
 package application
 
 import (
-	"database/sql"
 	"testing"
 	"time"
 
@@ -12,28 +11,6 @@ import (
 	"github.com/prappser/prappser-spaces/internal/testdb"
 )
 
-// getTestDB returns a *sql.DB scoped to this package's own Postgres schema,
-// built from the real files/migrations (see internal/testdb) rather than a
-// hand-written copy - so this file can't drift from production schema.
-func getTestDB(t *testing.T) *sql.DB {
-	t.Helper()
-	return testdb.Connect(t, "application")
-}
-
-// insertTestUser inserts a bare-minimum users row. The users schema is
-// strict: issuer is NOT NULL with no default, and role is CHECK'd to
-// owner/user/guest - self-pinning issuer to publicKey (as every real
-// self-registered account does) satisfies both.
-func insertTestUser(t *testing.T, db *sql.DB, publicKey string) {
-	t.Helper()
-	if _, err := db.Exec(
-		"INSERT INTO users (public_key, username, role, created_at, issuer) VALUES ($1,$2,$3,$4,$1)",
-		publicKey, "test-user-"+publicKey, "user", time.Now().Unix(),
-	); err != nil {
-		t.Fatalf("Failed to insert test user %s: %v", publicKey, err)
-	}
-}
-
 // TestRepository_ExpiredMembership_InvisibleToAllFilteredQueries_Integration
 // exercises #117's lazy filter (activeMemberPredicate) against the REAL
 // repository/DB across all six queries it was applied to. The row itself is
@@ -41,13 +18,13 @@ func insertTestUser(t *testing.T, db *sql.DB, publicKey string) {
 // SQL SELECT below still finds it.
 func TestRepository_ExpiredMembership_InvisibleToAllFilteredQueries_Integration(t *testing.T) {
 	// given
-	db := getTestDB(t)
+	db := testdb.Connect(t, "application")
 	defer db.Close()
 	repo := NewRepository(db)
 
 	appID := "test-expiry-app-1"
 	publicKey := "test-expiry-pk-1"
-	insertTestUser(t, db, publicKey)
+	testdb.InsertTestUser(t, db, publicKey)
 	if err := repo.CreateApplication(&Application{ID: appID, Name: "Expiry Integration App", CreatedAt: time.Now().Unix(), UpdatedAt: time.Now().Unix()}); err != nil {
 		t.Fatalf("Failed to create application: %v", err)
 	}
@@ -119,13 +96,13 @@ func TestRepository_ExpiredMembership_InvisibleToAllFilteredQueries_Integration(
 // the existing row in place instead of inserting a duplicate.
 func TestRepository_ReJoin_UpsertsSameRow_NoDuplicate_Integration(t *testing.T) {
 	// given
-	db := getTestDB(t)
+	db := testdb.Connect(t, "application")
 	defer db.Close()
 	repo := NewRepository(db)
 
 	appID := "test-expiry-app-2"
 	publicKey := "test-expiry-pk-2"
-	insertTestUser(t, db, publicKey)
+	testdb.InsertTestUser(t, db, publicKey)
 	if err := repo.CreateApplication(&Application{ID: appID, Name: "Rejoin Integration App", CreatedAt: time.Now().Unix(), UpdatedAt: time.Now().Unix()}); err != nil {
 		t.Fatalf("Failed to create application: %v", err)
 	}
