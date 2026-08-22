@@ -73,8 +73,8 @@ is needed on first boot or after an update.
 ## 6. How updates work
 
 A push to `main` triggers the `docker-publish.yml` GitHub Actions workflow,
-which builds and pushes `ghcr.io/prappser/prappser-spaces:latest` (plus a
-`:<sha>` tag). watchtower polls GHCR every `WATCHTOWER_POLL_INTERVAL` seconds
+which builds and pushes `ghcr.io/prappser/prappser-spaces:latest`. watchtower
+polls GHCR every `WATCHTOWER_POLL_INTERVAL` seconds
 (default 300) and, because only the `prappser-spaces` container carries the
 `com.centurylinklabs.watchtower.enable=true` label, recreates just that
 container when a new `latest` image is available. Caddy and Postgres are
@@ -163,30 +163,35 @@ for the override definition.
 
 ## 7. Rollback
 
-To roll back to a known-good build, pin the image to a specific commit sha
-instead of `latest` in `deploy/docker-compose.yml`:
+Only `latest` is published, so a rollback means building the older commit
+yourself. Clone the repo on the host, check out the commit you want, and build
+it under a local tag:
+
+```bash
+git clone https://github.com/prappser/prappser-spaces
+cd prappser-spaces
+git checkout <sha>
+docker build -t prappser-spaces:rollback .
+```
+
+Then pin that tag in `deploy/docker-compose.yml`:
 
 ```yaml
 prappser-spaces:
-  image: ghcr.io/prappser/prappser-spaces:<sha>
+  image: prappser-spaces:rollback
 ```
 
-Then apply it:
-
-```bash
-docker compose up -d
-```
-
-Watchtower tracks whatever tag is currently running. If you pin to a sha
-while watchtower is still active, it will not touch a pinned tag, since it
-only auto-updates images following a mutable tag against which it can detect
-"newer". Even so, to be safe during a rollback, stop watchtower or remove the
-watchtower label from `prappser-spaces` until you are ready to move back to
-`latest`:
+Stop watchtower first so it cannot pull `latest` back over the rollback, then
+apply:
 
 ```bash
 docker compose stop watchtower
+docker compose up -d prappser-spaces
 ```
+
+When you are ready to return to the current build, restore
+`image: ghcr.io/prappser/prappser-spaces:latest`, then `docker compose up -d prappser-spaces`
+and `docker compose start watchtower`.
 
 ## 8. Backups
 
