@@ -1,0 +1,37 @@
+# Throwaway stack for the prappser-app e2e suite (prappser-app/script/e2e.sh).
+# Separate from docker-compose.yml on purpose: that one publishes host port 5433
+# for the Go integration tests, so reusing it would either collide on that port
+# or make the e2e `down -v` wipe the integration database.
+name: prappser-e2e
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+      POSTGRES_DB: prappser_e2e
+    # No ports: the only client is the spaces container on the compose network.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test -d prappser_e2e"]
+      interval: 1s
+      timeout: 5s
+      retries: 30
+
+  spaces:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://test:test@postgres:5432/prappser_e2e?sslmode=disable
+      MASTER_PASSWORD: e2e-master-password
+      TRUST_PROXY: "false"
+      LOG_LEVEL: warn
+    ports:
+      - "4646:4545"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4545/health"]
+      interval: 1s
+      timeout: 5s
+      retries: 30
