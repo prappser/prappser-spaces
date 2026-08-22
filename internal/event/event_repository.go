@@ -133,94 +133,36 @@ func (r *EventRepository) GetSince(userPublicKey string, sinceEventID string, li
 		limit = 100
 	}
 
-	var query string
-	var args []interface{}
-
-	if sinceEventID == "" {
-		// Return all app-scoped events the user is a member of, plus their own user-scoped events
-		query = `(SELECT DISTINCT e.id, e.created_at, e.application_id, e.sequence_number,
-				         e.type, e.creator_public_key, e.version, e.data
-				  FROM events e
-				  INNER JOIN members m ON e.application_id = m.application_id
-				  WHERE m.public_key = $1)
-				 UNION ALL
-				 (SELECT e.id, e.created_at, e.application_id, e.sequence_number,
-				         e.type, e.creator_public_key, e.version, e.data
-				  FROM events e
-				  WHERE e.application_id IS NULL AND e.creator_public_key = $2)
-				 ORDER BY created_at ASC
-				 LIMIT $3`
-		args = []interface{}{userPublicKey, userPublicKey, limit + 1}
-	} else {
-		var sinceAppID sql.NullString
-		var sinceSequence int64
-		var sinceCreatedAt int64
-		err := r.db.QueryRow("SELECT application_id, sequence_number, created_at FROM events WHERE id = $1", sinceEventID).Scan(&sinceAppID, &sinceSequence, &sinceCreatedAt)
-		if err == sql.ErrNoRows {
-			return r.GetSince(userPublicKey, "", limit)
-		}
-		if err != nil {
+	var sinceOrdinal int64
+	if sinceEventID != "" {
+		err := r.db.QueryRow("SELECT ordinal FROM events WHERE id = $1", sinceEventID).Scan(&sinceOrdinal)
+		if err != nil && err != sql.ErrNoRows {
 			return nil, false, fmt.Errorf("failed to get since event: %w", err)
 		}
-
-		if sinceAppID.Valid {
-			// The sinceEvent was an app-scoped event
-			query = `(SELECT DISTINCT e.id, e.created_at, e.application_id, e.sequence_number,
-					         e.type, e.creator_public_key, e.version, e.data
-					  FROM events e
-					  INNER JOIN members m ON e.application_id = m.application_id
-					  WHERE m.public_key = $1
-					    AND (
-					      (e.application_id = $2 AND (
-					        e.sequence_number > $3
-					        OR (e.sequence_number = $4 AND e.created_at > $5)
-					        OR (e.sequence_number = $6 AND e.created_at = $7 AND e.id > $8)
-					      ))
-					      OR (e.application_id != $9 AND (
-					        e.created_at > $10
-					        OR (e.created_at = $11 AND e.id > $12)
-					      ))
-					    ))
-					 UNION ALL
-					 (SELECT e.id, e.created_at, e.application_id, e.sequence_number,
-					         e.type, e.creator_public_key, e.version, e.data
-					  FROM events e
-					  WHERE e.application_id IS NULL AND e.creator_public_key = $13
-					    AND (e.created_at > $14 OR (e.created_at = $15 AND e.id > $16)))
-					 ORDER BY created_at ASC
-					 LIMIT $17`
-			args = []interface{}{
-				userPublicKey,
-				sinceAppID.String, sinceSequence, sinceSequence, sinceCreatedAt, sinceSequence, sinceCreatedAt, sinceEventID,
-				sinceAppID.String, sinceCreatedAt, sinceCreatedAt, sinceEventID,
-				userPublicKey, sinceCreatedAt, sinceCreatedAt, sinceEventID,
-				limit + 1,
-			}
-		} else {
-			// The sinceEvent was a user-scoped event (application_id IS NULL)
-			query = `(SELECT DISTINCT e.id, e.created_at, e.application_id, e.sequence_number,
-					         e.type, e.creator_public_key, e.version, e.data
-					  FROM events e
-					  INNER JOIN members m ON e.application_id = m.application_id
-					  WHERE m.public_key = $1
-					    AND e.created_at > $2)
-					 UNION ALL
-					 (SELECT e.id, e.created_at, e.application_id, e.sequence_number,
-					         e.type, e.creator_public_key, e.version, e.data
-					  FROM events e
-					  WHERE e.application_id IS NULL AND e.creator_public_key = $3
-					    AND (e.created_at > $4 OR (e.created_at = $5 AND e.id > $6)))
-					 ORDER BY created_at ASC
-					 LIMIT $7`
-			args = []interface{}{
-				userPublicKey, sinceCreatedAt,
-				userPublicKey, sinceCreatedAt, sinceCreatedAt, sinceEventID,
-				limit + 1,
-			}
-		}
+		// sql.ErrNoRows (pruned cursor) leaves sinceOrdinal at 0, which the query
+		// below treats the same as no cursor: a full replay.
 	}
 
-	rows, err := r.db.Query(query, args...)
+	// The cursor key is ordinal, not (created_at, id). created_at is whole seconds
+	// (AcceptEvent overwrites it with time.Now().Unix()) and event ids are
+	// client-minted UUIDv7, so neither can form a total order over the server's
+	// accept sequence; a page boundary landing mid-second used to drop rows.
+	// ordinal is a server-assigned BIGSERIAL, so one predicate serves both the
+	// app-scoped and user-scoped halves with no risk of disagreeing. See #47.
+	query := `(SELECT DISTINCT e.ordinal, e.id, e.created_at, e.application_id, e.sequence_number,
+			         e.type, e.creator_public_key, e.version, e.data
+			  FROM events e
+			  INNER JOIN members m ON e.application_id = m.application_id
+			  WHERE m.public_key = $1 AND e.ordinal > $2)
+			 UNION ALL
+			 (SELECT e.ordinal, e.id, e.created_at, e.application_id, e.sequence_number,
+			         e.type, e.creator_public_key, e.version, e.data
+			  FROM events e
+			  WHERE e.application_id IS NULL AND e.creator_public_key = $1 AND e.ordinal > $2)
+			 ORDER BY ordinal ASC
+			 LIMIT $3`
+
+	rows, err := r.db.Query(query, userPublicKey, sinceOrdinal, limit+1)
 	if err != nil {
 		return nil, false, fmt.Errorf("failed to query events: %w", err)
 	}
@@ -228,12 +170,14 @@ func (r *EventRepository) GetSince(userPublicKey string, sinceEventID string, li
 
 	var events []*Event
 	for rows.Next() {
+		var ordinal int64
 		event := &Event{}
 		var eventType string
 		var dataJSON string
 		var appID sql.NullString
 
 		err := rows.Scan(
+			&ordinal,
 			&event.ID,
 			&event.CreatedAt,
 			&appID,
