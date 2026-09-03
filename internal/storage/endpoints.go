@@ -237,6 +237,11 @@ func (e *Endpoints) UploadUserAvatar(ctx *fasthttp.RequestCtx) {
 		req.ContentType = detectContentType(fileHeader.Filename)
 	}
 
+	if !avatarContentTypes[req.ContentType] {
+		ctx.Error("Avatar must be a JPEG, PNG, GIF, or WebP image", fasthttp.StatusBadRequest)
+		return
+	}
+
 	var avatarSpaceID *string
 	if authenticatedUser.SpaceID != "" {
 		avatarSpaceID = &authenticatedUser.SpaceID
@@ -306,6 +311,13 @@ func (e *Endpoints) InitChunkedUpload(ctx *fasthttp.RequestCtx) {
 	if err := json.Unmarshal(ctx.PostBody(), &req); err != nil {
 		ctx.Error("Invalid request body", fasthttp.StatusBadRequest)
 		return
+	}
+
+	// A JSON body has no per-part Content-Type header to fall back from,
+	// unlike the multipart paths above, so resolve empty/generic here too —
+	// otherwise the service's isValidContentType gate rejects empty as invalid.
+	if req.ContentType == "" || req.ContentType == "application/octet-stream" {
+		req.ContentType = detectContentType(req.Filename)
 	}
 
 	response, err := e.service.InitChunkedUpload(ctx, &appID, publicKey, spaceID, &req)
@@ -444,13 +456,65 @@ func (e *Endpoints) GetFile(ctx *fasthttp.RequestCtx) {
 	}
 	defer reader.Close()
 
-	ctx.SetContentType(stored.ContentType)
-	ctx.Response.Header.Set("Content-Disposition", "inline; filename=\""+stored.Filename+"\"")
+	disposition := "attachment"
+	if inlineContentTypes[stored.ContentType] {
+		disposition = "inline"
+	}
+	filename := sanitizeFilenameForHeader(stored.Filename)
+
+	// A row predating the isValidContentType gate in Service.Upload/
+	// InitChunkedUpload could still hold a poisoned value; never splice it
+	// into a response header unvalidated.
+	contentType := stored.ContentType
+	if !isValidContentType(contentType) {
+		contentType = "application/octet-stream"
+	}
+	ctx.SetContentType(contentType)
+	ctx.Response.Header.Set("X-Content-Type-Options", "nosniff")
+	ctx.Response.Header.Set("Content-Disposition", disposition+"; filename=\""+filename+"\"")
 	ctx.Response.Header.Set("Content-Length", strconv.FormatInt(stored.SizeBytes, 10))
 
 	if _, err := io.Copy(ctx, reader); err != nil {
 		log.Error().Err(err).Msg("Failed to stream file")
 	}
+}
+
+// inlineContentTypes is the render-safe set the app knows how to preview
+// inline. Everything else is served as an attachment. This is the old
+// upload allowlist, repurposed for serving instead of upload validation.
+var inlineContentTypes = map[string]bool{
+	"image/jpeg": true,
+	"image/png":  true,
+	"image/gif":  true,
+	"image/webp": true,
+	"video/mp4":  true,
+	"video/webm": true,
+	"video/mov":  true,
+}
+
+// avatarContentTypes is the sole content-type gate on the avatar upload path
+// (Upload itself no longer validates, see service.go). Deliberately narrower
+// than inlineContentTypes: no image/svg+xml (active content, not safe as an
+// avatar) and no video types (a video avatar was only ever allowed as a side
+// effect of the old shared allowlist).
+var avatarContentTypes = map[string]bool{
+	"image/jpeg": true,
+	"image/png":  true,
+	"image/gif":  true,
+	"image/webp": true,
+}
+
+// sanitizeFilenameForHeader strips characters that would let a stored
+// filename break out of the quoted Content-Disposition header value.
+// Filenames are user-controlled and are spliced into the header unescaped.
+func sanitizeFilenameForHeader(filename string) string {
+	return strings.Map(func(r rune) rune {
+		switch r {
+		case '"', '\\', '\r', '\n':
+			return -1
+		}
+		return r
+	}, filename)
 }
 
 func (e *Endpoints) GetThumbnail(ctx *fasthttp.RequestCtx) {
@@ -612,6 +676,10 @@ func newEventID() string {
 	return id.String()
 }
 
+// detectContentType mirrors FilePickerService._getMimeTypeFromExtension in
+// the Dart client (file_picker_service.dart) so a file uploaded without an
+// explicit MIME type gets labelled the same way the client would have
+// labelled it. The two tables must stay in sync.
 func detectContentType(filename string) string {
 	dotIndex := strings.LastIndex(filename, ".")
 	if dotIndex == -1 || dotIndex == len(filename)-1 {
@@ -627,12 +695,58 @@ func detectContentType(filename string) string {
 		return "image/gif"
 	case "webp":
 		return "image/webp"
+	case "bmp":
+		return "image/bmp"
+	case "svg":
+		return "image/svg+xml"
 	case "mp4":
 		return "video/mp4"
 	case "webm":
 		return "video/webm"
 	case "mov":
 		return "video/mov"
+	case "avi":
+		return "video/x-msvideo"
+	case "mkv":
+		return "video/x-matroska"
+	case "mp3":
+		return "audio/mpeg"
+	case "wav":
+		return "audio/wav"
+	case "ogg":
+		return "audio/ogg"
+	case "flac":
+		return "audio/flac"
+	case "pdf":
+		return "application/pdf"
+	case "doc":
+		return "application/msword"
+	case "docx":
+		return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+	case "xls":
+		return "application/vnd.ms-excel"
+	case "xlsx":
+		return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+	case "ppt":
+		return "application/vnd.ms-powerpoint"
+	case "pptx":
+		return "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+	case "txt":
+		return "text/plain"
+	case "csv":
+		return "text/csv"
+	case "json":
+		return "application/json"
+	case "xml":
+		return "application/xml"
+	case "html":
+		return "text/html"
+	case "zip":
+		return "application/zip"
+	case "rar":
+		return "application/x-rar-compressed"
+	case "7z":
+		return "application/x-7z-compressed"
 	default:
 		return "application/octet-stream"
 	}

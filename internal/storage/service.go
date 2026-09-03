@@ -12,6 +12,7 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 	"io"
+	"mime"
 	"path/filepath"
 	"strings"
 	"time"
@@ -26,16 +27,28 @@ const (
 	maxThumbnailHeight = 300
 
 	pqUniqueViolation = "23505"
+
+	// maxContentTypeLength caps the stored content type; the DB column is
+	// unbounded TEXT, so this is an app-level sanity limit, not a schema one.
+	maxContentTypeLength = 255
 )
 
-var allowedContentTypes = map[string]bool{
-	"image/jpeg": true,
-	"image/png":  true,
-	"image/gif":  true,
-	"image/webp": true,
-	"video/mp4":  true,
-	"video/webm": true,
-	"video/mov":  true,
+// isValidContentType reports whether contentType is a well-formed, single-line
+// media type, safe to persist and later reflect verbatim into a response
+// header (see GetFile's ctx.SetContentType). mime.ParseMediaType alone
+// already rejects a CRLF-injected value; the explicit control-byte scan
+// below is defense in depth against one, independent of the stdlib grammar.
+func isValidContentType(contentType string) bool {
+	if contentType == "" || len(contentType) > maxContentTypeLength {
+		return false
+	}
+	for i := 0; i < len(contentType); i++ {
+		if b := contentType[i]; b < 0x20 || b == 0x7f {
+			return false
+		}
+	}
+	_, _, err := mime.ParseMediaType(contentType)
+	return err == nil
 }
 
 type Service struct {
@@ -55,11 +68,15 @@ func NewService(repo *Repository, backend StorageBackend, maxFileSize int64) *Se
 	}
 }
 
+// Upload no longer gates on a content-type allowlist: req.ContentType is
+// client-supplied (see endpoints.go), so the allowlist never validated the
+// actual bytes and was never a content-integrity control. Serving hardens
+// against it instead (see GetFile's inlineContentTypes). isValidContentType
+// below replaces the shape validation the allowlist provided incidentally.
 func (s *Service) Upload(ctx context.Context, appID *string, uploaderPublicKey string, spaceID *string, req *UploadRequest, data io.Reader, baseURL string) (*Storage, error) {
-	if !allowedContentTypes[req.ContentType] {
-		return nil, fmt.Errorf("unsupported content type: %s", req.ContentType)
+	if !isValidContentType(req.ContentType) {
+		return nil, fmt.Errorf("invalid content type: %q", req.ContentType)
 	}
-
 	if req.SizeBytes > s.maxFileSize {
 		return nil, fmt.Errorf("file too large: %d bytes (max: %d)", req.SizeBytes, s.maxFileSize)
 	}
@@ -248,11 +265,12 @@ func (s *Service) CleanupApplicationStorage(ctx context.Context, appID string) e
 	return nil
 }
 
+// See Upload's doc-comment: no content-type allowlist here either, so the
+// same isValidContentType gate applies.
 func (s *Service) InitChunkedUpload(ctx context.Context, appID *string, uploaderPublicKey string, spaceID *string, req *ChunkedUploadInitRequest) (*ChunkedUploadInitResponse, error) {
-	if !allowedContentTypes[req.ContentType] {
-		return nil, fmt.Errorf("unsupported content type: %s", req.ContentType)
+	if !isValidContentType(req.ContentType) {
+		return nil, fmt.Errorf("invalid content type: %q", req.ContentType)
 	}
-
 	if req.TotalSize > s.maxFileSize {
 		return nil, fmt.Errorf("file too large: %d bytes (max: %d)", req.TotalSize, s.maxFileSize)
 	}
@@ -492,6 +510,9 @@ func (s *Service) processImage(ctx context.Context, stored *Storage, data []byte
 	}
 }
 
+// extensionFromContentType mirrors detectContentType's table in endpoints.go
+// (which in turn mirrors the Dart client's), used as a fallback when a
+// filename has no extension of its own.
 func extensionFromContentType(contentType string) string {
 	switch contentType {
 	case "image/jpeg":
@@ -502,12 +523,58 @@ func extensionFromContentType(contentType string) string {
 		return ".gif"
 	case "image/webp":
 		return ".webp"
+	case "image/bmp":
+		return ".bmp"
+	case "image/svg+xml":
+		return ".svg"
 	case "video/mp4":
 		return ".mp4"
 	case "video/webm":
 		return ".webm"
 	case "video/mov":
 		return ".mov"
+	case "video/x-msvideo":
+		return ".avi"
+	case "video/x-matroska":
+		return ".mkv"
+	case "audio/mpeg":
+		return ".mp3"
+	case "audio/wav":
+		return ".wav"
+	case "audio/ogg":
+		return ".ogg"
+	case "audio/flac":
+		return ".flac"
+	case "application/pdf":
+		return ".pdf"
+	case "application/msword":
+		return ".doc"
+	case "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+		return ".docx"
+	case "application/vnd.ms-excel":
+		return ".xls"
+	case "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
+		return ".xlsx"
+	case "application/vnd.ms-powerpoint":
+		return ".ppt"
+	case "application/vnd.openxmlformats-officedocument.presentationml.presentation":
+		return ".pptx"
+	case "text/plain":
+		return ".txt"
+	case "text/csv":
+		return ".csv"
+	case "application/json":
+		return ".json"
+	case "application/xml":
+		return ".xml"
+	case "text/html":
+		return ".html"
+	case "application/zip":
+		return ".zip"
+	case "application/x-rar-compressed":
+		return ".rar"
+	case "application/x-7z-compressed":
+		return ".7z"
 	default:
 		return ""
 	}
