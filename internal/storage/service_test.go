@@ -1,9 +1,12 @@
 package storage
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
+	"mime/multipart"
+	"net/textproto"
 	"strings"
 	"sync"
 	"testing"
@@ -165,6 +168,10 @@ func (m *mockAppRepo) GetApplicationsByMemberPublicKey(_ string) ([]*application
 type mockStorageService struct {
 	repo    *mockStorageRepo
 	backend *mockBackend
+	// uploadResult/uploadErr, when either is non-nil, is returned by Upload
+	// instead of the "not implemented" default below.
+	uploadResult *Storage
+	uploadErr    error
 }
 
 func (m *mockStorageService) Get(_ context.Context, id, _ string) (*Storage, error) {
@@ -188,6 +195,9 @@ func (m *mockStorageService) GetThumbnail(_ context.Context, id string) (io.Read
 }
 
 func (m *mockStorageService) Upload(_ context.Context, _ *string, _ string, _ *string, _ *UploadRequest, _ io.Reader, _ string) (*Storage, error) {
+	if m.uploadResult != nil || m.uploadErr != nil {
+		return m.uploadResult, m.uploadErr
+	}
 	return nil, fmt.Errorf("not implemented in mock")
 }
 
@@ -195,8 +205,29 @@ func (m *mockStorageService) Delete(_ context.Context, _, _ string) error {
 	return fmt.Errorf("not implemented in mock")
 }
 
-func (m *mockStorageService) InitChunkedUpload(_ context.Context, _ *string, _ string, _ *string, _ *ChunkedUploadInitRequest) (*ChunkedUploadInitResponse, error) {
-	return nil, fmt.Errorf("not implemented in mock")
+// InitChunkedUpload mirrors the real Service's isValidContentType gate and
+// persist-on-success behavior, letting endpoint tests drive the actual
+// content-type exploit path without a real DB-backed Repository.
+func (m *mockStorageService) InitChunkedUpload(_ context.Context, appID *string, uploaderPublicKey string, spaceID *string, req *ChunkedUploadInitRequest) (*ChunkedUploadInitResponse, error) {
+	if !isValidContentType(req.ContentType) {
+		return nil, fmt.Errorf("invalid content type: %q", req.ContentType)
+	}
+	stored := &Storage{
+		ID:                req.ID,
+		ApplicationID:     appID,
+		UploaderPublicKey: uploaderPublicKey,
+		Filename:          req.Filename,
+		ContentType:       req.ContentType,
+		SizeBytes:         req.TotalSize,
+		StoragePath:       req.ID,
+		Checksum:          req.Checksum,
+		Status:            string(StorageStatusPending),
+		SpaceID:           spaceID,
+	}
+	if err := m.repo.Create(stored); err != nil {
+		return nil, err
+	}
+	return &ChunkedUploadInitResponse{StorageID: req.ID, StoragePath: stored.StoragePath}, nil
 }
 
 func (m *mockStorageService) UploadChunk(_ context.Context, _ string, _ int, _ io.Reader) error {
@@ -211,7 +242,76 @@ func (m *mockStorageService) CleanupApplicationStorage(_ context.Context, _ stri
 	return nil
 }
 
+// ---- mock user repository (avatar tests only) ----
+
+// mockUserRepoStorage is a no-op user.UserRepository stub: UploadUserAvatar
+// only needs UpdateAvatarStorageID to not panic, the rest of the interface
+// is never exercised by these tests.
+type mockUserRepoStorage struct{}
+
+func (m *mockUserRepoStorage) CreateUser(_ *user.User) error                   { return nil }
+func (m *mockUserRepoStorage) GetUserByPublicKey(_ string) (*user.User, error) { return nil, nil }
+func (m *mockUserRepoStorage) UpdateUserRole(_, _ string) error                { return nil }
+func (m *mockUserRepoStorage) UpdateAvatarStorageID(_ string, _ *string) error { return nil }
+func (m *mockUserRepoStorage) UpdateUsername(_, _ string) error                { return nil }
+func (m *mockUserRepoStorage) UpdateUserIssuer(_, _ string) error              { return nil }
+func (m *mockUserRepoStorage) SetUserIssuer(_, _ string) error                 { return nil }
+func (m *mockUserRepoStorage) EnsureDevice(_, _ string, _ *string, _ int64) error {
+	return nil
+}
+func (m *mockUserRepoStorage) GetDevice(_ string) (*user.Device, error)     { return nil, nil }
+func (m *mockUserRepoStorage) ListDevices(_ string) ([]*user.Device, error) { return nil, nil }
+func (m *mockUserRepoStorage) RevokeDevice(_ string, _ int64) error         { return nil }
+func (m *mockUserRepoStorage) RenameDevice(_, _ string) error               { return nil }
+func (m *mockUserRepoStorage) TouchDeviceLastSeen(_ string, _ int64) error  { return nil }
+func (m *mockUserRepoStorage) SetPasswordCredentials(_, _, _, _, _ string) error {
+	return nil
+}
+func (m *mockUserRepoStorage) GetPasswordCredential(_ string) (string, string, error) {
+	return "", "", nil
+}
+func (m *mockUserRepoStorage) GetPasswordHandle(_ string) (string, error) { return "", nil }
+func (m *mockUserRepoStorage) GetEscrow(_ string) (string, string, error) {
+	return "", "", nil
+}
+func (m *mockUserRepoStorage) UpdateUserState(_, _ string) error { return nil }
+func (m *mockUserRepoStorage) ClaimOwner(_, _, _, _, _, _ string, _ *string, _ int64) error {
+	return nil
+}
+func (m *mockUserRepoStorage) HasClaim() (bool, error) { return false, nil }
+
 // ---- helpers ----
+
+// newAvatarUploadRequestCtx builds a fasthttp.RequestCtx carrying a real
+// multipart/form-data body, since UploadUserAvatar parses the request via
+// ctx.MultipartForm() rather than accepting pre-parsed fields.
+func newAvatarUploadRequestCtx(t *testing.T, filename, contentType string, fileBytes []byte, storageID string) *fasthttp.RequestCtx {
+	t.Helper()
+
+	var buf bytes.Buffer
+	w := multipart.NewWriter(&buf)
+	part, err := w.CreatePart(textproto.MIMEHeader{
+		"Content-Disposition": []string{fmt.Sprintf(`form-data; name="file"; filename="%s"`, filename)},
+		"Content-Type":        []string{contentType},
+	})
+	if err != nil {
+		t.Fatalf("failed to create multipart part: %v", err)
+	}
+	if _, err := part.Write(fileBytes); err != nil {
+		t.Fatalf("failed to write multipart part: %v", err)
+	}
+	if err := w.WriteField("id", storageID); err != nil {
+		t.Fatalf("failed to write id field: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("failed to close multipart writer: %v", err)
+	}
+
+	ctx := newTestRequestCtxStorage("POST")
+	ctx.Request.Header.SetContentType(w.FormDataContentType())
+	ctx.Request.SetBody(buf.Bytes())
+	return ctx
+}
 
 func newTestEndpointsStorage(svc storageService, isMember bool) *Endpoints {
 	return &Endpoints{
@@ -277,6 +377,88 @@ func TestGetFile_BlobMissing_Returns404(t *testing.T) {
 	// then
 	assert.Equal(t, fasthttp.StatusNotFound, ctx.Response.StatusCode())
 	assert.Contains(t, string(ctx.Response.Body()), "file not found")
+}
+
+// TestGetFile_PDF_SetsAttachmentAndNosniff verifies that a content type
+// outside the render-safe inline set is served as an attachment, with
+// X-Content-Type-Options always set regardless of content type.
+func TestGetFile_PDF_SetsAttachmentAndNosniff(t *testing.T) {
+	// given
+	backend := newMockBackend()
+	backend.objects["app-1/2026/05/file-pdf.pdf"] = "pdf bytes"
+
+	repo := newMockStorageRepo()
+	repo.records["file-pdf"] = &Storage{
+		ID:                "file-pdf",
+		UploaderPublicKey: "user-pk-1",
+		Filename:          "report.pdf",
+		ContentType:       "application/pdf",
+		SizeBytes:         9,
+		StoragePath:       "app-1/2026/05/file-pdf.pdf",
+		CreatedAt:         time.Now().Unix(),
+		Status:            string(StorageStatusReady),
+	}
+
+	svc := &mockStorageService{repo: repo, backend: backend}
+	ep := newTestEndpointsStorage(svc, true)
+
+	ctx := newTestRequestCtxStorage("GET")
+	setStorageAuthUser(ctx, storageTestUser("user-pk-1"))
+	ctx.SetUserValue("storageID", "file-pdf")
+
+	// when
+	ep.GetFile(ctx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusOK, ctx.Response.StatusCode())
+	assert.Equal(t, "nosniff", string(ctx.Response.Header.Peek("X-Content-Type-Options")))
+	assert.Equal(t, `attachment; filename="report.pdf"`, string(ctx.Response.Header.Peek("Content-Disposition")))
+}
+
+// TestGetFile_JPEG_SetsInlineDisposition verifies that a content type in the
+// render-safe set is still served inline, so previews keep working.
+func TestGetFile_JPEG_SetsInlineDisposition(t *testing.T) {
+	// given
+	backend := newMockBackend()
+	backend.objects["app-1/2026/05/file-jpg.jpg"] = "jpeg bytes"
+
+	repo := newMockStorageRepo()
+	repo.records["file-jpg"] = &Storage{
+		ID:                "file-jpg",
+		UploaderPublicKey: "user-pk-1",
+		Filename:          "photo.jpg",
+		ContentType:       "image/jpeg",
+		SizeBytes:         10,
+		StoragePath:       "app-1/2026/05/file-jpg.jpg",
+		CreatedAt:         time.Now().Unix(),
+		Status:            string(StorageStatusReady),
+	}
+
+	svc := &mockStorageService{repo: repo, backend: backend}
+	ep := newTestEndpointsStorage(svc, true)
+
+	ctx := newTestRequestCtxStorage("GET")
+	setStorageAuthUser(ctx, storageTestUser("user-pk-1"))
+	ctx.SetUserValue("storageID", "file-jpg")
+
+	// when
+	ep.GetFile(ctx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusOK, ctx.Response.StatusCode())
+	assert.Equal(t, "nosniff", string(ctx.Response.Header.Peek("X-Content-Type-Options")))
+	assert.Equal(t, `inline; filename="photo.jpg"`, string(ctx.Response.Header.Peek("Content-Disposition")))
+}
+
+// TestSanitizeFilenameForHeader verifies the header-splicing characters are
+// stripped from a user-controlled filename before it lands in the response.
+func TestSanitizeFilenameForHeader(t *testing.T) {
+	got := sanitizeFilenameForHeader("evil\"; x=1\r\nSet-Cookie: a=b\\.txt")
+	assert.NotContains(t, got, "\"")
+	assert.NotContains(t, got, "\\")
+	assert.NotContains(t, got, "\r")
+	assert.NotContains(t, got, "\n")
+	assert.Equal(t, "evil; x=1Set-Cookie: a=b.txt", got)
 }
 
 // TestGet_PendingRow_TreatedAsNotFound verifies that a storage record with
@@ -349,4 +531,150 @@ func TestCleanupPending_MockWiring(t *testing.T) {
 	assert.False(t, staleExists, "stale pending row must be deleted")
 	assert.True(t, freshExists, "fresh pending row must be kept")
 	assert.False(t, staleChunksExist, "chunks for stale row must be cleaned up")
+}
+
+// TestUploadUserAvatar_RejectsPDF verifies that a PDF avatar upload is
+// rejected with 400 before it ever reaches storage or the user repository.
+func TestUploadUserAvatar_RejectsPDF(t *testing.T) {
+	// given
+	svc := &mockStorageService{repo: newMockStorageRepo(), backend: newMockBackend()}
+	ep := &Endpoints{
+		service:  svc,
+		appRepo:  &mockAppRepo{isMember: true},
+		userRepo: &mockUserRepoStorage{},
+	}
+
+	ctx := newAvatarUploadRequestCtx(t, "malware.pdf", "application/pdf", []byte("%PDF-1.4"), "avatar-1")
+	setStorageAuthUser(ctx, storageTestUser("user-pk-1"))
+
+	// when
+	ep.UploadUserAvatar(ctx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusBadRequest, ctx.Response.StatusCode())
+}
+
+// TestUploadUserAvatar_AcceptsPNG verifies that a PNG avatar upload passes
+// the content-type gate and completes successfully.
+func TestUploadUserAvatar_AcceptsPNG(t *testing.T) {
+	// given
+	svc := &mockStorageService{
+		repo:         newMockStorageRepo(),
+		backend:      newMockBackend(),
+		uploadResult: &Storage{ID: "avatar-2", ContentType: "image/png", Filename: "avatar.png"},
+	}
+	ep := &Endpoints{
+		service:  svc,
+		appRepo:  &mockAppRepo{isMember: true},
+		userRepo: &mockUserRepoStorage{},
+	}
+
+	ctx := newAvatarUploadRequestCtx(t, "avatar.png", "image/png", []byte("fake png bytes"), "avatar-2")
+	setStorageAuthUser(ctx, storageTestUser("user-pk-1"))
+
+	// when
+	ep.UploadUserAvatar(ctx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusCreated, ctx.Response.StatusCode())
+}
+
+// TestDetectContentType_PDF verifies detectContentType recognises the
+// document extensions added alongside issue #220.
+func TestDetectContentType_PDF(t *testing.T) {
+	assert.Equal(t, "application/pdf", detectContentType("report.pdf"))
+}
+
+// TestDetectContentType_UnknownExtension_ReturnsOctetStream verifies the
+// fallback for a genuinely unrecognised extension is preserved.
+func TestDetectContentType_UnknownExtension_ReturnsOctetStream(t *testing.T) {
+	assert.Equal(t, "application/octet-stream", detectContentType("mystery.xyz123"))
+}
+
+// TestIsValidContentType covers the accept/reject table for the header-
+// injection fix (issue #220 follow-up). mime.ParseMediaType itself rejects
+// every CRLF/LF payload below, including the control-char-in-quoted-
+// parameter case — not only the explicit byte scan.
+func TestIsValidContentType(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want bool
+	}{
+		{"CRLF header injection", "text/plain\r\nSet-Cookie: a=b", false},
+		{"CRLF blank line then body", "text/plain\r\n\r\ninjected", false},
+		{"bare LF", "text/plain\nX: y", false},
+		{"plain pdf", "application/pdf", true},
+		{"jpeg with charset param", "image/jpeg; charset=utf-8", true},
+		{"octet-stream", "application/octet-stream", true},
+		{"empty", "", false},
+		{"control char in quoted param value", "text/plain; name=\"a\rb\"", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			assert.Equal(t, c.want, isValidContentType(c.in))
+		})
+	}
+}
+
+// TestInitChunkedUpload_CRLFContentType_Returns400AndNotPersisted drives the
+// exploit path (issue #220 follow-up): a JSON contentType field carrying a
+// \r\n escape decodes, via encoding/json, into a literal CRLF that must be
+// rejected before the storage row is persisted.
+func TestInitChunkedUpload_CRLFContentType_Returns400AndNotPersisted(t *testing.T) {
+	// given
+	repo := newMockStorageRepo()
+	svc := &mockStorageService{repo: repo, backend: newMockBackend()}
+	ep := newTestEndpointsStorage(svc, true)
+
+	body := `{"id":"chunked-evil","filename":"a.txt","contentType":"text/plain\r\nSet-Cookie: a=b","totalSize":10,"chunkSize":10,"totalChunks":1}`
+
+	ctx := newTestRequestCtxStorage("POST")
+	ctx.QueryArgs().Set("applicationId", "app-1")
+	ctx.Request.SetBody([]byte(body))
+	setStorageAuthUser(ctx, storageTestUser("user-pk-1"))
+
+	// when
+	ep.InitChunkedUpload(ctx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusBadRequest, ctx.Response.StatusCode())
+	_, err := repo.GetByID("chunked-evil")
+	assert.Error(t, err, "rejected upload must not be persisted")
+}
+
+// TestGetFile_PoisonedContentType_FallsBackToOctetStream verifies the
+// defense-in-depth fallback in GetFile: a row predating the
+// isValidContentType gate must not have its content type spliced into the
+// response header unvalidated.
+func TestGetFile_PoisonedContentType_FallsBackToOctetStream(t *testing.T) {
+	// given
+	backend := newMockBackend()
+	backend.objects["app-1/2026/05/file-evil.bin"] = "data"
+
+	repo := newMockStorageRepo()
+	repo.records["file-evil"] = &Storage{
+		ID:                "file-evil",
+		UploaderPublicKey: "user-pk-1",
+		Filename:          "evil.bin",
+		ContentType:       "text/plain\r\nSet-Cookie: a=b",
+		SizeBytes:         4,
+		StoragePath:       "app-1/2026/05/file-evil.bin",
+		CreatedAt:         time.Now().Unix(),
+		Status:            string(StorageStatusReady),
+	}
+
+	svc := &mockStorageService{repo: repo, backend: backend}
+	ep := newTestEndpointsStorage(svc, true)
+
+	ctx := newTestRequestCtxStorage("GET")
+	setStorageAuthUser(ctx, storageTestUser("user-pk-1"))
+	ctx.SetUserValue("storageID", "file-evil")
+
+	// when
+	ep.GetFile(ctx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusOK, ctx.Response.StatusCode())
+	assert.Equal(t, "application/octet-stream", string(ctx.Response.Header.ContentType()))
 }
