@@ -49,14 +49,22 @@ type User struct {
 	// a User keeps emitting byte-identical payloads.
 	HasPassword bool `json:"hasPassword,omitempty"`
 	// UserStateBlob is the account's escrowed user-state blob (see GetEscrow),
-	// exposed so the account-key device can union it with local state after
-	// another device's PasswordEndpoints.UpdateUserState call refreshes it
-	// (#137). Populated only by GetProfile, and only when the caller IS the
-	// account-key device (DevicePublicKey == PublicKey, same guard
-	// UpdateUserState uses) - secondary devices never consume this blob, so
-	// GetProfile skips the GetEscrow round-trip for them entirely. omitempty
-	// for the same byte-identical-payload reason as HasPassword above.
+	// exposed so a device can union it with local state after another
+	// device's PasswordEndpoints.UpdateUserState call refreshes it (#137).
+	// Populated by GetProfile for every device unconditionally: the blob is
+	// sealed client-side under a key derived from the account seed, so a
+	// device without that seed just receives ciphertext it can't open -
+	// gating the lookup to the account-key device was a DB round-trip
+	// optimization, never a security boundary. omitempty for the same
+	// byte-identical-payload reason as HasPassword above.
 	UserStateBlob string `json:"userStateBlob,omitempty"`
+	// HasEscrow reports whether this space holds an escrowed account-key
+	// blob for the account (accountKeyBlob != "" from GetEscrow). Derived
+	// fresh on every GetProfile call, never stored on the account record.
+	// Deliberately a boolean, not the blob itself: exposing accountKeyBlob
+	// here would let any authenticated device pull it and crack it offline
+	// without proving the password.
+	HasEscrow bool `json:"hasEscrow,omitempty"`
 }
 
 // Device is one entry in a user's device roster (see device_repository.go).
@@ -131,11 +139,18 @@ type UserRepository interface {
 	// on-demand lookup (see the User struct's UserStateBlob doc comment) -
 	// GetUserByPublicKey itself never populates it.
 	GetEscrow(publicKey string) (accountKeyBlob, userState string, err error)
-	// UpdateUserState overwrites the account's escrowed user-state blob so
-	// the account-key device can refresh it after a local merge (#137,
+	// UpdateUserState overwrites the account's escrowed user-state blob so a
+	// device can refresh it after a local merge (#137,
 	// PasswordEndpoints.UpdateUserState). An empty userState clears the
 	// column, mirroring SetPasswordCredentials's per-column NULLIF contract.
 	UpdateUserState(publicKey, userState string) error
+	// ClearEscrow nulls account_key_blob, user_state_blob, AND
+	// password_verifier for an account on this space (DELETE
+	// /users/me/escrow, see PasswordEndpoints.ClearEscrow) - used when the
+	// account is moving its escrow elsewhere, or reclaiming its key.
+	// password_handle is deliberately left alone; idempotent, an
+	// already-clear account is not an error.
+	ClearEscrow(publicKey string) error
 	// ClaimOwner creates the owner account, its first device, and its
 	// password-login credentials, then records the claim in a single
 	// transaction (see owner_claim_endpoints.go's Claim, the one-shot
@@ -144,8 +159,14 @@ type UserRepository interface {
 	// key (migration 000024) is the REAL protection against two concurrent
 	// claims both succeeding, not any check a caller runs beforehand (see
 	// ClaimOwner's doc comment for why). Returns ErrUsernameTaken if another
-	// password-enabled account already holds username.
-	ClaimOwner(publicKey, username, passwordVerifier, handle, accountKeyBlob, userState string, deviceName *string, createdAt int64) error
+	// password-enabled account already holds username. Returns
+	// ErrDeviceKeyTaken if devicePublicKey is already registered on this
+	// space (device_public_key is globally unique - migration 000018) -
+	// the claim is rejected outright rather than silently reusing the
+	// existing device row. passwordVerifier and handle may both be empty
+	// (claiming without a password); devicePublicKey is device #1's key,
+	// which no longer has to equal the account key.
+	ClaimOwner(publicKey, username, passwordVerifier, handle, accountKeyBlob, userState, devicePublicKey string, deviceName *string, createdAt int64) error
 	// HasClaim reports whether this space has already been claimed. Used by
 	// the claim endpoint as a cheap pre-check before spending Argon2id
 	// CPU/memory on an already-claimed space (see owner_claim_endpoints.go's
@@ -166,6 +187,10 @@ var ErrUsernameTaken = errors.New("username already used for password login")
 // already exists for this space - the one-shot owner-claim endpoint refuses
 // a second claim.
 var ErrSpaceAlreadyClaimed = errors.New("space already claimed")
+
+// ErrDeviceKeyTaken is returned by ClaimOwner when the claim's
+// devicePublicKey is already registered as a device on this space.
+var ErrDeviceKeyTaken = errors.New("device key already registered on this space")
 
 // SpaceCreator creates a default space for new owners.
 type SpaceCreator interface {
@@ -595,16 +620,15 @@ func (ue UserEndpoints) GetProfile(ctx *fasthttp.RequestCtx) {
 		profile.HasPassword = credPublicKey == authenticatedUser.PublicKey
 	}
 
-	// Only the account-key device ever consumes userStateBlob (secondary
-	// devices discard it) - same guard as UpdateUserState - so gate the
-	// lookup to skip the extra DB round-trip on every other device's poll.
-	if authenticatedUser.DevicePublicKey == authenticatedUser.PublicKey {
-		_, userState, err := ue.userRepository.GetEscrow(authenticatedUser.PublicKey)
-		if err != nil {
-			log.Debug().Err(err).Str("publicKey", authenticatedUser.PublicKey).Msg("[PROFILE] Failed to look up escrow")
-		} else {
-			profile.UserStateBlob = userState
-		}
+	// Runs unconditionally for every device now - see UserStateBlob's doc
+	// comment for why the old account-key-device gate was never a security
+	// boundary.
+	accountKeyBlob, userState, err := ue.userRepository.GetEscrow(authenticatedUser.PublicKey)
+	if err != nil {
+		log.Debug().Err(err).Str("publicKey", authenticatedUser.PublicKey).Msg("[PROFILE] Failed to look up escrow")
+	} else {
+		profile.UserStateBlob = userState
+		profile.HasEscrow = accountKeyBlob != ""
 	}
 
 	ctx.SetStatusCode(fasthttp.StatusOK)

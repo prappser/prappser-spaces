@@ -172,7 +172,8 @@ func (r *rebindTestRepo) GetEscrow(publicKey string) (string, string, error) {
 	return "", "", nil
 }
 func (r *rebindTestRepo) UpdateUserState(publicKey, userState string) error { return nil }
-func (r *rebindTestRepo) ClaimOwner(publicKey, username, passwordVerifier, handle, accountKeyBlob, userState string, deviceName *string, createdAt int64) error {
+func (r *rebindTestRepo) ClearEscrow(publicKey string) error                { return nil }
+func (r *rebindTestRepo) ClaimOwner(publicKey, username, passwordVerifier, handle, accountKeyBlob, userState, devicePublicKey string, deviceName *string, createdAt int64) error {
 	return nil
 }
 func (r *rebindTestRepo) HasClaim() (bool, error) { return false, nil }

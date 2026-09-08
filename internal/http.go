@@ -180,6 +180,13 @@ func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, status
 			} else {
 				ctx.Error("Method Not Allowed", fasthttp.StatusMethodNotAllowed)
 			}
+		case path == "/users/me/escrow":
+			method := string(ctx.Method())
+			if method == "DELETE" {
+				authMiddleware.RequireAuth(passwordEndpoints.ClearEscrow)(ctx)
+			} else {
+				ctx.Error("Method Not Allowed", fasthttp.StatusMethodNotAllowed)
+			}
 
 		// #111: /space/publickey lets a client learn this space's key to use
 		// as the audience when requesting an assertion (D2); /identity/assertion

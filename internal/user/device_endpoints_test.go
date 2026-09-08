@@ -128,7 +128,8 @@ func (r *deviceTestRepo) UpdateUserState(publicKey, userState string) error {
 	r.escrow[publicKey] = escrow
 	return nil
 }
-func (r *deviceTestRepo) ClaimOwner(publicKey, username, passwordVerifier, handle, accountKeyBlob, userState string, deviceName *string, createdAt int64) error {
+func (r *deviceTestRepo) ClearEscrow(publicKey string) error { return nil }
+func (r *deviceTestRepo) ClaimOwner(publicKey, username, passwordVerifier, handle, accountKeyBlob, userState, devicePublicKey string, deviceName *string, createdAt int64) error {
 	return nil
 }
 func (r *deviceTestRepo) HasClaim() (bool, error) { return false, nil }

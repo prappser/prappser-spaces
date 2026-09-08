@@ -34,21 +34,26 @@ func NewOwnerClaimEndpoints(userRepository UserRepository, verifierKey []byte, m
 }
 
 // claimOwnerRequest is the request body for POST /users/owners/claim.
-// MasterPasswordSalt and MasterPasswordProof are std-base64: proof is the
-// client's Argon2id keys.DeriveKey(masterPassword, salt) - proving knowledge
-// of the plaintext master password without ever putting it on the wire or in
-// a proxy log (see Claim). AuthSecret, AccountKeyBlob, and UserState mirror
-// setPasswordRequest (password_endpoints.go) - password is MANDATORY here,
-// unlike SetPassword's authenticated flow.
+// Username, MasterPasswordSalt, and MasterPasswordProof are always required:
+// an account always has a name by the time it claims a space, and every
+// client sends one today. Proof is std-base64, the client's Argon2id
+// keys.DeriveKey(masterPassword, salt) - proving knowledge of the plaintext
+// master password without ever putting it on the wire or in a proxy log (see
+// Claim). AuthSecret, AccountKeyBlob, and UserState are optional - a claim
+// may create an owner account with no password set yet; sent values validate
+// exactly as before (see Claim). DevicePublicKey is optional too, defaulting
+// to PublicKey when empty - today's behavior for every client that predates
+// the account/device split.
 type claimOwnerRequest struct {
 	Username            string `json:"username"`
 	PublicKey           string `json:"publicKey"`
 	MasterPasswordSalt  string `json:"masterPasswordSalt"`
 	MasterPasswordProof string `json:"masterPasswordProof"`
-	AuthSecret          string `json:"authSecret"`
+	AuthSecret          string `json:"authSecret,omitempty"`
 	AccountKeyBlob      string `json:"accountKeyBlob,omitempty"`
 	UserState           string `json:"userState,omitempty"`
 	DeviceName          string `json:"deviceName,omitempty"`
+	DevicePublicKey     string `json:"devicePublicKey,omitempty"`
 }
 
 // claimOwnerResponse is the response body for POST /users/owners/claim.
@@ -94,10 +99,21 @@ func (oe *OwnerClaimEndpoints) Claim(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	publicKeyBytes, err := base64.StdEncoding.DecodeString(req.PublicKey)
-	if err != nil || len(publicKeyBytes) != ed25519.PublicKeySize {
+	if !isValidPublicKey(req.PublicKey) {
 		log.Debug().Msg("[OWNER_CLAIM] Invalid publicKey")
 		ctx.Error("publicKey must be 32 std-base64-encoded bytes", fasthttp.StatusBadRequest)
+		return
+	}
+
+	// devicePublicKey defaults to the account key, matching every client
+	// that predates the account/device split; an explicit one is validated
+	// exactly like publicKey above.
+	devicePublicKey := req.DevicePublicKey
+	if devicePublicKey == "" {
+		devicePublicKey = req.PublicKey
+	} else if !isValidPublicKey(devicePublicKey) {
+		log.Debug().Msg("[OWNER_CLAIM] Invalid devicePublicKey")
+		ctx.Error("devicePublicKey must be 32 std-base64-encoded bytes", fasthttp.StatusBadRequest)
 		return
 	}
 
@@ -121,11 +137,19 @@ func (oe *OwnerClaimEndpoints) Claim(ctx *fasthttp.RequestCtx) {
 	// hashAuthSecret is a keyed HMAC over an already-high-entropy input, not
 	// a KDF - cheap, so it belongs in shape validation, not behind the
 	// HasClaim pre-check below (see this method's doc comment).
-	verifier, err := hashAuthSecret(oe.verifierKey, req.AuthSecret)
-	if err != nil {
-		log.Debug().Err(err).Msg("[OWNER_CLAIM] Invalid authSecret")
-		ctx.Error("authSecret is invalid", fasthttp.StatusBadRequest)
-		return
+	// AuthSecret is optional: claiming without a password leaves both
+	// verifier and handle empty, which ClaimOwner's NULLIF wrapping turns
+	// into SQL NULL - hashAuthSecret must not run on an empty string, since
+	// it requires exactly 32 base64-decoded bytes and would reject it.
+	var verifier, handle string
+	if req.AuthSecret != "" {
+		verifier, err = hashAuthSecret(oe.verifierKey, req.AuthSecret)
+		if err != nil {
+			log.Debug().Err(err).Msg("[OWNER_CLAIM] Invalid authSecret")
+			ctx.Error("authSecret is invalid", fasthttp.StatusBadRequest)
+			return
+		}
+		handle = strings.ToLower(username)
 	}
 
 	hasClaim, err := oe.userRepository.HasClaim()
@@ -161,10 +185,9 @@ func (oe *OwnerClaimEndpoints) Claim(ctx *fasthttp.RequestCtx) {
 	}
 
 	publicKey := req.PublicKey
-	handle := strings.ToLower(username)
 	createdAt := time.Now().Unix()
 
-	if err := oe.userRepository.ClaimOwner(publicKey, username, verifier, handle, req.AccountKeyBlob, req.UserState, deviceName, createdAt); err != nil {
+	if err := oe.userRepository.ClaimOwner(publicKey, username, verifier, handle, req.AccountKeyBlob, req.UserState, devicePublicKey, deviceName, createdAt); err != nil {
 		switch err {
 		case ErrSpaceAlreadyClaimed:
 			log.Debug().Msg("[OWNER_CLAIM] Space already claimed (lost the race)")
@@ -172,6 +195,9 @@ func (oe *OwnerClaimEndpoints) Claim(ctx *fasthttp.RequestCtx) {
 		case ErrUsernameTaken:
 			log.Debug().Msg("[OWNER_CLAIM] Username already used for password login")
 			ctx.Error("username already used for password login on this space", fasthttp.StatusConflict)
+		case ErrDeviceKeyTaken:
+			log.Debug().Msg("[OWNER_CLAIM] Device key already registered on this space")
+			ctx.Error("device key is already registered on this space", fasthttp.StatusConflict)
 		default:
 			log.Error().Err(err).Msg("[OWNER_CLAIM] Failed to claim owner")
 			ctx.Error("internal server error", fasthttp.StatusInternalServerError)
@@ -199,4 +225,12 @@ func (oe *OwnerClaimEndpoints) Claim(ctx *fasthttp.RequestCtx) {
 		Role:          RoleOwner,
 		CreatedAt:     createdAt,
 	})
+}
+
+// isValidPublicKey reports whether s decodes as std-base64 into exactly
+// ed25519.PublicKeySize bytes - the shape both publicKey and devicePublicKey
+// must have.
+func isValidPublicKey(s string) bool {
+	decoded, err := base64.StdEncoding.DecodeString(s)
+	return err == nil && len(decoded) == ed25519.PublicKeySize
 }
