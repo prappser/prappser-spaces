@@ -2,6 +2,7 @@ package event
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -108,6 +109,17 @@ func (s *EventService) AcceptEvent(ctx context.Context, event *Event, submitter 
 		return nil, fmt.Errorf("sequence generation failed: %w", err)
 	}
 	event.SequenceNumber = seq
+
+	// event.CreatedAt still holds the client's mint time here; checked
+	// against the submitter's own clock before it's overwritten below.
+	if err := checkEventStaleness(event.Type, event.CreatedAt, time.Now()); err != nil {
+		log.Debug().
+			Str("eventId", event.ID).
+			Str("type", string(event.Type)).
+			Int64("mintedAt", event.CreatedAt).
+			Msg("[EVENT] Rejected as stale")
+		return nil, err
+	}
 
 	event.CreatedAt = time.Now().Unix()
 
@@ -449,8 +461,7 @@ func (s *EventService) broadcastEvent(event *Event) {
 func (s *EventService) GetEventsSince(userPublicKey string, sinceEventID string, limit int) (*EventsResponse, error) {
 	events, hasMore, err := s.repo.GetSince(userPublicKey, sinceEventID, limit)
 	if err != nil {
-		// Check if the error is because sinceEventID was not found (might have been cleaned up)
-		if err.Error() == "since event not found" {
+		if errors.Is(err, ErrCursorNotFound) {
 			return &EventsResponse{
 				FullResyncRequired: true,
 				Reason:             "Events expired or gap detected",
