@@ -3,9 +3,15 @@ package event
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 )
+
+// ErrCursorNotFound means the client's sinceEventID no longer exists (its row
+// was pruned). GetEventsSince maps this to fullResyncRequired rather than
+// silently replaying from ordinal 0.
+var ErrCursorNotFound = errors.New("cursor not found")
 
 type EventRepository struct {
 	db *sql.DB
@@ -15,11 +21,17 @@ func NewEventRepository(db *sql.DB) *EventRepository {
 	return &EventRepository{db: db}
 }
 
+// GetNextSequence floors the next sequence at applications.last_sequence as
+// well as MAX(events.sequence_number): once DeleteOlderThan has pruned an
+// app's older rows, the events-table max alone can be lower than the
+// high-water mark already handed to a client, and handing out a number at or
+// below it gets silently discarded by the client's own drift guard.
 func (r *EventRepository) GetNextSequence(applicationID string) (int64, error) {
 	var maxSeq int64
-	query := `SELECT COALESCE(MAX(sequence_number), 0)
-			  FROM events
-			  WHERE application_id = $1`
+	query := `SELECT GREATEST(
+				  COALESCE((SELECT MAX(sequence_number) FROM events WHERE application_id = $1), 0),
+				  COALESCE((SELECT last_sequence FROM applications WHERE id = $1), 0)
+			  )`
 
 	err := r.db.QueryRow(query, applicationID).Scan(&maxSeq)
 	if err != nil {
@@ -42,14 +54,9 @@ func (r *EventRepository) Create(event *Event) error {
 		}
 	}
 
-	if event.SequenceNumber == 0 && event.ApplicationID != "" {
-		seq, err := r.GetNextSequence(event.ApplicationID)
-		if err != nil {
-			return fmt.Errorf("failed to get next sequence: %w", err)
-		}
-		event.SequenceNumber = seq
-	}
-
+	// Sequence numbers are assigned by the caller (AcceptEvent/ProduceEvent)
+	// via GetNextSequence before Create runs; no fallback here keeps
+	// sequence assignment to that one code path.
 	dataJSON, err := json.Marshal(event.Data)
 	if err != nil {
 		return fmt.Errorf("failed to marshal event data: %w", err)
@@ -136,11 +143,12 @@ func (r *EventRepository) GetSince(userPublicKey string, sinceEventID string, li
 	var sinceOrdinal int64
 	if sinceEventID != "" {
 		err := r.db.QueryRow("SELECT ordinal FROM events WHERE id = $1", sinceEventID).Scan(&sinceOrdinal)
-		if err != nil && err != sql.ErrNoRows {
+		if err == sql.ErrNoRows {
+			return nil, false, ErrCursorNotFound
+		}
+		if err != nil {
 			return nil, false, fmt.Errorf("failed to get since event: %w", err)
 		}
-		// sql.ErrNoRows (pruned cursor) leaves sinceOrdinal at 0, which the query
-		// below treats the same as no cursor: a full replay.
 	}
 
 	// The cursor key is ordinal, not (created_at, id). created_at is whole seconds
@@ -274,8 +282,18 @@ func (r *EventRepository) GetByApplicationID(appID string, limit int) ([]*Event,
 	return events, rows.Err()
 }
 
+// DeleteOlderThan prunes events past the retention cutoff, but never the
+// newest row for a given app or user-scoped creator: that row is a cursor's
+// only anchor (an idle client's lastEventId) and GetNextSequence's floor for
+// that app, and pruning it away is what let sequence numbers reset to 1.
 func (r *EventRepository) DeleteOlderThan(timestamp int64) (int64, error) {
-	query := `DELETE FROM events WHERE created_at < $1`
+	query := `DELETE FROM events
+			  WHERE created_at < $1
+			    AND ordinal NOT IN (
+			      SELECT MAX(ordinal) FROM events WHERE application_id IS NOT NULL GROUP BY application_id
+			      UNION ALL
+			      SELECT MAX(ordinal) FROM events WHERE application_id IS NULL GROUP BY creator_public_key
+			    )`
 
 	result, err := r.db.Exec(query, timestamp)
 	if err != nil {

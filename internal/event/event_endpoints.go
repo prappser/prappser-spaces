@@ -115,6 +115,11 @@ func (ee *EventEndpoints) SubmitEvent(ctx *fasthttp.RequestCtx) {
 		case errors.Is(err, ErrValidation) || err.Error() == "validation error":
 			statusCode = fasthttp.StatusBadRequest
 			reason = "validation_failed"
+		case errors.Is(err, ErrStaleEvent):
+			// 409, not 403: distinct from the auth path and from any client
+			// logic keyed on ErrUnauthorized's status code.
+			statusCode = fasthttp.StatusConflict
+			reason = "stale_event"
 		default:
 			statusCode = fasthttp.StatusInternalServerError
 			reason = "internal_error"

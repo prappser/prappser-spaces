@@ -407,12 +407,16 @@ func (r *MemoryRepository) IsMember(appID, publicKey string) (bool, error) {
 	return false, nil
 }
 
+// UpdateLastSequence mirrors Repository's GREATEST floor so the in-memory
+// test double doesn't diverge from production behaviour.
 func (r *MemoryRepository) UpdateLastSequence(appID string, sequence int64) error {
 	app, exists := r.applications[appID]
 	if !exists || app.DeletedAt != nil {
 		return fmt.Errorf("application not found or deleted: %s", appID)
 	}
-	app.LastSequence = &sequence
+	if app.LastSequence == nil || sequence > *app.LastSequence {
+		app.LastSequence = &sequence
+	}
 	app.UpdateTimestamp()
 	r.applications[appID] = app
 	return nil

@@ -110,8 +110,11 @@ func (r *Repository) GetApplicationState(id string) (*ApplicationState, error) {
 	return state, err
 }
 
+// UpdateLastSequence only ever raises last_sequence (GREATEST), never
+// lowers it: an out-of-order write must not walk the high-water mark
+// backward, or GetNextSequence's floor against it stops protecting anything.
 func (r *Repository) UpdateLastSequence(appID string, sequence int64) error {
-	query := `UPDATE applications SET last_sequence = $1, updated_at = $2 WHERE id = $3 AND deleted_at IS NULL`
+	query := `UPDATE applications SET last_sequence = GREATEST(COALESCE(last_sequence, 0), $1), updated_at = $2 WHERE id = $3 AND deleted_at IS NULL`
 	result, err := r.db.Exec(query, sequence, time.Now().Unix(), appID)
 	if err != nil {
 		return err
