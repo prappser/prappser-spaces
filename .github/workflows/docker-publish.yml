@@ -37,7 +37,6 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
-            type=sha,prefix=
             type=ref,event=branch
 
       - name: Build and push Docker image
@@ -49,3 +48,29 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          # No attestation manifests: they land as extra untagged package versions
+          # and nothing here consumes them.
+          provenance: false
+
+      # GHCR versions are free for a public package, so this is hygiene, never a gate:
+      # continue-on-error keeps a failed cleanup from reddening a publish-and-deploy run.
+      - name: Prune old image versions
+        if: github.ref == 'refs/heads/main'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GHCR_PRUNE_TOKEN || github.token }}
+        run: |
+          base="/orgs/${GITHUB_REPOSITORY%%/*}/packages/container/${GITHUB_REPOSITORY##*/}/versions"
+          if ! gh api "$base" --jq '.[0].id' >/dev/null 2>&1; then
+            echo "::warning::GHCR prune skipped, no package read/delete access. Add a GHCR_PRUNE_TOKEN secret with read:packages and delete:packages."
+            exit 0
+          fi
+          # Never delete a version tagged latest. A rebuild that reuses a digest moves
+          # `latest` onto an older version, so age alone is not a safe guard.
+          gh api --paginate "$base" --jq '.[] | [.id, (.metadata.container.tags | join(","))] | @tsv' \
+            | tail -n +21 \
+            | while IFS=$'\t' read -r id tags; do
+                case ",$tags," in *,latest,*) echo "skip $id (latest)"; continue;; esac
+                echo "deleting $id [$tags]"
+                gh api -X DELETE "$base/$id"
+              done
