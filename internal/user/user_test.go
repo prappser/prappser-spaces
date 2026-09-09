@@ -20,10 +20,11 @@ type mockUserRepository struct {
 	// GetPasswordCredential's return value (see TestGetProfile_* below).
 	passwordCredentialPublicKey string
 	passwordCredentialErr       error
-	// escrowUserState/escrowErr let tests control GetEscrow's userState
-	// return (see TestGetProfile_*UserStateBlob* below).
-	escrowUserState string
-	escrowErr       error
+	// escrowAccountKeyBlob/escrowUserState/escrowErr let tests control
+	// GetEscrow's return (see TestGetProfile_*UserStateBlob*/*Escrow* below).
+	escrowAccountKeyBlob string
+	escrowUserState      string
+	escrowErr            error
 }
 
 func newMockUserRepository() *mockUserRepository {
@@ -94,10 +95,11 @@ func (m *mockUserRepository) GetPasswordHandle(username string) (string, error) 
 	return "", nil
 }
 func (m *mockUserRepository) GetEscrow(publicKey string) (string, string, error) {
-	return "", m.escrowUserState, m.escrowErr
+	return m.escrowAccountKeyBlob, m.escrowUserState, m.escrowErr
 }
 func (m *mockUserRepository) UpdateUserState(publicKey, userState string) error { return nil }
-func (m *mockUserRepository) ClaimOwner(publicKey, username, passwordVerifier, handle, accountKeyBlob, userState string, deviceName *string, createdAt int64) error {
+func (m *mockUserRepository) ClearEscrow(publicKey string) error                { return nil }
+func (m *mockUserRepository) ClaimOwner(publicKey, username, passwordVerifier, handle, accountKeyBlob, userState, devicePublicKey string, deviceName *string, createdAt int64) error {
 	return nil
 }
 func (m *mockUserRepository) HasClaim() (bool, error) { return false, nil }
@@ -301,9 +303,8 @@ func TestGetProfile_ShouldReportHasPasswordFalse_WhenLookupErrors(t *testing.T) 
 }
 
 // TestGetProfile_ShouldIncludeUserStateBlob_WhenEscrowed covers #137: the
-// profile response surfaces the escrowed user-state blob for the
-// account-key device (DevicePublicKey == PublicKey) so it can union it into
-// its local state.
+// profile response surfaces the escrowed user-state blob so the caller can
+// union it into its local state.
 func TestGetProfile_ShouldIncludeUserStateBlob_WhenEscrowed(t *testing.T) {
 	// given
 	repo := newMockUserRepository()
@@ -324,14 +325,15 @@ func TestGetProfile_ShouldIncludeUserStateBlob_WhenEscrowed(t *testing.T) {
 	assert.Empty(t, authenticatedUser.UserStateBlob)
 }
 
-// TestGetProfile_ShouldOmitUserStateBlob_ForSecondaryDevice covers the
-// simplify-pass guard: a secondary device (DevicePublicKey != PublicKey)
-// never consumes the blob, so GetProfile must skip the GetEscrow lookup
-// entirely for it - escrowUserState being set here and still absent from
-// the response proves the lookup was skipped, not just that it returned "".
-func TestGetProfile_ShouldOmitUserStateBlob_ForSecondaryDevice(t *testing.T) {
+// TestGetProfile_ShouldIncludeUserStateBlobAndHasEscrow_ForSecondaryDevice
+// covers the removal of the account-key-device gate: a secondary device
+// (DevicePublicKey != PublicKey) now gets userStateBlob AND hasEscrow too -
+// the blob is sealed under a key derived from the account seed, so a
+// secondary device receiving it just gets ciphertext it can't open.
+func TestGetProfile_ShouldIncludeUserStateBlobAndHasEscrow_ForSecondaryDevice(t *testing.T) {
 	// given
 	repo := newMockUserRepository()
+	repo.escrowAccountKeyBlob = "sealed-account-key"
 	repo.escrowUserState = "sealed-user-state"
 	ue := UserEndpoints{userRepository: repo}
 	ctx := &fasthttp.RequestCtx{}
@@ -343,8 +345,8 @@ func TestGetProfile_ShouldOmitUserStateBlob_ForSecondaryDevice(t *testing.T) {
 	// then
 	var resp User
 	assert.NoError(t, json.Unmarshal(ctx.Response.Body(), &resp))
-	assert.Empty(t, resp.UserStateBlob)
-	assert.NotContains(t, string(ctx.Response.Body()), "userStateBlob")
+	assert.Equal(t, "sealed-user-state", resp.UserStateBlob)
+	assert.True(t, resp.HasEscrow)
 }
 
 func TestGetProfile_ShouldOmitUserStateBlob_WhenUnset(t *testing.T) {

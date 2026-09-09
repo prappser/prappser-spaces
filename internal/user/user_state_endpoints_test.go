@@ -52,10 +52,12 @@ func TestUpdateUserState_ShouldPersistAndBeReadableViaGetProfile(t *testing.T) {
 	assert.Equal(t, blob, profile.UserStateBlob)
 }
 
-// TestUpdateUserState_ShouldReturn403ForSecondaryDevice covers the
-// account-key-device-only guard: a JWT whose DevicePublicKey differs from
-// the account's PublicKey (a secondary device) must be rejected.
-func TestUpdateUserState_ShouldReturn403ForSecondaryDevice(t *testing.T) {
+// TestUpdateUserState_ShouldSucceedForSecondaryDevice covers the removal of
+// the account-key-device-only gate: a JWT whose DevicePublicKey differs from
+// the account's PublicKey (a secondary device) may now refresh user state
+// too - see UpdateUserState's doc comment for why gating this narrower
+// capability wasn't a real boundary.
+func TestUpdateUserState_ShouldSucceedForSecondaryDevice(t *testing.T) {
 	// given
 	repo := newPasswordTestRepo()
 	repo.accounts["account-1"] = &User{PublicKey: "account-1", Username: "alice"}
@@ -67,10 +69,10 @@ func TestUpdateUserState_ShouldReturn403ForSecondaryDevice(t *testing.T) {
 	pe.UpdateUserState(ctx)
 
 	// then
-	assert.Equal(t, fasthttp.StatusForbidden, ctx.Response.StatusCode())
+	assert.Equal(t, fasthttp.StatusNoContent, ctx.Response.StatusCode())
 	_, gotUserState, err := repo.GetEscrow("account-1")
 	assert.NoError(t, err)
-	assert.Empty(t, gotUserState)
+	assert.Equal(t, blob, gotUserState)
 }
 
 func TestUpdateUserState_ShouldReturn400ForOversizedBlob(t *testing.T) {

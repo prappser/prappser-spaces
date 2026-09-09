@@ -120,7 +120,16 @@ func (r *passwordTestRepo) UpdateUserState(publicKey, userState string) error {
 	r.escrow[publicKey] = escrow
 	return nil
 }
-func (r *passwordTestRepo) ClaimOwner(publicKey, username, passwordVerifier, handle, accountKeyBlob, userState string, deviceName *string, createdAt int64) error {
+
+// ClearEscrow mirrors the real UPDATE: verifier and both escrow blobs are
+// cleared, password_handle is deliberately left untouched (see
+// user_repository.go's ClearEscrow).
+func (r *passwordTestRepo) ClearEscrow(publicKey string) error {
+	r.verifiers[publicKey] = ""
+	r.escrow[publicKey] = struct{ accountKeyBlob, userState string }{}
+	return nil
+}
+func (r *passwordTestRepo) ClaimOwner(publicKey, username, passwordVerifier, handle, accountKeyBlob, userState, devicePublicKey string, deviceName *string, createdAt int64) error {
 	return nil
 }
 func (r *passwordTestRepo) HasClaim() (bool, error) { return false, nil }
@@ -496,4 +505,68 @@ func TestSetPassword_ShouldReturn400ForOversizedUserState(t *testing.T) {
 
 	// then
 	assert.Equal(t, fasthttp.StatusBadRequest, ctx.Response.StatusCode())
+}
+
+func newClearEscrowRequestCtx(authenticatedUser *User) *fasthttp.RequestCtx {
+	ctx := &fasthttp.RequestCtx{}
+	ctx.Request.Header.SetMethod("DELETE")
+	if authenticatedUser != nil {
+		ctx.SetUserValue("user", authenticatedUser)
+	}
+	return ctx
+}
+
+// TestClearEscrow_ShouldNullVerifierAndBlobsButLeaveHandle covers exactly
+// what ClearEscrow's real UPDATE touches: account_key_blob, user_state_blob,
+// and password_verifier are cleared, password_handle is not (see
+// user_repository.go's ClearEscrow for why leaving it alone is safe).
+func TestClearEscrow_ShouldNullVerifierAndBlobsButLeaveHandle(t *testing.T) {
+	// given
+	repo := newPasswordTestRepo()
+	repo.accounts["account-1"] = &User{PublicKey: "account-1", Username: "alice"}
+	repo.verifiers["account-1"] = "hmac-sha256$AAAA"
+	repo.handles["account-1"] = "alice"
+	repo.escrow["account-1"] = struct{ accountKeyBlob, userState string }{"sealed-account-key", "sealed-user-state"}
+	pe := NewPasswordEndpoints(repo, []byte("salt-secret"), []byte("verifier-key"))
+	ctx := newClearEscrowRequestCtx(&User{PublicKey: "account-1"})
+
+	// when
+	pe.ClearEscrow(ctx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusNoContent, ctx.Response.StatusCode())
+	assert.Empty(t, repo.verifiers["account-1"])
+	gotAccountKeyBlob, gotUserState, err := repo.GetEscrow("account-1")
+	assert.NoError(t, err)
+	assert.Empty(t, gotAccountKeyBlob)
+	assert.Empty(t, gotUserState)
+	assert.Equal(t, "alice", repo.handles["account-1"], "password_handle must survive ClearEscrow")
+}
+
+// TestClearEscrow_ShouldReturn204WhenAlreadyClear covers idempotency: an
+// account with nothing to clear still gets a 204, not an error.
+func TestClearEscrow_ShouldReturn204WhenAlreadyClear(t *testing.T) {
+	// given
+	repo := newPasswordTestRepo()
+	repo.accounts["account-1"] = &User{PublicKey: "account-1", Username: "alice"}
+	pe := NewPasswordEndpoints(repo, []byte("salt-secret"), []byte("verifier-key"))
+	ctx := newClearEscrowRequestCtx(&User{PublicKey: "account-1"})
+
+	// when
+	pe.ClearEscrow(ctx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusNoContent, ctx.Response.StatusCode())
+}
+
+func TestClearEscrow_ShouldReturn401WhenUnauthenticated(t *testing.T) {
+	// given
+	pe := NewPasswordEndpoints(newPasswordTestRepo(), []byte("salt-secret"), []byte("verifier-key"))
+	ctx := newClearEscrowRequestCtx(nil)
+
+	// when
+	pe.ClearEscrow(ctx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusUnauthorized, ctx.Response.StatusCode())
 }

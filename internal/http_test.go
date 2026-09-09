@@ -50,7 +50,8 @@ func (noopUserRepository) GetEscrow(publicKey string) (string, string, error) {
 	return "", "", nil
 }
 func (noopUserRepository) UpdateUserState(publicKey, userState string) error { return nil }
-func (noopUserRepository) ClaimOwner(publicKey, username, passwordVerifier, handle, accountKeyBlob, userState string, deviceName *string, createdAt int64) error {
+func (noopUserRepository) ClearEscrow(publicKey string) error                { return nil }
+func (noopUserRepository) ClaimOwner(publicKey, username, passwordVerifier, handle, accountKeyBlob, userState, devicePublicKey string, deviceName *string, createdAt int64) error {
 	return nil
 }
 func (noopUserRepository) HasClaim() (bool, error) { return false, nil }

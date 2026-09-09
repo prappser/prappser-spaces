@@ -142,7 +142,8 @@ func (r *fakeUserRepo) GetEscrow(publicKey string) (string, string, error) {
 	return "", "", nil
 }
 func (r *fakeUserRepo) UpdateUserState(publicKey, userState string) error { return nil }
-func (r *fakeUserRepo) ClaimOwner(publicKey, username, passwordVerifier, handle, accountKeyBlob, userState string, deviceName *string, createdAt int64) error {
+func (r *fakeUserRepo) ClearEscrow(publicKey string) error                { return nil }
+func (r *fakeUserRepo) ClaimOwner(publicKey, username, passwordVerifier, handle, accountKeyBlob, userState, devicePublicKey string, deviceName *string, createdAt int64) error {
 	return nil
 }
 func (r *fakeUserRepo) HasClaim() (bool, error) { return false, nil }

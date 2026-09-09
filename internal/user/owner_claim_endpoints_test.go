@@ -100,13 +100,20 @@ func (r *ownerClaimTestRepo) UpdateUserState(publicKey, userState string) error 
 	r.escrow[publicKey] = escrow
 	return nil
 }
+func (r *ownerClaimTestRepo) ClearEscrow(publicKey string) error {
+	delete(r.escrow, publicKey)
+	delete(r.verifiers, publicKey)
+	return nil
+}
 
 // ClaimOwner mirrors user_repository.go's ClaimOwner: the users row and
 // device row are written unconditionally (no WHERE-NOT-EXISTS guard), and
 // the claim-row check - the real authoritative guard - is what wins for an
-// already-claimed space, checked before the username-collision guard,
-// exactly like the real transaction's own ordering of concerns.
-func (r *ownerClaimTestRepo) ClaimOwner(publicKey, username, passwordVerifier, handle, accountKeyBlob, userState string, deviceName *string, createdAt int64) error {
+// already-claimed space, checked before the username-collision guard, which
+// in turn is checked before the device-key-collision guard, exactly like the
+// real transaction's own ordering of concerns (users INSERT, then
+// user_devices INSERT, then space_owner_claim INSERT).
+func (r *ownerClaimTestRepo) ClaimOwner(publicKey, username, passwordVerifier, handle, accountKeyBlob, userState, devicePublicKey string, deviceName *string, createdAt int64) error {
 	if r.claimed {
 		return ErrSpaceAlreadyClaimed
 	}
@@ -118,13 +125,16 @@ func (r *ownerClaimTestRepo) ClaimOwner(publicKey, username, passwordVerifier, h
 			return ErrUsernameTaken
 		}
 	}
+	if _, exists := r.devices[devicePublicKey]; exists {
+		return ErrDeviceKeyTaken
+	}
 	r.accounts[publicKey] = &User{PublicKey: publicKey, Username: username, Role: RoleOwner, Issuer: publicKey, CreatedAt: createdAt}
 	r.verifiers[publicKey] = passwordVerifier
 	r.handles[publicKey] = handle
 	r.escrow[publicKey] = struct{ accountKeyBlob, userState string }{accountKeyBlob, userState}
-	// Device #1's key equals the account key, same convention as the real
-	// ClaimOwner's second INSERT.
-	r.devices[publicKey] = &Device{DevicePublicKey: publicKey, UserPublicKey: publicKey, DeviceName: deviceName, CreatedAt: createdAt}
+	// devicePublicKey defaults to the account key when the caller doesn't
+	// send one - same convention as the real ClaimOwner's second INSERT.
+	r.devices[devicePublicKey] = &Device{DevicePublicKey: devicePublicKey, UserPublicKey: publicKey, DeviceName: deviceName, CreatedAt: createdAt}
 	r.claimed = true
 	return nil
 }
@@ -244,6 +254,39 @@ func TestClaim_ShouldReturn409OnSecondClaimAndLeaveFirstOwnerUnchanged(t *testin
 	assert.False(t, secondAccountCreated)
 }
 
+// TestClaim_ShouldReturn409AndLeaveSpaceUnclaimedWhenDevicePublicKeyAlreadyRegistered
+// is the regression guard for the ClaimOwner device-key collision: since
+// devicePublicKey is client-controlled and globally unique, a claimant who
+// reuses a devicePublicKey already registered on this space must be rejected
+// outright, not silently no-op the device row and still claim the space -
+// that would leave the "owner" with zero device rows, unable to ever
+// authenticate, and the space permanently unclaimable.
+func TestClaim_ShouldReturn409AndLeaveSpaceUnclaimedWhenDevicePublicKeyAlreadyRegistered(t *testing.T) {
+	// given - a device key already registered on this space (e.g. via a
+	// prior EnsureDevice call), but the space itself is not yet claimed
+	masterPassword := "space-master-password"
+	repo := newOwnerClaimTestRepo()
+	existingDevicePub, _, err := ed25519.GenerateKey(rand.Reader)
+	assert.NoError(t, err)
+	existingDeviceKey := base64.StdEncoding.EncodeToString(existingDevicePub)
+	repo.devices[existingDeviceKey] = &Device{DevicePublicKey: existingDeviceKey, UserPublicKey: "someone-else"}
+	oe := NewOwnerClaimEndpoints(repo, []byte("verifier-key"), masterPassword, nil)
+	req := validClaimRequest(t, masterPassword, "alice")
+	req.DevicePublicKey = existingDeviceKey
+	ctx := newClaimRequestCtx(t, req)
+
+	// when
+	oe.Claim(ctx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusConflict, ctx.Response.StatusCode())
+	_, accountCreated := repo.accounts[req.PublicKey]
+	assert.False(t, accountCreated, "a rejected claim must not leave a stray account behind")
+	claimed, err := repo.HasClaim()
+	assert.NoError(t, err)
+	assert.False(t, claimed, "the space must remain unclaimed after a rejected claim")
+}
+
 func TestClaim_ShouldReturn401ForWrongMasterPasswordProof(t *testing.T) {
 	// given
 	repo := newOwnerClaimTestRepo()
@@ -295,7 +338,12 @@ func TestClaim_ShouldReturn400ForNonBase64MasterPasswordProof(t *testing.T) {
 	assert.Equal(t, fasthttp.StatusBadRequest, ctx.Response.StatusCode())
 }
 
-func TestClaim_ShouldReturn400ForMissingAuthSecret(t *testing.T) {
+// TestClaim_ShouldSucceedWithoutAuthSecretAndReportNoPasswordViaGetProfile is
+// the regression guard for the NULLIF fix in ClaimOwner: without it, an
+// empty-string verifier would satisfy GetPasswordCredential's
+// "verifier != ''" check and every passwordless claim would report a
+// phantom password.
+func TestClaim_ShouldSucceedWithoutAuthSecretAndReportNoPasswordViaGetProfile(t *testing.T) {
 	// given
 	masterPassword := "space-master-password"
 	repo := newOwnerClaimTestRepo()
@@ -307,8 +355,19 @@ func TestClaim_ShouldReturn400ForMissingAuthSecret(t *testing.T) {
 	// when
 	oe.Claim(ctx)
 
-	// then
-	assert.Equal(t, fasthttp.StatusBadRequest, ctx.Response.StatusCode())
+	// then - claim succeeds, and the stored verifier is empty (SQL NULL in
+	// the real repository), not the placeholder that would report a phantom
+	// password
+	assert.Equal(t, fasthttp.StatusCreated, ctx.Response.StatusCode())
+	assert.Empty(t, repo.verifiers[req.PublicKey])
+
+	ue := UserEndpoints{userRepository: repo}
+	profileCtx := &fasthttp.RequestCtx{}
+	profileCtx.SetUserValue("user", &User{PublicKey: req.PublicKey, DevicePublicKey: req.PublicKey, Username: "alice"})
+	ue.GetProfile(profileCtx)
+	var profile User
+	assert.NoError(t, json.Unmarshal(profileCtx.Response.Body(), &profile))
+	assert.False(t, profile.HasPassword)
 }
 
 func TestClaim_ShouldReturn400ForPublicKeyOfWrongLength(t *testing.T) {

@@ -52,7 +52,7 @@ func (m *mockBackend) Get(_ context.Context, path string) (io.ReadCloser, error)
 	return io.NopCloser(strings.NewReader(content)), nil
 }
 
-func (m *mockBackend) Delete(_ context.Context, _ string) error   { return nil }
+func (m *mockBackend) Delete(_ context.Context, _ string) error         { return nil }
 func (m *mockBackend) Exists(_ context.Context, _ string) (bool, error) { return false, nil }
 func (m *mockBackend) GetURL(_ context.Context, path, base string) (string, error) {
 	return base + "/storage/" + path, nil
@@ -101,7 +101,7 @@ func (r *mockStorageRepo) UpdateStatus(id, status string) error {
 	return nil
 }
 
-func (r *mockStorageRepo) UpdateThumbnail(_, _ string) error       { return nil }
+func (r *mockStorageRepo) UpdateThumbnail(_, _ string) error         { return nil }
 func (r *mockStorageRepo) UpdateDimensions(_ string, _, _ int) error { return nil }
 
 func (r *mockStorageRepo) Delete(id string) error {
@@ -275,7 +275,8 @@ func (m *mockUserRepoStorage) GetEscrow(_ string) (string, string, error) {
 	return "", "", nil
 }
 func (m *mockUserRepoStorage) UpdateUserState(_, _ string) error { return nil }
-func (m *mockUserRepoStorage) ClaimOwner(_, _, _, _, _, _ string, _ *string, _ int64) error {
+func (m *mockUserRepoStorage) ClearEscrow(_ string) error        { return nil }
+func (m *mockUserRepoStorage) ClaimOwner(_, _, _, _, _, _, _ string, _ *string, _ int64) error {
 	return nil
 }
 func (m *mockUserRepoStorage) HasClaim() (bool, error) { return false, nil }

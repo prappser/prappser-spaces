@@ -144,6 +144,69 @@ func TestUserRepository_SetPasswordCredentials_ShouldClearEscrowBlobsWhenOmitted
 	assert.Empty(t, userState)
 }
 
+// TestUserRepository_ClearEscrow_ShouldNullVerifierAndBlobsButKeepHandle_Integration
+// pins ClearEscrow's exact column list against the real schema: verifier and
+// both escrow blobs go to SQL NULL, password_handle survives untouched (see
+// ClearEscrow's doc comment for why).
+func TestUserRepository_ClearEscrow_ShouldNullVerifierAndBlobsButKeepHandle_Integration(t *testing.T) {
+	// given
+	db := getTestDB(t)
+	defer db.Close()
+	repo := NewUserRepository(db)
+
+	if _, err := db.Exec(
+		"INSERT INTO users (public_key, username, role, created_at, issuer) VALUES ($1,$2,$3,$4,$1)",
+		"test-clear-escrow-user", "test-clear-escrow-alice", "user", time.Now().Unix(),
+	); err != nil {
+		t.Fatalf("Failed to insert test user: %v", err)
+	}
+	assert.NoError(t, repo.SetPasswordCredentials("test-clear-escrow-user", "hmac-sha256$AAAA", "test-clear-escrow-handle", "sealed-account-key", "sealed-user-state"))
+
+	// when
+	err := repo.ClearEscrow("test-clear-escrow-user")
+
+	// then
+	assert.NoError(t, err)
+	accountKeyBlob, userState, err := repo.GetEscrow("test-clear-escrow-user")
+	assert.NoError(t, err)
+	assert.Empty(t, accountKeyBlob)
+	assert.Empty(t, userState)
+
+	var verifier sql.NullString
+	var handle sql.NullString
+	assert.NoError(t, db.QueryRow(
+		"SELECT password_verifier, password_handle FROM users WHERE public_key = $1",
+		"test-clear-escrow-user",
+	).Scan(&verifier, &handle))
+	assert.False(t, verifier.Valid, "password_verifier must be SQL NULL after ClearEscrow")
+	assert.True(t, handle.Valid, "password_handle must survive ClearEscrow")
+	assert.Equal(t, "test-clear-escrow-handle", handle.String)
+}
+
+// TestUserRepository_ClearEscrow_ShouldBeIdempotent_Integration covers the
+// no-error-on-already-clear contract: an account with nothing escrowed still
+// succeeds.
+func TestUserRepository_ClearEscrow_ShouldBeIdempotent_Integration(t *testing.T) {
+	// given
+	db := getTestDB(t)
+	defer db.Close()
+	repo := NewUserRepository(db)
+
+	if _, err := db.Exec(
+		"INSERT INTO users (public_key, username, role, created_at, issuer) VALUES ($1,$2,$3,$4,$1)",
+		"test-clear-escrow-idempotent-user", "test-clear-escrow-idempotent-alice", "user", time.Now().Unix(),
+	); err != nil {
+		t.Fatalf("Failed to insert test user: %v", err)
+	}
+
+	// when - cleared twice in a row, neither call has anything to clear
+	assert.NoError(t, repo.ClearEscrow("test-clear-escrow-idempotent-user"))
+	err := repo.ClearEscrow("test-clear-escrow-idempotent-user")
+
+	// then
+	assert.NoError(t, err)
+}
+
 func TestUserRepository_GetEscrow_ShouldReturnEmptyForUnknownPublicKey_Integration(t *testing.T) {
 	// given
 	db := getTestDB(t)
@@ -596,7 +659,7 @@ func TestUserRepository_ClaimOwner_ShouldWriteUserAndDeviceAtomically_Integratio
 	createdAt := time.Now().Unix()
 
 	// when
-	err := repo.ClaimOwner("test-claim-user-1", "test-claim-alice", "hmac-sha256$AAAA", "test-claim-alice", "sealed-account-key", "sealed-user-state", nil, createdAt)
+	err := repo.ClaimOwner("test-claim-user-1", "test-claim-alice", "hmac-sha256$AAAA", "test-claim-alice", "sealed-account-key", "sealed-user-state", "test-claim-user-1", nil, createdAt)
 
 	// then - the owner row
 	assert.NoError(t, err)
@@ -624,6 +687,35 @@ func TestUserRepository_ClaimOwner_ShouldWriteUserAndDeviceAtomically_Integratio
 	handle, err := repo.GetPasswordHandle("test-claim-alice")
 	assert.NoError(t, err)
 	assert.Equal(t, "test-claim-alice", handle)
+}
+
+// TestUserRepository_ClaimOwner_ShouldStorePasswordVerifierAndHandleAsSQLNullWhenEmpty_Integration
+// is the real-Postgres guard for the ClaimOwner NULLIF wrapping (see
+// ClaimOwner's doc comment): a passwordless claim must store SQL NULL, not
+// an empty string, in password_verifier and password_handle. A unit test
+// against a fake repo can't tell the two apart (see
+// TestClaim_ShouldSucceedWithoutAuthSecretAndReportNoPasswordViaGetProfile in
+// owner_claim_endpoints_test.go, which still covers the endpoint wiring) -
+// only a real column read distinguishes them, and the difference matters
+// because GetPasswordCredential's query below is IS NOT NULL, not != ''.
+func TestUserRepository_ClaimOwner_ShouldStorePasswordVerifierAndHandleAsSQLNullWhenEmpty_Integration(t *testing.T) {
+	// given
+	db := getTestDB(t)
+	defer db.Close()
+	repo := NewUserRepository(db)
+
+	// when - claim without a password: empty verifier and handle
+	err := repo.ClaimOwner("test-claim-no-password-user", "test-claim-no-password-alice", "", "", "", "", "test-claim-no-password-user", nil, time.Now().Unix())
+
+	// then
+	assert.NoError(t, err)
+	var verifier, handle sql.NullString
+	assert.NoError(t, db.QueryRow(
+		"SELECT password_verifier, password_handle FROM users WHERE public_key = $1",
+		"test-claim-no-password-user",
+	).Scan(&verifier, &handle))
+	assert.False(t, verifier.Valid, "password_verifier must be SQL NULL, not '', for a passwordless claim")
+	assert.False(t, handle.Valid, "password_handle must be SQL NULL, not '', for a passwordless claim")
 }
 
 // TestUserRepository_ClaimOwner_ShouldRejectConcurrentClaimsExceptOne_Integration
@@ -658,7 +750,7 @@ func TestUserRepository_ClaimOwner_ShouldRejectConcurrentClaimsExceptOne_Integra
 			defer wg.Done()
 			pk := fmt.Sprintf("test-claim-concurrent-user-%d", i)
 			username := fmt.Sprintf("test-claim-concurrent-name-%d", i)
-			errs[i] = repo.ClaimOwner(pk, username, "hmac-sha256$AAAA", strings.ToLower(username), "", "", nil, time.Now().Unix())
+			errs[i] = repo.ClaimOwner(pk, username, "hmac-sha256$AAAA", strings.ToLower(username), "", "", pk, nil, time.Now().Unix())
 		}(i)
 	}
 	wg.Wait()
@@ -709,7 +801,7 @@ func TestUserRepository_ClaimOwner_ShouldRejectConcurrentSameUsernameClaimsExcep
 		go func(i int) {
 			defer wg.Done()
 			pk := fmt.Sprintf("test-claim-concurrent-shared-user-%d", i)
-			errs[i] = repo.ClaimOwner(pk, username, "hmac-sha256$AAAA", strings.ToLower(username), "", "", nil, time.Now().Unix())
+			errs[i] = repo.ClaimOwner(pk, username, "hmac-sha256$AAAA", strings.ToLower(username), "", "", pk, nil, time.Now().Unix())
 		}(i)
 	}
 	wg.Wait()
@@ -745,7 +837,7 @@ func TestUserRepository_ClaimOwner_ShouldRoundTripEscrowWithGetEscrow_Integratio
 	db := getTestDB(t)
 	defer db.Close()
 	repo := NewUserRepository(db)
-	assert.NoError(t, repo.ClaimOwner("test-claim-escrow-user", "test-claim-escrow-name", "hmac-sha256$AAAA", "test-claim-escrow-name", "sealed-account-key", "sealed-user-state", nil, time.Now().Unix()))
+	assert.NoError(t, repo.ClaimOwner("test-claim-escrow-user", "test-claim-escrow-name", "hmac-sha256$AAAA", "test-claim-escrow-name", "sealed-account-key", "sealed-user-state", "test-claim-escrow-user", nil, time.Now().Unix()))
 
 	// when
 	accountKeyBlob, userState, err := repo.GetEscrow("test-claim-escrow-user")
@@ -779,7 +871,7 @@ func TestUserRepository_ClaimOwner_ShouldKeepSaltIdenticalAcrossClaim_Integratio
 	assert.NoError(t, json.Unmarshal(beforeCtx.Response.Body(), &before))
 
 	// when - claim the space under this same username, handle = lower(username)
-	assert.NoError(t, repo.ClaimOwner("test-claim-salt-user", username, "hmac-sha256$AAAA", strings.ToLower(username), "", "", nil, time.Now().Unix()))
+	assert.NoError(t, repo.ClaimOwner("test-claim-salt-user", username, "hmac-sha256$AAAA", strings.ToLower(username), "", "", "test-claim-salt-user", nil, time.Now().Unix()))
 
 	afterCtx := newSaltRequestCtx(username)
 	pe.GetSalt(afterCtx)
@@ -864,6 +956,6 @@ func TestMigration_SpaceOwnerClaim_ShouldBackfillClaimFromLegacyMultiOwnerSpace_
 	assert.Equal(t, "test-legacy-owner-1", claimedOwner, "the oldest owner (by created_at) is recorded as the historical claimant")
 
 	// then (d) - a fresh claim attempt against this now-claimed legacy space is refused
-	err = repo.ClaimOwner("test-legacy-new-claimant", "test-legacy-newname", "hmac-sha256$AAAA", "test-legacy-newname", "", "", nil, time.Now().Unix())
+	err = repo.ClaimOwner("test-legacy-new-claimant", "test-legacy-newname", "hmac-sha256$AAAA", "test-legacy-newname", "", "", "test-legacy-new-claimant", nil, time.Now().Unix())
 	assert.ErrorIs(t, err, ErrSpaceAlreadyClaimed)
 }

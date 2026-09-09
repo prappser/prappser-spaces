@@ -155,25 +155,20 @@ type updateUserStateRequest struct {
 	UserState string `json:"userState"`
 }
 
-// UpdateUserState handles PUT /users/me/user-state. Requires auth, and only
-// the account-key device may call it (authenticatedUser.DevicePublicKey ==
-// authenticatedUser.PublicKey, the same "device #1" convention used
-// throughout this package - see User.DevicePublicKey's doc comment) -
-// refreshing the space's copy of the escrow is restricted to the device that
-// holds the account key, since that is the only device that can have derived
-// a correctly re-sealed blob to escrow (#137). An empty userState clears the
-// column (see UpdateUserState's NULLIF contract in user_repository.go).
+// UpdateUserState handles PUT /users/me/user-state. Requires auth; any live,
+// unrevoked device of the account may call it now, not just the account-key
+// device - a compromised device can already do strictly worse through the
+// adjacent POST /users/password, which accepts a new authSecret and both
+// escrow blobs with no proof of the old password, and whose empty-string
+// handling nulls account_key_blob outright. Gating this narrower capability
+// while leaving that one open wouldn't be a real boundary. An empty
+// userState clears the column (see UpdateUserState's NULLIF contract in
+// user_repository.go).
 func (pe *PasswordEndpoints) UpdateUserState(ctx *fasthttp.RequestCtx) {
 	authenticatedUser, ok := ctx.UserValue("user").(*User)
 	if !ok || authenticatedUser == nil {
 		log.Error().Msg("[USER_STATE] Failed to get authenticated user from context")
 		ctx.Error("Unauthorized", fasthttp.StatusUnauthorized)
-		return
-	}
-
-	if authenticatedUser.DevicePublicKey != authenticatedUser.PublicKey {
-		log.Debug().Msg("[USER_STATE] Rejected: caller is not the account-key device")
-		ctx.Error("only the account-key device may refresh user state", fasthttp.StatusForbidden)
 		return
 	}
 
@@ -197,5 +192,29 @@ func (pe *PasswordEndpoints) UpdateUserState(ctx *fasthttp.RequestCtx) {
 	}
 
 	log.Debug().Str("publicKey", authenticatedUser.PublicKey).Msg("[USER_STATE] User state updated")
+	ctx.SetStatusCode(fasthttp.StatusNoContent)
+}
+
+// ClearEscrow handles DELETE /users/me/escrow. Requires auth via device key,
+// like the other /users/me routes. Clears this space's copy of the account's
+// escrow - used when the user is moving their escrow to a different space,
+// or bringing their key back into their own hands - see
+// UserRepository.ClearEscrow for exactly what it nulls and why. Idempotent:
+// clearing an already-clear account still returns 204.
+func (pe *PasswordEndpoints) ClearEscrow(ctx *fasthttp.RequestCtx) {
+	authenticatedUser, ok := ctx.UserValue("user").(*User)
+	if !ok || authenticatedUser == nil {
+		log.Error().Msg("[ESCROW] Failed to get authenticated user from context")
+		ctx.Error("Unauthorized", fasthttp.StatusUnauthorized)
+		return
+	}
+
+	if err := pe.userRepository.ClearEscrow(authenticatedUser.PublicKey); err != nil {
+		log.Error().Err(err).Msg("[ESCROW] Failed to clear escrow")
+		ctx.Error("internal server error", fasthttp.StatusInternalServerError)
+		return
+	}
+
+	log.Debug().Str("publicKey", authenticatedUser.PublicKey).Msg("[ESCROW] Escrow cleared")
 	ctx.SetStatusCode(fasthttp.StatusNoContent)
 }

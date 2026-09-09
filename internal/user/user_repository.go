@@ -14,18 +14,21 @@ import (
 // a single string literal).
 const pqUniqueViolation = "23505"
 
-// spaceOwnerClaimPkey and usersPasswordUsernameIdx name the two constraints
-// (migrations 000024 and 000023 respectively) that ClaimOwner's transaction
-// can collide with. A unique violation's pqErr.Constraint field is checked
-// against these names, NOT the bare SQLSTATE code, because ClaimOwner's
-// users INSERT can also collide on the public_key primary key - a violation
-// the two 409 error kinds below must not be mislabeled as. spaceOwnerClaimPkey
-// is Postgres's default "<table>_pkey" name for space_owner_claim's PRIMARY
-// KEY column (id) - confirmed empirically against a real Postgres instance,
-// not assumed from the table name.
+// spaceOwnerClaimPkey, usersPasswordUsernameIdx, and userDevicesPkey name the
+// three constraints (migrations 000024, 000023, and 000018 respectively)
+// that ClaimOwner's transaction can collide with. A unique violation's
+// pqErr.Constraint field is checked against these names, NOT the bare
+// SQLSTATE code, because ClaimOwner's users INSERT can also collide on the
+// public_key primary key - a violation the three 409 error kinds below must
+// not be mislabeled as. spaceOwnerClaimPkey and userDevicesPkey are
+// Postgres's default "<table>_pkey" name for each table's PRIMARY KEY column
+// (space_owner_claim.id, user_devices.device_public_key) - confirmed
+// empirically against a real Postgres instance, not assumed from the table
+// name.
 const (
 	spaceOwnerClaimPkey      = "space_owner_claim_pkey"
 	usersPasswordUsernameIdx = "users_password_username_idx"
+	userDevicesPkey          = "user_devices_pkey"
 )
 
 type userRepository struct {
@@ -260,10 +263,38 @@ func (r *userRepository) UpdateUserState(publicKey, userState string) error {
 	return nil
 }
 
-// ClaimOwner creates the owner account, device #1 (whose key IS the account
-// key, same as the pre-#114 owner flow), the password-login verifier,
-// handle, and escrow blobs, and the space's claim record, all in a single
-// transaction - the entire body of the one-shot, unauthenticated
+// ClearEscrow nulls account_key_blob, user_state_blob, and password_verifier
+// for an account on this space (DELETE /users/me/escrow, see
+// PasswordEndpoints.ClearEscrow) - the user is moving their escrow to a
+// different space, or reclaiming their key. Always succeeds on a matching
+// row regardless of current state, so clearing an already-clear account is
+// idempotent, not an error.
+//
+// password_handle is deliberately left untouched: SetPasswordCredentials's
+// doc comment above forbids re-pointing a handle while a blob sealed under
+// its derived salt might still exist, and clearing it here buys nothing -
+// the partial unique index on lower(username) (migration 000023) is gated on
+// password_verifier IS NOT NULL, so nulling the verifier already releases
+// the username slot.
+//
+// Nulling password_verifier is the point, not a side effect: it stops
+// password login on this space cleanly with a 401, instead of letting it
+// succeed and hand a new device an empty escrow it can silently do nothing
+// with.
+func (r *userRepository) ClearEscrow(publicKey string) error {
+	_, err := r.db.Exec(
+		"UPDATE users SET account_key_blob = NULL, user_state_blob = NULL, password_verifier = NULL WHERE public_key = $1",
+		publicKey,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to clear escrow: %w", err)
+	}
+	return nil
+}
+
+// ClaimOwner creates the owner account, its first device, the password-login
+// verifier, handle, and escrow blobs, and the space's claim record, all in a
+// single transaction - the entire body of the one-shot, unauthenticated
 // POST /users/owners/claim endpoint (see owner_claim_endpoints.go's Claim).
 //
 // space_owner_claim's primary key (migration 000024) is the AUTHORITATIVE
@@ -287,10 +318,17 @@ func (r *userRepository) UpdateUserState(publicKey, userState string) error {
 // reject) is an optimization on top of this guard, not a substitute for it -
 // it is inherently racy between its own check and this transaction.
 //
-// NULLIF($6,'') / NULLIF($7,'') mirror SetPasswordCredentials: an empty
-// accountKeyBlob or userState is stored as SQL NULL, not an empty string, so
-// a not-yet-escrowed column reads the same way GetEscrow already expects.
-func (r *userRepository) ClaimOwner(publicKey, username, passwordVerifier, handle, accountKeyBlob, userState string, deviceName *string, createdAt int64) error {
+// All four positional params $4 through $7 are NULLIF-wrapped now, not just
+// the escrow blobs: an owner can claim without setting a password, leaving
+// passwordVerifier and handle empty too. GetPasswordCredential and
+// GetPasswordHandle above treat password_verifier IS NOT NULL as "this
+// account has a password" - leaving $4/$5 bare would store an empty string
+// as the verifier instead of SQL NULL, and every passwordless claim would
+// report a phantom password. A caller (see owner_claim_endpoints.go's Claim)
+// must pass an empty handle whenever passwordVerifier is empty - the reverse
+// (a set verifier with an empty handle) is fine, since GetSalt already falls
+// back to lower(username) when GetPasswordHandle returns "".
+func (r *userRepository) ClaimOwner(publicKey, username, passwordVerifier, handle, accountKeyBlob, userState, devicePublicKey string, deviceName *string, createdAt int64) error {
 	tx, err := r.db.Begin()
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
@@ -299,7 +337,7 @@ func (r *userRepository) ClaimOwner(publicKey, username, passwordVerifier, handl
 
 	if _, err := tx.Exec(
 		`INSERT INTO users (public_key, username, role, created_at, issuer, password_verifier, password_handle, account_key_blob, user_state_blob)
-		 VALUES ($1, $2, 'owner', $3, $1, $4, $5, NULLIF($6, ''), NULLIF($7, ''))`,
+		 VALUES ($1, $2, 'owner', $3, $1, NULLIF($4, ''), NULLIF($5, ''), NULLIF($6, ''), NULLIF($7, ''))`,
 		publicKey, username, createdAt, passwordVerifier, handle, accountKeyBlob, userState,
 	); err != nil {
 		var pqErr *pq.Error
@@ -316,14 +354,26 @@ func (r *userRepository) ClaimOwner(publicKey, username, passwordVerifier, handl
 		return fmt.Errorf("failed to claim owner: %w", err)
 	}
 
-	// Device #1's key equals the account key - same convention as the
-	// pre-#114 OwnerRegister flow. Statement matches EnsureDevice exactly.
+	// devicePublicKey defaults to the account key when the claimer omits one
+	// (see Claim), preserving old clients' behavior - it's no longer assumed
+	// to equal the account key otherwise. Unlike EnsureDevice's identical
+	// INSERT, this one has no ON CONFLICT DO NOTHING: EnsureDevice wants
+	// idempotency because it runs on every enroll, but a claim is one-shot,
+	// already guarded by space_owner_claim's primary key below, so a
+	// collision here is a real conflict - the claimer sent a
+	// devicePublicKey already registered on this space. No-oping it would
+	// still commit the users/claim rows, leaving an owner with no device
+	// rows (unable to ever authenticate) and the space permanently
+	// unclaimable.
 	if _, err := tx.Exec(
 		`INSERT INTO user_devices (device_public_key, user_public_key, device_name, created_at)
-		 VALUES ($1, $2, $3, $4)
-		 ON CONFLICT (device_public_key) DO NOTHING`,
-		publicKey, publicKey, deviceName, createdAt,
+		 VALUES ($1, $2, $3, $4)`,
+		devicePublicKey, publicKey, deviceName, createdAt,
 	); err != nil {
+		var pqErr *pq.Error
+		if errors.As(err, &pqErr) && pqErr.Code == pqUniqueViolation && pqErr.Constraint == userDevicesPkey {
+			return ErrDeviceKeyTaken
+		}
 		return fmt.Errorf("failed to create owner device: %w", err)
 	}
 
