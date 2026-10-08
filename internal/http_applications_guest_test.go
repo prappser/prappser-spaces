@@ -49,7 +49,7 @@ func newGuestTestRequestHandler(t *testing.T, guestPublicKey, appID string) (fas
 	appRepo := application.NewMemoryRepository()
 	assert.NoError(t, appRepo.CreateApplication(&application.Application{ID: appID, Name: "Test App"}))
 	assert.NoError(t, appRepo.CreateMember(&application.Member{ID: "member-" + guestPublicKey, ApplicationID: appID, PublicKey: guestPublicKey, Role: application.MemberRoleMember}))
-	appEndpoints := application.NewApplicationEndpoints(application.NewApplicationService(appRepo), "space-pk")
+	appEndpoints := application.NewApplicationEndpoints(application.NewApplicationService(appRepo, 0), "space-pk")
 
 	cfg := &Config{TrustProxyHeaders: true}
 	handler := NewRequestHandler(cfg, nil, nil, nil, userService, appEndpoints, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)

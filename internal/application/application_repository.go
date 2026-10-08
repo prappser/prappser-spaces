@@ -37,6 +37,8 @@ type ApplicationRepository interface {
 	// full N+1 application loads.
 	GetAppVersionsByMemberPublicKey(publicKey string) (map[string]AppVersionInfo, error)
 	IsMember(appID, publicKey string) (bool, error)
+	CountOwnedApplications(publicKey string) (int, error)
+	IsApplicationLive(id string) (bool, error)
 	GetMemberCount(appID string) (int, error)
 	UpdateApplicationMetadata(id, name string, icon *string) error
 	// UpdateLastSequence stores the last processed sequence number for drift detection.

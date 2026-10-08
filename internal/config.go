@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/prappser/prappser-spaces/internal/user"
+	"github.com/rs/zerolog/log"
 )
 
 type Config struct {
@@ -25,6 +26,8 @@ type Config struct {
 	// docs/hosting/selfhost.md). Both empty is the normal case.
 	IdentityImport           string
 	IdentityImportPassphrase string
+	// MaxAppsPerAccount caps live apps an account may own; 0 means unlimited.
+	MaxAppsPerAccount int
 }
 
 type StorageConfig struct {
@@ -38,6 +41,8 @@ type StorageConfig struct {
 	S3UseSSL     bool
 	MaxFileSize  int64
 	ChunkSize    int64
+	// AccountQuota is the per-uploader byte cap; 0 means unlimited.
+	AccountQuota int64
 }
 
 // Defaults
@@ -185,6 +190,22 @@ func LoadConfig() (*Config, error) {
 	}
 	if config.Storage.MaxFileSize <= 0 {
 		config.Storage.MaxFileSize = 50 * 1024 * 1024 // 50MB default
+	}
+
+	if quotaMBStr := os.Getenv("STORAGE_ACCOUNT_QUOTA_MB"); quotaMBStr != "" {
+		if quotaMB, err := strconv.ParseInt(quotaMBStr, 10, 64); err == nil && quotaMB >= 0 {
+			config.Storage.AccountQuota = quotaMB * 1024 * 1024
+		} else {
+			log.Warn().Str("var", "STORAGE_ACCOUNT_QUOTA_MB").Str("value", quotaMBStr).Msg("invalid value, quota disabled")
+		}
+	}
+
+	if maxAppsStr := os.Getenv("MAX_APPS_PER_ACCOUNT"); maxAppsStr != "" {
+		if maxApps, err := strconv.Atoi(maxAppsStr); err == nil && maxApps >= 0 {
+			config.MaxAppsPerAccount = maxApps
+		} else {
+			log.Warn().Str("var", "MAX_APPS_PER_ACCOUNT").Str("value", maxAppsStr).Msg("invalid value, limit disabled")
+		}
 	}
 
 	chunkSizeMBStr := os.Getenv("STORAGE_CHUNK_SIZE_MB")

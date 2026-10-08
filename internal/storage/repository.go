@@ -324,6 +324,17 @@ func (r *Repository) DeleteUnreferenced(ctx context.Context, cutoff int64, limit
 	return deleted, rows.Err()
 }
 
+// GetUsedBytesByUploader counts every row of the uploader in any status,
+// including files of soft-deleted apps, whose bytes stay on disk until purge.
+func (r *Repository) GetUsedBytesByUploader(publicKey string) (int64, error) {
+	var total int64
+	err := r.db.QueryRow(`SELECT COALESCE(SUM(size_bytes), 0) FROM storage WHERE uploader_public_key = $1`, publicKey).Scan(&total)
+	if err != nil {
+		return 0, err
+	}
+	return total, nil
+}
+
 func (r *Repository) GetTotalUsedBytes() (int64, error) {
 	var total sql.NullInt64
 	err := r.db.QueryRow(`SELECT COALESCE(SUM(size_bytes), 0) FROM storage`).Scan(&total)

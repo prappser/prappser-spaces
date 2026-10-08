@@ -194,7 +194,7 @@ func (m *mockStorageService) GetThumbnail(_ context.Context, id string) (io.Read
 	return nil, nil, fmt.Errorf("no thumbnail available")
 }
 
-func (m *mockStorageService) Upload(_ context.Context, _ *string, _ string, _ *string, _ *UploadRequest, _ io.Reader, _ string) (*Storage, error) {
+func (m *mockStorageService) Upload(_ context.Context, _ *string, _ string, _ *string, _ *UploadRequest, _ io.Reader, _ string, _ bool) (*Storage, error) {
 	if m.uploadResult != nil || m.uploadErr != nil {
 		return m.uploadResult, m.uploadErr
 	}
@@ -208,7 +208,7 @@ func (m *mockStorageService) Delete(_ context.Context, _, _ string) error {
 // InitChunkedUpload mirrors the real Service's isValidContentType gate and
 // persist-on-success behavior, letting endpoint tests drive the actual
 // content-type exploit path without a real DB-backed Repository.
-func (m *mockStorageService) InitChunkedUpload(_ context.Context, appID *string, uploaderPublicKey string, spaceID *string, req *ChunkedUploadInitRequest) (*ChunkedUploadInitResponse, error) {
+func (m *mockStorageService) InitChunkedUpload(_ context.Context, appID *string, uploaderPublicKey string, spaceID *string, req *ChunkedUploadInitRequest, _ bool) (*ChunkedUploadInitResponse, error) {
 	if !isValidContentType(req.ContentType) {
 		return nil, fmt.Errorf("invalid content type: %q", req.ContentType)
 	}

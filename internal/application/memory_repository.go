@@ -289,6 +289,24 @@ func isMemberActive(m *Member) bool {
 	return m.MembershipExpiresAt == nil || *m.MembershipExpiresAt > time.Now().Unix()
 }
 
+func (r *MemoryRepository) IsApplicationLive(id string) (bool, error) {
+	app, ok := r.applications[id]
+	return ok && app.DeletedAt == nil, nil
+}
+
+func (r *MemoryRepository) CountOwnedApplications(publicKey string) (int, error) {
+	owned := make(map[string]bool)
+	for _, member := range r.members {
+		if member.PublicKey != publicKey || member.Role != MemberRoleOwner || !isMemberActive(member) {
+			continue
+		}
+		if app, ok := r.applications[member.ApplicationID]; ok && app.DeletedAt == nil {
+			owned[app.ID] = true
+		}
+	}
+	return len(owned), nil
+}
+
 func (r *MemoryRepository) GetMembersByApplicationID(appID string) ([]*Member, error) {
 	var result []*Member
 	for _, member := range r.members {

@@ -31,6 +31,8 @@ docker compose up -d && go test -tags=integration ./internal/... .  # Integratio
 | `LOG_LEVEL` | No | `info` | debug/info/warn/error |
 | `STORAGE_TYPE` | No | `local` | `local` or `s3` |
 | `STORAGE_PATH` | No | `./storage` | Local storage path |
+| `STORAGE_ACCOUNT_QUOTA_MB` | No | `0` | Per-account file storage quota in MB; `0` = off, space owner exempt |
+| `MAX_APPS_PER_ACCOUNT` | No | `0` | Max live apps one account may own; `0` = off, space owner exempt |
 | `SPACE_IDENTITY_IMPORT` | No | — | Import-only; `PRAPSPACE1...` blob from `POST /space/identity/export`, set during a hosting move (see `docs/hosting/selfhost.md`) |
 | `SPACE_IDENTITY_IMPORT_PASSPHRASE` | No | — | Passphrase that decrypts `SPACE_IDENTITY_IMPORT` |
 
