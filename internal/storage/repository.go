@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 )
@@ -274,6 +275,53 @@ func (r *Repository) DeleteStalePending(olderThanSeconds int64) (int, error) {
 		return 0, err
 	}
 	return int(n), nil
+}
+
+// Ids appear as bare strings, as storage:<id> icons and as /storage/<id> URLs
+// inside Quill deltas, so match by substring: it can only err toward keeping.
+// ponytail: O(storage rows x text) seq scan, fine for personal spaces; upgrade
+// to an in-Go scan or re-verify only rows near the cutoff if it gets slow.
+const referencedPredicate = `(EXISTS (SELECT 1 FROM components c WHERE strpos(c.data, s.id) > 0)
+	OR EXISTS (SELECT 1 FROM events e WHERE strpos(e.data, s.id) > 0)
+	OR EXISTS (SELECT 1 FROM applications a WHERE strpos(a.icon, s.id) > 0)
+	OR EXISTS (SELECT 1 FROM users u WHERE u.avatar_storage_id = s.id))`
+
+func (r *Repository) MarkReferenced(ctx context.Context, now int64) error {
+	_, err := r.db.ExecContext(ctx, `UPDATE storage s SET last_referenced_at = $1
+		WHERE s.status <> 'pending'
+		AND (s.last_referenced_at IS NULL OR s.last_referenced_at < $1 - 86400)
+		AND `+referencedPredicate, now)
+	return err
+}
+
+// DeleteUnreferenced deletes up to limit rows whose last reference is older than
+// cutoff and returns them so the caller can remove their blobs. The NOT
+// referenced re-check in the DELETE guards against a reference that landed
+// after the subquery picked the row.
+func (r *Repository) DeleteUnreferenced(ctx context.Context, cutoff int64, limit int) ([]*Storage, error) {
+	rows, err := r.db.QueryContext(ctx, `DELETE FROM storage AS s
+		WHERE s.id IN (
+			SELECT id FROM storage
+			WHERE status <> 'pending' AND COALESCE(last_referenced_at, created_at) < $1
+			ORDER BY created_at LIMIT $2)
+		AND NOT `+referencedPredicate+`
+		RETURNING s.id, s.storage_path, s.thumbnail_path`, cutoff, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var deleted []*Storage
+	for rows.Next() {
+		s := &Storage{}
+		var thumbnailPath sql.NullString
+		if err := rows.Scan(&s.ID, &s.StoragePath, &thumbnailPath); err != nil {
+			return nil, err
+		}
+		s.ThumbnailPath = thumbnailPath.String
+		deleted = append(deleted, s)
+	}
+	return deleted, rows.Err()
 }
 
 func (r *Repository) GetTotalUsedBytes() (int64, error) {

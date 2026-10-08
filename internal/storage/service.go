@@ -254,17 +254,48 @@ func (s *Service) CleanupApplicationStorage(ctx context.Context, appID string) e
 	}
 
 	for _, stored := range storageList {
-		if err := s.backend.Delete(ctx, stored.StoragePath); err != nil {
-			return fmt.Errorf("failed to delete storage file %s: %w", stored.StoragePath, err)
-		}
-		if stored.ThumbnailPath != "" {
-			if err := s.backend.Delete(ctx, stored.ThumbnailPath); err != nil {
-				return fmt.Errorf("failed to delete thumbnail %s: %w", stored.ThumbnailPath, err)
-			}
+		if err := s.deleteBlobs(ctx, stored); err != nil {
+			return err
 		}
 	}
 
 	return s.repo.DeleteByApplicationID(appID)
+}
+
+func (s *Service) deleteBlobs(ctx context.Context, stored *Storage) error {
+	var errs []error
+	if err := s.backend.Delete(ctx, stored.StoragePath); err != nil {
+		errs = append(errs, fmt.Errorf("failed to delete storage file %s: %w", stored.StoragePath, err))
+	}
+	if stored.ThumbnailPath != "" {
+		if err := s.backend.Delete(ctx, stored.ThumbnailPath); err != nil {
+			errs = append(errs, fmt.Errorf("failed to delete thumbnail %s: %w", stored.ThumbnailPath, err))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// PurgeUnreferenced deletes up to limit blobs nothing has referenced since
+// cutoff. Rows go first, then blobs: a reference landing mid-run can then only
+// hit a row that is already gone, never a live row whose blob was deleted. A
+// failed blob delete is logged and skipped; the row is gone, so it is not retried.
+func (s *Service) PurgeUnreferenced(ctx context.Context, cutoff int64, limit int) error {
+	if err := s.repo.MarkReferenced(ctx, time.Now().Unix()); err != nil {
+		return fmt.Errorf("failed to mark referenced storage: %w", err)
+	}
+	purged, err := s.repo.DeleteUnreferenced(ctx, cutoff, limit)
+	if err != nil {
+		return fmt.Errorf("failed to delete unreferenced storage: %w", err)
+	}
+	for _, stored := range purged {
+		if err := s.deleteBlobs(ctx, stored); err != nil {
+			log.Error().Err(err).Str("storageId", stored.ID).Str("path", stored.StoragePath).Str("thumbnailPath", stored.ThumbnailPath).Msg("[STORAGE] Failed to delete blob of purged storage row")
+		}
+	}
+	if len(purged) > 0 {
+		log.Info().Int("purgedCount", len(purged)).Msg("[STORAGE] Unreferenced blob purge completed")
+	}
+	return nil
 }
 
 // See Upload's doc-comment: no content-type allowlist here either, so the
