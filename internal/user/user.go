@@ -212,7 +212,6 @@ type UserEndpoints struct {
 }
 
 type Config struct {
-	MasterPassword     string
 	JWTExpirationHours int
 	ChallengeTTLSec    int
 }

@@ -24,7 +24,7 @@ docker compose up -d && go test -tags=integration ./internal/... .  # Integratio
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `DATABASE_URL` | Yes | — | PostgreSQL connection string |
-| `MASTER_PASSWORD` | Yes | — | Used to encrypt/decrypt space Ed25519 keys |
+| `MASTER_PASSWORD` | Yes | — | Random secret that encrypts the space Ed25519 keys at rest (generated, never typed into the app) |
 | `PORT` | No | `4545` | HTTP listen port |
 | `EXTERNAL_URL` | No | `http://localhost:{PORT}` | Public URL for invite links |
 | `ALLOWED_ORIGINS` | No | prappser.app + localhost:* | Comma-separated CORS origins |

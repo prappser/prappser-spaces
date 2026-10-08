@@ -16,7 +16,7 @@ infrastructure you want to manage yourself.
 Regardless of hosting method, the server needs:
 
 - **`DATABASE_URL`**: PostgreSQL 16 connection string
-- **`MASTER_PASSWORD`**: used to encrypt the space's Ed25519 keypair, required with no default
+- **`MASTER_PASSWORD`**: a random secret that encrypts the space's keys at rest, required with no default. Generate it (`openssl rand -hex 32`), never type it into the app
 - **`EXTERNAL_URL`**: the public URL clients use to reach the server
 - **`ALLOWED_ORIGINS`**: comma-separated list of CORS origins allowed to call the API
 - A persistent volume mounted at the path set by `STORAGE_PATH` (default `/app/storage`), so uploaded files survive container restarts
@@ -26,6 +26,12 @@ The server exposes plain HTTP endpoints under the root path (for example
 `/users/*`, `/applications/*`, `/events`, `/storage/*`, `/spaces/*`, `/push/*`,
 `/health`, `/status`) plus a WebSocket at `wss://{domain}/ws`. There is no
 `/api` path prefix on the current server.
+
+## Claiming the space
+
+After deploying, claim the space from the app within 30 minutes of the server
+starting. If the window passed, restart or redeploy the service to reopen it.
+Once claimed, the space stays claimed.
 
 See the full variable table in the [main README](../../README.md#configuration).
 

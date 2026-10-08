@@ -50,6 +50,10 @@ cp .env.example .env
 ```
 
 Fill in `DOMAIN`, `POSTGRES_PASSWORD`, and `MASTER_PASSWORD` at minimum.
+`MASTER_PASSWORD` is a random secret (`openssl rand -hex 32`) that encrypts the
+space's keys at rest. You never type it into the app, so back up `.env`.
+After the stack starts, claim the space from the app within 30 minutes; if the
+window passed, restart the server to reopen it.
 `ALLOWED_ORIGINS`, `LOG_LEVEL`, `WATCHTOWER_POLL_INTERVAL`, and
 `DOCKER_CONFIG_PATH` all have sane defaults in the compose file if left
 blank.

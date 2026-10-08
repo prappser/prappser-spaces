@@ -2,13 +2,11 @@ package user
 
 import (
 	"crypto/ed25519"
-	"crypto/subtle"
 	"encoding/base64"
 	"strings"
 	"time"
 
 	"github.com/goccy/go-json"
-	"github.com/prappser/prappser-spaces/internal/keys"
 	"github.com/rs/zerolog/log"
 	"github.com/valyala/fasthttp"
 )
@@ -19,41 +17,39 @@ import (
 type OwnerClaimEndpoints struct {
 	userRepository UserRepository
 	verifierKey    []byte
-	masterPassword string
+	claimDeadline  time.Time
 	spaceCreator   SpaceCreator
 }
+
+// ownerClaimWindow is how long after process start an unclaimed space accepts
+// a claim. Restarting the server reopens it.
+const ownerClaimWindow = 30 * time.Minute
 
 // NewOwnerClaimEndpoints creates a new OwnerClaimEndpoints. verifierKey comes
 // from DerivePasswordSecrets (see password.go), shared with PasswordEndpoints
 // and DeviceEndpoints - all three are derived once from the space keypair in
-// main.go. masterPassword is the space's plaintext master password
-// (config.Users.MasterPassword); the claimer proves knowledge of it via an
-// Argon2id proof (see Claim), never sends it directly.
-func NewOwnerClaimEndpoints(userRepository UserRepository, verifierKey []byte, masterPassword string, spaceCreator SpaceCreator) *OwnerClaimEndpoints {
-	return &OwnerClaimEndpoints{userRepository: userRepository, verifierKey: verifierKey, masterPassword: masterPassword, spaceCreator: spaceCreator}
+// main.go. Claims are accepted until startedAt + ownerClaimWindow.
+func NewOwnerClaimEndpoints(userRepository UserRepository, verifierKey []byte, startedAt time.Time, spaceCreator SpaceCreator) *OwnerClaimEndpoints {
+	return &OwnerClaimEndpoints{userRepository: userRepository, verifierKey: verifierKey, claimDeadline: startedAt.Add(ownerClaimWindow), spaceCreator: spaceCreator}
 }
 
 // claimOwnerRequest is the request body for POST /users/owners/claim.
-// Username, MasterPasswordSalt, and MasterPasswordProof are always required:
-// an account always has a name by the time it claims a space, and every
-// client sends one today. Proof is std-base64, the client's Argon2id
-// keys.DeriveKey(masterPassword, salt) - proving knowledge of the plaintext
-// master password without ever putting it on the wire or in a proxy log (see
-// Claim). AuthSecret, AccountKeyBlob, and UserState are optional - a claim
-// may create an owner account with no password set yet; sent values validate
-// exactly as before (see Claim). DevicePublicKey is optional too, defaulting
-// to PublicKey when empty - today's behavior for every client that predates
-// the account/device split.
+// Username is always required: an account always has a name by the time it
+// claims a space. Older clients still send masterPasswordSalt and
+// masterPasswordProof; they are ignored as unknown keys. AuthSecret,
+// AccountKeyBlob, and UserState are optional - a claim may create an owner
+// account with no password set yet; sent values validate exactly as before
+// (see Claim). DevicePublicKey is optional too, defaulting to PublicKey when
+// empty - today's behavior for every client that predates the account/device
+// split.
 type claimOwnerRequest struct {
-	Username            string `json:"username"`
-	PublicKey           string `json:"publicKey"`
-	MasterPasswordSalt  string `json:"masterPasswordSalt"`
-	MasterPasswordProof string `json:"masterPasswordProof"`
-	AuthSecret          string `json:"authSecret,omitempty"`
-	AccountKeyBlob      string `json:"accountKeyBlob,omitempty"`
-	UserState           string `json:"userState,omitempty"`
-	DeviceName          string `json:"deviceName,omitempty"`
-	DevicePublicKey     string `json:"devicePublicKey,omitempty"`
+	Username        string `json:"username"`
+	PublicKey       string `json:"publicKey"`
+	AuthSecret      string `json:"authSecret,omitempty"`
+	AccountKeyBlob  string `json:"accountKeyBlob,omitempty"`
+	UserState       string `json:"userState,omitempty"`
+	DeviceName      string `json:"deviceName,omitempty"`
+	DevicePublicKey string `json:"devicePublicKey,omitempty"`
 }
 
 // claimOwnerResponse is the response body for POST /users/owners/claim.
@@ -72,18 +68,14 @@ type claimOwnerResponse struct {
 // creates the very first account in a space, so there is nothing to
 // authenticate against yet. The JWS proof-of-possession the old JWE/JWS flow
 // required is dropped on purpose - the claimer picks the account public key
-// either way, so signing with it proves nothing an attacker holding the
-// master password couldn't also produce.
+// either way, so a signature with it would prove nothing.
 //
-// Validation order matters and must not be reordered: all shape checks
-// (username, publicKey, deviceName, escrow blobs, authSecret) run first,
-// since they are cheap and state-independent. HasClaim() runs next, BEFORE
-// the Argon2id master-password check below - this endpoint is
-// unauthenticated by construction, and keys.DeriveKey costs 64 MiB of memory
-// per call, so an already-claimed space must reject at DB-lookup cost, never
-// at KDF cost, or an attacker gets a cheap memory-exhaustion lever against a
-// space that has nothing left to claim. Only once all of that has passed
-// does the handler pay for Argon2id and hit ClaimOwner's transaction.
+// Validation order matters and must not be reordered: all shape checks run
+// first, since they are cheap and state-independent. HasClaim() is checked
+// before the window, so an already-claimed space always answers 409, even
+// after the window closes. This also keeps ErrUsernameTaken out of that path
+// (ClaimOwner inserts the user before the claim row). Only then does
+// ClaimOwner run.
 func (oe *OwnerClaimEndpoints) Claim(ctx *fasthttp.RequestCtx) {
 	var req claimOwnerRequest
 	if err := json.Unmarshal(ctx.PostBody(), &req); err != nil {
@@ -134,9 +126,6 @@ func (oe *OwnerClaimEndpoints) Claim(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	// hashAuthSecret is a keyed HMAC over an already-high-entropy input, not
-	// a KDF - cheap, so it belongs in shape validation, not behind the
-	// HasClaim pre-check below (see this method's doc comment).
 	// AuthSecret is optional: claiming without a password leaves both
 	// verifier and handle empty, which ClaimOwner's NULLIF wrapping turns
 	// into SQL NULL - hashAuthSecret must not run on an empty string, since
@@ -164,23 +153,9 @@ func (oe *OwnerClaimEndpoints) Claim(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	salt, err := base64.StdEncoding.DecodeString(req.MasterPasswordSalt)
-	if err != nil || len(salt) != keys.SaltSize {
-		log.Debug().Msg("[OWNER_CLAIM] Invalid masterPasswordSalt")
-		ctx.Error("masterPasswordSalt must be 32 std-base64-encoded bytes", fasthttp.StatusBadRequest)
-		return
-	}
-	proof, err := base64.StdEncoding.DecodeString(req.MasterPasswordProof)
-	if err != nil {
-		log.Debug().Msg("[OWNER_CLAIM] Invalid masterPasswordProof encoding")
-		ctx.Error("masterPasswordProof is invalid", fasthttp.StatusBadRequest)
-		return
-	}
-
-	expectedProof := keys.DeriveKey(oe.masterPassword, salt)
-	if subtle.ConstantTimeCompare(expectedProof, proof) != 1 {
-		log.Debug().Msg("[OWNER_CLAIM] Master password proof mismatch")
-		ctx.Error("invalid master password proof", fasthttp.StatusUnauthorized)
+	if time.Now().After(oe.claimDeadline) {
+		log.Error().Msg("[OWNER_CLAIM] Owner claim window closed")
+		ctx.Error("owner claim window closed, restart the server to reopen it", fasthttp.StatusForbidden)
 		return
 	}
 

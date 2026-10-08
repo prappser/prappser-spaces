@@ -14,7 +14,7 @@ spec:
     Event-driven application sync server with PostgreSQL backend.
 
     ## Configuration
-    - **MASTER_PASSWORD**: Your admin password (plain text, hashed automatically by server)
+    - **MASTER_PASSWORD**: Random secret that encrypts the space keys at rest (generate it, never type it into the app)
 
     ## Endpoints
     - HTTP API: `https://{domain}/api/*`
@@ -23,8 +23,8 @@ spec:
   variables:
     - key: MASTER_PASSWORD
       type: STRING
-      name: Master Password
-      description: Plain text admin password (will be hashed by server)
+      name: Key Encryption Secret
+      description: Random secret that encrypts the space keys at rest (e.g. openssl rand -hex 32)
     - key: SERVER_DOMAIN
       type: DOMAIN
       name: Server Domain

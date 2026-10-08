@@ -17,7 +17,7 @@ and creates two services:
 
 Deploying the template asks for two inputs:
 
-- **`MASTER_PASSWORD`**: plain text admin password, hashed by the server on startup
+- **`MASTER_PASSWORD`**: a random secret that encrypts the space's keys at rest, generate it (`openssl rand -hex 32`) and never type it into the app
 - **`SERVER_DOMAIN`**: the domain the service is deployed to (a generated
   `*.zeabur.app` subdomain, or a custom domain you attach)
 
@@ -26,6 +26,9 @@ automatically from the `postgresql` service and from `SERVER_DOMAIN`:
 `DATABASE_URL`, `MASTER_PASSWORD`, `PORT`, `EXTERNAL_URL`, `ALLOWED_ORIGINS`,
 `LOG_LEVEL`, `STORAGE_TYPE`, `STORAGE_PATH`, `STORAGE_MAX_FILE_SIZE_MB`, and
 `STORAGE_CHUNK_SIZE_MB`.
+
+After deploying, claim the space from the app within 30 minutes of the server
+starting. If the window passed, restart the service to reopen it.
 
 ## HOSTING_PROVIDER=zeabur
 

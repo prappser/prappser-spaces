@@ -94,7 +94,6 @@ func maskSecret(s string) string {
 func (c *Config) String() string {
 	masked := *c
 	masked.MasterPassword = maskSecret(c.MasterPassword)
-	masked.Users.MasterPassword = maskSecret(c.Users.MasterPassword)
 	masked.Storage.S3AccessKey = maskSecret(c.Storage.S3AccessKey)
 	masked.Storage.S3SecretKey = maskSecret(c.Storage.S3SecretKey)
 	masked.IdentityImport = maskSecret(c.IdentityImport)
@@ -145,8 +144,6 @@ func LoadConfig() (*Config, error) {
 	}
 
 	// User config
-	config.Users.MasterPassword = envMasterPassword
-
 	config.Users.JWTExpirationHours = defaultJWTExpirationHours
 	if envJWTExpirationHours != "" {
 		if hours, err := strconv.Atoi(envJWTExpirationHours); err == nil {

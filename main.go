@@ -234,7 +234,7 @@ func main() {
 	saltSecret, verifierKey := user.DerivePasswordSecrets(privateKey.Seed())
 	deviceEndpoints := user.NewDeviceEndpoints(userRepository, verifierKey, spacePublicKeyString)
 	passwordEndpoints := user.NewPasswordEndpoints(userRepository, saltSecret, verifierKey)
-	ownerClaimEndpoints := user.NewOwnerClaimEndpoints(userRepository, verifierKey, config.Users.MasterPassword, &spaceCreatorAdapter{service: spaceService})
+	ownerClaimEndpoints := user.NewOwnerClaimEndpoints(userRepository, verifierKey, time.Now(), &spaceCreatorAdapter{service: spaceService})
 	assertionEndpoints := user.NewAssertionEndpoints(userRepository, privateKey, spacePublicKeyString)
 
 	requestHandler := internal.NewRequestHandler(config, userEndpoints, statusEndpoints, healthEndpoints, userService, appEndpoints, invitationEndpoints, eventEndpoints, setupEndpoints, storageEndpoints, wsHandler, spaceEndpoints, pushEndpoints, profileEndpoints, deviceEndpoints, passwordEndpoints, assertionEndpoints, ownerClaimEndpoints, keyEndpoints)

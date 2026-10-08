@@ -28,7 +28,7 @@ docker compose up -d
 
 # Set required environment variables
 export DATABASE_URL="postgres://test:test@localhost:5433/prappser_test?sslmode=disable"
-export MASTER_PASSWORD="your-secure-password"
+export MASTER_PASSWORD="$(openssl rand -hex 32)"
 
 # Run the server
 go run .
@@ -41,7 +41,7 @@ The server starts on port `4545` by default and runs database migrations automat
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `DATABASE_URL` | Yes | - | PostgreSQL connection string |
-| `MASTER_PASSWORD` | Yes | - | Used to encrypt the space's Ed25519 keypair |
+| `MASTER_PASSWORD` | Yes | - | Random secret that encrypts the space's keys at rest. Generate it, never type it into the app |
 | `PORT` | No | `4545` | HTTP listen port |
 | `EXTERNAL_URL` | No | `http://localhost:4545` | Public URL (used in invite links); overrides PORT |
 | `HOSTING_PROVIDER` | No | - | Set to `zeabur` for automatic URL resolution |
@@ -75,7 +75,7 @@ docker compose down
 docker build -t prappser-spaces .
 docker run \
   -e DATABASE_URL="postgres://user:pass@host:5432/prappser?sslmode=disable" \
-  -e MASTER_PASSWORD="your-secure-password" \
+  -e MASTER_PASSWORD="$(openssl rand -hex 32)" \
   -p 4545:4545 \
   prappser-spaces
 ```
