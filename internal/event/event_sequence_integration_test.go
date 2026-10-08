@@ -154,3 +154,63 @@ func TestDeleteOlderThan_RetainsNewestRowPerAppAndPerUserScopedCreator(t *testin
 		t.Fatalf("expected exactly 1 surviving user-scoped row, got %d", userScopedCount)
 	}
 }
+
+// TestDeleteOlderThan_RetainsHighestRevTemplateChangedPerTemplate pins that
+// pruning keeps the max-rev template_changed row per template (tombstones
+// included) even when a newer user-scoped event of another type exists, so a
+// fresh device polling from no cursor still receives every template.
+func TestDeleteOlderThan_RetainsHighestRevTemplateChangedPerTemplate(t *testing.T) {
+	db := testdb.Connect(t, "event")
+	defer db.Close()
+	repo := NewEventRepository(db)
+
+	userPK := "test-retention-template-user-1"
+	testdb.InsertTestUser(t, db, userPK)
+
+	old := time.Now().Add(-30 * 24 * time.Hour).Unix()
+	tmpl := func(id, tid string, rev int, state string, at int64) *Event {
+		return &Event{ID: id, Type: EventTypeTemplateChanged, CreatorPublicKey: userPK, Version: 1, CreatedAt: at,
+			Data: map[string]interface{}{"id": tid, "rev": rev, "state": state, "source": "user", "doc": map[string]interface{}{}, "createdAt": at, "updatedAt": at, "userPublicKey": userPK}}
+	}
+	events := []*Event{
+		tmpl("retention-tmpl-a-rev2", "retention-tmpl-a", 2, "active", old),
+		tmpl("retention-tmpl-a-rev1", "retention-tmpl-a", 1, "active", old+1),
+		tmpl("retention-tmpl-a-rev2-tie", "retention-tmpl-a", 2, "active", old+2),
+		tmpl("retention-tmpl-b-rev3", "retention-tmpl-b", 3, "deleted", old+3),
+		{ID: "retention-tmpl-settings", Type: EventTypeUserSettingsChanged, CreatorPublicKey: userPK, Version: 1, Data: map[string]interface{}{}, CreatedAt: old + 4},
+	}
+	for _, e := range events {
+		if err := repo.Create(e); err != nil {
+			t.Fatalf("failed to create event %s: %v", e.ID, err)
+		}
+	}
+
+	if _, err := repo.DeleteOlderThan(time.Now().Unix()); err != nil {
+		t.Fatalf("unexpected error pruning: %v", err)
+	}
+
+	for id, want := range map[string]bool{
+		"retention-tmpl-a-rev2": true, "retention-tmpl-a-rev2-tie": true, "retention-tmpl-a-rev1": false,
+		"retention-tmpl-b-rev3": true, "retention-tmpl-settings": true,
+	} {
+		var n int
+		if err := db.QueryRow("SELECT COUNT(*) FROM events WHERE id = $1", id).Scan(&n); err != nil {
+			t.Fatalf("failed to count %s: %v", id, err)
+		}
+		if (n == 1) != want {
+			t.Fatalf("event %s: survived=%v, want %v", id, n == 1, want)
+		}
+	}
+
+	got, _, err := repo.GetSince(userPK, "", 100)
+	if err != nil {
+		t.Fatalf("GetSince failed: %v", err)
+	}
+	seen := map[string]bool{}
+	for _, e := range got {
+		seen[e.ID] = true
+	}
+	if !seen["retention-tmpl-a-rev2"] || !seen["retention-tmpl-b-rev3"] {
+		t.Fatalf("fresh device did not receive both templates, got %v", seen)
+	}
+}
