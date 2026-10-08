@@ -1,6 +1,7 @@
 package application
 
 import (
+	"errors"
 	"github.com/goccy/go-json"
 	"github.com/prappser/prappser-spaces/internal/user"
 	"github.com/rs/zerolog/log"
@@ -61,7 +62,15 @@ func (ae *ApplicationEndpoints) RegisterApplication(ctx *fasthttp.RequestCtx) {
 	}
 
 	// Register the application
-	_, err := ae.appService.RegisterApplication(authenticatedUser.PublicKey, &app)
+	_, err := ae.appService.RegisterApplication(authenticatedUser.PublicKey, &app, authenticatedUser.Role == user.RoleOwner)
+	if errors.Is(err, ErrAppLimitReached) {
+		log.Error().Err(err).Msg("Application limit reached")
+		body, _ := json.Marshal(map[string]string{"error": err.Error(), "code": "app_limit_reached"})
+		ctx.SetStatusCode(fasthttp.StatusForbidden)
+		ctx.SetContentType("application/json")
+		ctx.SetBody(body)
+		return
+	}
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to register application")
 		ctx.Error("Failed to register application", fasthttp.StatusInternalServerError)

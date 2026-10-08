@@ -24,7 +24,7 @@ func TestUpload_PDF_Succeeds_Integration(t *testing.T) {
 
 	repo := NewRepository(db)
 	backend := newMockBackend()
-	svc := NewService(repo, backend, 10*1024*1024)
+	svc := NewService(repo, backend, 10*1024*1024, 0)
 
 	data := []byte("%PDF-1.4 fake pdf bytes")
 	req := &UploadRequest{
@@ -35,7 +35,7 @@ func TestUpload_PDF_Succeeds_Integration(t *testing.T) {
 	}
 
 	// when
-	stored, err := svc.Upload(context.Background(), nil, "user-pk-1", nil, req, bytes.NewReader(data), "http://localhost")
+	stored, err := svc.Upload(context.Background(), nil, "user-pk-1", nil, req, bytes.NewReader(data), "http://localhost", false)
 
 	// then
 	assert.NoError(t, err)

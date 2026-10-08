@@ -50,7 +50,7 @@ func TestPurgeDeletedApps_ShouldHardDeleteOnlyAppsDeletedBeyondRetention_Integra
 	root := t.TempDir()
 	backend, err := NewLocalStorage(&BackendConfig{LocalPath: root})
 	require.NoError(t, err)
-	svc := NewService(NewRepository(db), backend, 0)
+	svc := NewService(NewRepository(db), backend, 0, 0)
 
 	now := time.Now()
 	old := now.Add(-31 * 24 * time.Hour).Unix()
@@ -117,7 +117,7 @@ func TestCleanupApplicationStorage_ShouldKeepRowsWhenBlobDeleteFails_Integration
 
 	backend, err := NewLocalStorage(&BackendConfig{LocalPath: t.TempDir()})
 	require.NoError(t, err)
-	svc := NewService(NewRepository(db), failingDeleteBackend{backend}, 0)
+	svc := NewService(NewRepository(db), failingDeleteBackend{backend}, 0, 0)
 
 	_, err = db.Exec(`INSERT INTO users (public_key, username, role, created_at, issuer) VALUES ('purge-pk', 'purge', 'user', $1, 'purge-pk') ON CONFLICT DO NOTHING`, time.Now().Unix())
 	require.NoError(t, err)
@@ -139,7 +139,7 @@ func TestPurgeUnreferenced_ShouldDeleteOnlyOldUnreferencedBlobs_Integration(t *t
 	root := t.TempDir()
 	backend, err := NewLocalStorage(&BackendConfig{LocalPath: root})
 	require.NoError(t, err)
-	svc := NewService(NewRepository(db), backend, 0)
+	svc := NewService(NewRepository(db), backend, 0, 0)
 	ctx := context.Background()
 
 	now := time.Now()

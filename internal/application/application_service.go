@@ -1,6 +1,7 @@
 package application
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -21,17 +22,21 @@ type Event struct {
 // EventProducer interface removed - events are now client-produced via POST /events
 // Server only validates, sequences, and applies events
 
+var ErrAppLimitReached = errors.New("app limit reached")
+
 type ApplicationService struct {
-	appRepo ApplicationRepository
+	appRepo           ApplicationRepository
+	maxAppsPerAccount int
 }
 
-func NewApplicationService(appRepo ApplicationRepository) *ApplicationService {
+func NewApplicationService(appRepo ApplicationRepository, maxAppsPerAccount int) *ApplicationService {
 	return &ApplicationService{
-		appRepo: appRepo,
+		appRepo:           appRepo,
+		maxAppsPerAccount: maxAppsPerAccount,
 	}
 }
 
-func (s *ApplicationService) RegisterApplication(ownerPublicKey string, app *Application) (*Application, error) {
+func (s *ApplicationService) RegisterApplication(ownerPublicKey string, app *Application, limitExempt bool) (*Application, error) {
 	// Validate application
 	if app.ID == "" {
 		return nil, fmt.Errorf("application ID cannot be empty")
@@ -52,6 +57,24 @@ func (s *ApplicationService) RegisterApplication(ownerPublicKey string, app *App
 	}
 	if ownerCount > 1 {
 		return nil, fmt.Errorf("application must have exactly one owner member")
+	}
+
+	// ponytail: counts apps where the caller is the owner member, so registering with someone
+	// else as owner bypasses it; fix by requiring owner key == caller.
+	if s.maxAppsPerAccount > 0 && !limitExempt {
+		live, err := s.appRepo.IsApplicationLive(app.ID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check application existence: %w", err)
+		}
+		if !live {
+			count, err := s.appRepo.CountOwnedApplications(ownerPublicKey)
+			if err != nil {
+				return nil, fmt.Errorf("failed to count applications: %w", err)
+			}
+			if count >= s.maxAppsPerAccount {
+				return nil, fmt.Errorf("%w: limit is %d", ErrAppLimitReached, s.maxAppsPerAccount)
+			}
+		}
 	}
 
 	// Set timestamps

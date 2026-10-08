@@ -682,6 +682,25 @@ func (r *Repository) GetMemberByPublicKey(appID, publicKey string) (*Member, err
 	return member, nil
 }
 
+func (r *Repository) CountOwnedApplications(publicKey string) (int, error) {
+	query := `SELECT COUNT(DISTINCT a.id)
+			  FROM applications a
+			  INNER JOIN members m ON a.id = m.application_id
+			  WHERE m.public_key = $1 AND m.role = 'owner' AND a.deleted_at IS NULL AND ` + activeMemberPredicate
+
+	var count int
+	if err := r.db.QueryRow(query, publicKey).Scan(&count); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+func (r *Repository) IsApplicationLive(id string) (bool, error) {
+	var live bool
+	err := r.db.QueryRow(`SELECT EXISTS (SELECT 1 FROM applications WHERE id = $1 AND deleted_at IS NULL)`, id).Scan(&live)
+	return live, err
+}
+
 func (r *Repository) GetApplicationsByMemberPublicKey(publicKey string) ([]*Application, error) {
 	query := `SELECT DISTINCT a.id, a.name, a.icon, a.space_public_key, a.space_id, a.created_at, a.updated_at, a.last_sequence
 			  FROM applications a

@@ -172,7 +172,7 @@ func main() {
 	reminderRepository := reminder.NewRepository(db)
 	eventService.SetReminderStore(reminderRepository)
 
-	appService := application.NewApplicationService(appRepository)
+	appService := application.NewApplicationService(appRepository, config.MaxAppsPerAccount)
 	spacePublicKeyString := base64.StdEncoding.EncodeToString(publicKey)
 
 	appEndpoints := application.NewApplicationEndpoints(appService, spacePublicKeyString)
@@ -209,7 +209,7 @@ func main() {
 		return
 	}
 
-	storageService := storage.NewService(storageRepo, storageBackend, config.Storage.MaxFileSize)
+	storageService := storage.NewService(storageRepo, storageBackend, config.Storage.MaxFileSize, config.Storage.AccountQuota)
 	invitationEndpoints := invitation.NewInvitationEndpoints(invitationService, storageService, config.ExternalURL)
 	storageEndpoints := storage.NewEndpoints(storageService, appRepository, eventService, userRepository, config.ExternalURL)
 	log.Info().Str("storageType", config.Storage.StorageType).Str("localPath", config.Storage.LocalPath).Msg("Storage service initialized")
@@ -243,7 +243,8 @@ func main() {
 	log.Info().Str("addr", serverAddr).Msg("Starting HTTP server")
 	server := &fasthttp.Server{
 		Handler:            requestHandler,
-		MaxRequestBodySize: int(config.Storage.MaxFileSize),
+		// A low file cap must not also cap event and text bodies.
+		MaxRequestBodySize: int(max(config.Storage.MaxFileSize, 50*1024*1024)),
 	}
 	if err := server.ListenAndServe(serverAddr); err != nil {
 		log.Fatal().Err(err).Msg("Error starting HTTP server")

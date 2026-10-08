@@ -51,21 +51,45 @@ func isValidContentType(contentType string) bool {
 	return err == nil
 }
 
+var (
+	ErrFileTooLarge         = errors.New("file too large")
+	ErrStorageQuotaExceeded = errors.New("storage quota exceeded")
+)
+
 type Service struct {
-	repo        *Repository
-	backend     StorageBackend
-	maxFileSize int64
+	repo         *Repository
+	backend      StorageBackend
+	maxFileSize  int64
+	accountQuota int64
 }
 
-func NewService(repo *Repository, backend StorageBackend, maxFileSize int64) *Service {
+func NewService(repo *Repository, backend StorageBackend, maxFileSize, accountQuota int64) *Service {
 	if maxFileSize <= 0 {
 		maxFileSize = 500 * 1024 * 1024
 	}
 	return &Service{
-		repo:        repo,
-		backend:     backend,
-		maxFileSize: maxFileSize,
+		repo:         repo,
+		backend:      backend,
+		maxFileSize:  maxFileSize,
+		accountQuota: accountQuota,
 	}
+}
+
+// checkQuota refuses size when it would push the uploader over accountQuota.
+// ponytail: check-then-write, concurrent uploads can overshoot by about
+// in-flight uploads x file cap; per-account advisory lock if it matters.
+func (s *Service) checkQuota(uploaderPublicKey string, size int64, quotaExempt bool) error {
+	if s.accountQuota <= 0 || quotaExempt {
+		return nil
+	}
+	used, err := s.repo.GetUsedBytesByUploader(uploaderPublicKey)
+	if err != nil {
+		return fmt.Errorf("failed to read used storage: %w", err)
+	}
+	if used+size > s.accountQuota {
+		return fmt.Errorf("%w: %d bytes used of %d", ErrStorageQuotaExceeded, used, s.accountQuota)
+	}
+	return nil
 }
 
 // Upload no longer gates on a content-type allowlist: req.ContentType is
@@ -73,12 +97,12 @@ func NewService(repo *Repository, backend StorageBackend, maxFileSize int64) *Se
 // actual bytes and was never a content-integrity control. Serving hardens
 // against it instead (see GetFile's inlineContentTypes). isValidContentType
 // below replaces the shape validation the allowlist provided incidentally.
-func (s *Service) Upload(ctx context.Context, appID *string, uploaderPublicKey string, spaceID *string, req *UploadRequest, data io.Reader, baseURL string) (*Storage, error) {
+func (s *Service) Upload(ctx context.Context, appID *string, uploaderPublicKey string, spaceID *string, req *UploadRequest, data io.Reader, baseURL string, quotaExempt bool) (*Storage, error) {
 	if !isValidContentType(req.ContentType) {
 		return nil, fmt.Errorf("invalid content type: %q", req.ContentType)
 	}
 	if req.SizeBytes > s.maxFileSize {
-		return nil, fmt.Errorf("file too large: %d bytes (max: %d)", req.SizeBytes, s.maxFileSize)
+		return nil, fmt.Errorf("%w: %d bytes (max: %d)", ErrFileTooLarge, req.SizeBytes, s.maxFileSize)
 	}
 
 	buf := &bytes.Buffer{}
@@ -90,7 +114,10 @@ func (s *Service) Upload(ctx context.Context, appID *string, uploaderPublicKey s
 		return nil, fmt.Errorf("failed to read data: %w", err)
 	}
 	if n > s.maxFileSize {
-		return nil, fmt.Errorf("file too large: exceeds %d bytes", s.maxFileSize)
+		return nil, fmt.Errorf("%w: exceeds %d bytes", ErrFileTooLarge, s.maxFileSize)
+	}
+	if err := s.checkQuota(uploaderPublicKey, n, quotaExempt); err != nil {
+		return nil, err
 	}
 
 	checksum := hex.EncodeToString(hasher.Sum(nil))
@@ -300,12 +327,15 @@ func (s *Service) PurgeUnreferenced(ctx context.Context, cutoff int64, limit int
 
 // See Upload's doc-comment: no content-type allowlist here either, so the
 // same isValidContentType gate applies.
-func (s *Service) InitChunkedUpload(ctx context.Context, appID *string, uploaderPublicKey string, spaceID *string, req *ChunkedUploadInitRequest) (*ChunkedUploadInitResponse, error) {
+func (s *Service) InitChunkedUpload(ctx context.Context, appID *string, uploaderPublicKey string, spaceID *string, req *ChunkedUploadInitRequest, quotaExempt bool) (*ChunkedUploadInitResponse, error) {
 	if !isValidContentType(req.ContentType) {
 		return nil, fmt.Errorf("invalid content type: %q", req.ContentType)
 	}
 	if req.TotalSize > s.maxFileSize {
-		return nil, fmt.Errorf("file too large: %d bytes (max: %d)", req.TotalSize, s.maxFileSize)
+		return nil, fmt.Errorf("%w: %d bytes (max: %d)", ErrFileTooLarge, req.TotalSize, s.maxFileSize)
+	}
+	if err := s.checkQuota(uploaderPublicKey, req.TotalSize, quotaExempt); err != nil {
+		return nil, err
 	}
 
 	now := time.Now()
@@ -416,6 +446,10 @@ func (s *Service) CompleteChunkedUpload(ctx context.Context, storageID string, b
 			return nil, fmt.Errorf("failed to combine chunk %d: %w", i, err)
 		}
 		reader.Close()
+	}
+
+	if size := int64(combined.Len()); size > stored.SizeBytes || size > s.maxFileSize {
+		return nil, fmt.Errorf("%w: combined %d bytes (declared: %d, max: %d)", ErrFileTooLarge, size, stored.SizeBytes, s.maxFileSize)
 	}
 
 	checksum := hex.EncodeToString(hasher.Sum(nil))

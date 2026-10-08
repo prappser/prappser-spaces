@@ -27,12 +27,12 @@ type EventService interface {
 // storageService is the narrow interface Endpoints needs from *Service.
 // The concrete *Service satisfies it; tests inject a mock.
 type storageService interface {
-	Upload(ctx context.Context, appID *string, uploaderPublicKey string, spaceID *string, req *UploadRequest, data io.Reader, baseURL string) (*Storage, error)
+	Upload(ctx context.Context, appID *string, uploaderPublicKey string, spaceID *string, req *UploadRequest, data io.Reader, baseURL string, quotaExempt bool) (*Storage, error)
 	Get(ctx context.Context, id string, baseURL string) (*Storage, error)
 	GetData(ctx context.Context, id string) (io.ReadCloser, *Storage, error)
 	GetThumbnail(ctx context.Context, id string) (io.ReadCloser, *Storage, error)
 	Delete(ctx context.Context, id, requestorPublicKey string) error
-	InitChunkedUpload(ctx context.Context, appID *string, uploaderPublicKey string, spaceID *string, req *ChunkedUploadInitRequest) (*ChunkedUploadInitResponse, error)
+	InitChunkedUpload(ctx context.Context, appID *string, uploaderPublicKey string, spaceID *string, req *ChunkedUploadInitRequest, quotaExempt bool) (*ChunkedUploadInitResponse, error)
 	UploadChunk(ctx context.Context, storageID string, chunkIndex int, data io.Reader) error
 	CompleteChunkedUpload(ctx context.Context, storageID string, baseURL string) (*Storage, error)
 	CleanupApplicationStorage(ctx context.Context, appID string) error
@@ -143,9 +143,12 @@ func (e *Endpoints) Upload(ctx *fasthttp.RequestCtx) {
 	}
 
 	baseURL := httputil.PublicURL(ctx, e.externalURLOverride)
-	stored, err := e.service.Upload(ctx, appID, publicKey, spaceID, req, file, baseURL)
+	stored, err := e.service.Upload(ctx, appID, publicKey, spaceID, req, file, baseURL, isSpaceOwner(ctx))
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to upload file")
+		if writeLimitError(ctx, err) {
+			return
+		}
 		ctx.Error(err.Error(), fasthttp.StatusBadRequest)
 		return
 	}
@@ -247,9 +250,12 @@ func (e *Endpoints) UploadUserAvatar(ctx *fasthttp.RequestCtx) {
 		avatarSpaceID = &authenticatedUser.SpaceID
 	}
 
-	stored, err := e.service.Upload(ctx, nil, publicKey, avatarSpaceID, req, file, httputil.PublicURL(ctx, e.externalURLOverride))
+	stored, err := e.service.Upload(ctx, nil, publicKey, avatarSpaceID, req, file, httputil.PublicURL(ctx, e.externalURLOverride), isSpaceOwner(ctx))
 	if err != nil {
 		log.Error().Err(err).Msg("[STORAGE] Failed to upload avatar")
+		if writeLimitError(ctx, err) {
+			return
+		}
 		ctx.Error("Failed to upload avatar", fasthttp.StatusInternalServerError)
 		return
 	}
@@ -320,8 +326,12 @@ func (e *Endpoints) InitChunkedUpload(ctx *fasthttp.RequestCtx) {
 		req.ContentType = detectContentType(req.Filename)
 	}
 
-	response, err := e.service.InitChunkedUpload(ctx, &appID, publicKey, spaceID, &req)
+	response, err := e.service.InitChunkedUpload(ctx, &appID, publicKey, spaceID, &req, isSpaceOwner(ctx))
 	if err != nil {
+		log.Error().Err(err).Msg("[STORAGE] Failed to init chunked upload")
+		if writeLimitError(ctx, err) {
+			return
+		}
 		ctx.Error(err.Error(), fasthttp.StatusBadRequest)
 		return
 	}
@@ -406,6 +416,10 @@ func (e *Endpoints) CompleteChunkedUpload(ctx *fasthttp.RequestCtx) {
 	baseURL := httputil.PublicURL(ctx, e.externalURLOverride)
 	completedStorage, err := e.service.CompleteChunkedUpload(ctx, storageID, baseURL)
 	if err != nil {
+		log.Error().Err(err).Str("storageId", storageID).Msg("[STORAGE] Failed to complete chunked upload")
+		if writeLimitError(ctx, err) {
+			return
+		}
 		ctx.Error(err.Error(), fasthttp.StatusBadRequest)
 		return
 	}
@@ -591,6 +605,31 @@ func (e *Endpoints) DeleteFile(ctx *fasthttp.RequestCtx) {
 	}
 
 	ctx.SetStatusCode(fasthttp.StatusNoContent)
+}
+
+func isSpaceOwner(ctx *fasthttp.RequestCtx) bool {
+	u, ok := ctx.UserValue("user").(*user.User)
+	return ok && u != nil && u.Role == user.RoleOwner
+}
+
+// writeLimitError answers file-size and quota refusals with a machine-readable
+// code the app maps to a message; it reports whether err was one of them.
+func writeLimitError(ctx *fasthttp.RequestCtx, err error) bool {
+	var status int
+	var code string
+	switch {
+	case errors.Is(err, ErrFileTooLarge):
+		status, code = fasthttp.StatusRequestEntityTooLarge, "file_too_large"
+	case errors.Is(err, ErrStorageQuotaExceeded):
+		status, code = fasthttp.StatusForbidden, "storage_quota_exceeded"
+	default:
+		return false
+	}
+	body, _ := json.Marshal(map[string]string{"error": err.Error(), "code": code})
+	ctx.SetContentType("application/json")
+	ctx.SetStatusCode(status)
+	ctx.SetBody(body)
+	return true
 }
 
 func (e *Endpoints) checkAuthorization(ctx *fasthttp.RequestCtx) (appID, publicKey string, spaceID *string, ok bool) {
