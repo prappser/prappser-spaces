@@ -245,6 +245,8 @@ func (s *Service) Delete(ctx context.Context, id, requestorPublicKey string) err
 	return s.repo.Delete(id)
 }
 
+// CleanupApplicationStorage deletes blobs before rows: the paths live only in
+// the rows, so a failed blob delete must leave them for the next attempt.
 func (s *Service) CleanupApplicationStorage(ctx context.Context, appID string) error {
 	storageList, err := s.repo.GetByApplicationID(appID)
 	if err != nil {
@@ -253,16 +255,16 @@ func (s *Service) CleanupApplicationStorage(ctx context.Context, appID string) e
 
 	for _, stored := range storageList {
 		if err := s.backend.Delete(ctx, stored.StoragePath); err != nil {
-			log.Warn().Err(err).Str("path", stored.StoragePath).Msg("Failed to delete storage file during cleanup")
+			return fmt.Errorf("failed to delete storage file %s: %w", stored.StoragePath, err)
 		}
 		if stored.ThumbnailPath != "" {
 			if err := s.backend.Delete(ctx, stored.ThumbnailPath); err != nil {
-				log.Warn().Err(err).Str("path", stored.ThumbnailPath).Msg("Failed to delete thumbnail during cleanup")
+				return fmt.Errorf("failed to delete thumbnail %s: %w", stored.ThumbnailPath, err)
 			}
 		}
 	}
 
-	return nil
+	return s.repo.DeleteByApplicationID(appID)
 }
 
 // See Upload's doc-comment: no content-type allowlist here either, so the

@@ -218,6 +218,9 @@ func main() {
 	storagePendingCleanup.Start()
 	log.Info().Msg("Storage pending upload cleanup scheduler started")
 
+	deletedAppPurge := storage.NewDeletedAppPurgeScheduler(appRepository, storageService)
+	deletedAppPurge.Start()
+
 	wsHandler := websocket.NewHandler(wsHub, userService)
 
 	spaceEndpoints := space.NewSpaceEndpoints(spaceService, userRepository)
