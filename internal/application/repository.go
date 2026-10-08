@@ -176,6 +176,32 @@ func (r *Repository) DeleteApplication(id string) error {
 	return nil
 }
 
+func (r *Repository) GetPurgeableApplicationIDs(cutoff int64, limit int) ([]string, error) {
+	rows, err := r.db.Query(`SELECT id FROM applications WHERE deleted_at IS NOT NULL AND deleted_at < $1 ORDER BY deleted_at LIMIT $2`, cutoff, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// PurgeApplication hard-deletes the row; child tables go via ON DELETE CASCADE.
+// The deleted_at guard repeats the selection predicate so an app revived since
+// it was selected is never removed.
+func (r *Repository) PurgeApplication(id string, cutoff int64) error {
+	_, err := r.db.Exec(`DELETE FROM applications WHERE id = $1 AND deleted_at IS NOT NULL AND deleted_at < $2`, id, cutoff)
+	return err
+}
+
 func (r *Repository) CreateComponentGroup(group *ComponentGroup) error {
 	query := `INSERT INTO component_groups (id, application_id, name, index_order)
 			  VALUES ($1, $2, $3, $4)

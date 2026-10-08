@@ -158,6 +158,11 @@ func (r *Repository) Delete(id string) error {
 	return r.execWithRowCheck(`DELETE FROM storage WHERE id = $1`, id)
 }
 
+func (r *Repository) DeleteByApplicationID(appID string) error {
+	_, err := r.db.Exec(`DELETE FROM storage WHERE application_id = $1`, appID)
+	return err
+}
+
 func (r *Repository) execWithRowCheck(query string, args ...interface{}) error {
 	result, err := r.db.Exec(query, args...)
 	if err != nil {
