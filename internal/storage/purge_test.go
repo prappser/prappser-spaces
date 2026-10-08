@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -24,6 +25,14 @@ func (m *mockPurger) PurgeApplication(id string, _ int64) error {
 
 type mockCleaner struct {
 	failFor string
+	cutoff  int64
+	limit   int
+}
+
+func (m *mockCleaner) PurgeUnreferenced(_ context.Context, cutoff int64, limit int) error {
+	m.cutoff = cutoff
+	m.limit = limit
+	return nil
 }
 
 func (m *mockCleaner) CleanupApplicationStorage(_ context.Context, appID string) error {
@@ -36,7 +45,7 @@ func (m *mockCleaner) CleanupApplicationStorage(_ context.Context, appID string)
 func TestPurgeDeletedApps_ShouldPurgeAppsWhoseStorageCleanupSucceeds(t *testing.T) {
 	// given
 	purger := &mockPurger{ids: []string{"app-1", "app-2"}}
-	sched := NewDeletedAppPurgeScheduler(purger, &mockCleaner{})
+	sched := NewStoragePurgeScheduler(purger, &mockCleaner{})
 
 	// when
 	sched.PurgeDeletedApps(context.Background())
@@ -48,11 +57,25 @@ func TestPurgeDeletedApps_ShouldPurgeAppsWhoseStorageCleanupSucceeds(t *testing.
 func TestPurgeDeletedApps_ShouldSkipAppWhoseStorageCleanupFails(t *testing.T) {
 	// given
 	purger := &mockPurger{ids: []string{"app-1", "app-2", "app-3"}}
-	sched := NewDeletedAppPurgeScheduler(purger, &mockCleaner{failFor: "app-2"})
+	sched := NewStoragePurgeScheduler(purger, &mockCleaner{failFor: "app-2"})
 
 	// when
 	sched.PurgeDeletedApps(context.Background())
 
 	// then
 	assert.Equal(t, []string{"app-1", "app-3"}, purger.purged)
+}
+
+func TestPurgeUnreferencedBlobs_ShouldPassNinetyDayCutoffAndBatchLimit(t *testing.T) {
+	// given
+	cleaner := &mockCleaner{}
+	sched := NewStoragePurgeScheduler(&mockPurger{}, cleaner)
+
+	// when
+	sched.PurgeUnreferencedBlobs(context.Background())
+
+	// then
+	want := time.Now().Add(-90 * 24 * time.Hour).Unix()
+	assert.InDelta(t, want, cleaner.cutoff, 60)
+	assert.Equal(t, purgeBatch, cleaner.limit)
 }

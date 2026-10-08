@@ -8,10 +8,11 @@ import (
 )
 
 const (
-	deletedAppRetention       = 30 * 24 * time.Hour
-	deletedAppPurgeBatch      = 100
-	deletedAppPurgeEvery      = time.Hour
-	deletedAppPurgeRunTimeout = 10 * time.Minute
+	deletedAppRetention   = 30 * 24 * time.Hour
+	unreferencedBlobGrace = 90 * 24 * time.Hour
+	purgeBatch            = 100
+	purgeEvery            = time.Hour
+	purgeRunTimeout       = 10 * time.Minute
 )
 
 type deletedAppPurger interface {
@@ -19,28 +20,30 @@ type deletedAppPurger interface {
 	PurgeApplication(id string, cutoff int64) error
 }
 
-type appStorageCleaner interface {
+type storagePurger interface {
 	CleanupApplicationStorage(ctx context.Context, appID string) error
+	PurgeUnreferenced(ctx context.Context, cutoff int64, limit int) error
 }
 
-// DeletedAppPurgeScheduler hard-deletes applications soft-deleted longer ago
-// than deletedAppRetention, along with their storage.
-type DeletedAppPurgeScheduler struct {
+// StoragePurgeScheduler hard-deletes applications soft-deleted longer ago
+// than deletedAppRetention, along with their storage, and deletes blobs that
+// nothing has referenced for unreferencedBlobGrace.
+type StoragePurgeScheduler struct {
 	apps    deletedAppPurger
-	storage appStorageCleaner
+	storage storagePurger
 }
 
-func NewDeletedAppPurgeScheduler(apps deletedAppPurger, storage appStorageCleaner) *DeletedAppPurgeScheduler {
-	return &DeletedAppPurgeScheduler{apps: apps, storage: storage}
+func NewStoragePurgeScheduler(apps deletedAppPurger, storage storagePurger) *StoragePurgeScheduler {
+	return &StoragePurgeScheduler{apps: apps, storage: storage}
 }
 
 // Start runs once immediately (deploys would otherwise keep resetting the
 // ticker) and then hourly.
-func (d *DeletedAppPurgeScheduler) Start() {
-	log.Info().Dur("interval", deletedAppPurgeEvery).Msg("[STORAGE] Deleted application purge scheduler started")
+func (d *StoragePurgeScheduler) Start() {
+	log.Info().Dur("interval", purgeEvery).Msg("[STORAGE] Storage purge scheduler started")
 	go func() {
 		d.runOnce()
-		ticker := time.NewTicker(deletedAppPurgeEvery)
+		ticker := time.NewTicker(purgeEvery)
 		defer ticker.Stop()
 		for range ticker.C {
 			d.runOnce()
@@ -48,15 +51,23 @@ func (d *DeletedAppPurgeScheduler) Start() {
 	}()
 }
 
-func (d *DeletedAppPurgeScheduler) runOnce() {
-	ctx, cancel := context.WithTimeout(context.Background(), deletedAppPurgeRunTimeout)
+func (d *StoragePurgeScheduler) runOnce() {
+	ctx, cancel := context.WithTimeout(context.Background(), purgeRunTimeout)
 	defer cancel()
 	d.PurgeDeletedApps(ctx)
+	d.PurgeUnreferencedBlobs(ctx)
 }
 
-func (d *DeletedAppPurgeScheduler) PurgeDeletedApps(ctx context.Context) {
+func (d *StoragePurgeScheduler) PurgeUnreferencedBlobs(ctx context.Context) {
+	cutoff := time.Now().Add(-unreferencedBlobGrace).Unix()
+	if err := d.storage.PurgeUnreferenced(ctx, cutoff, purgeBatch); err != nil {
+		log.Error().Err(err).Msg("[STORAGE] Failed to purge unreferenced blobs")
+	}
+}
+
+func (d *StoragePurgeScheduler) PurgeDeletedApps(ctx context.Context) {
 	cutoff := time.Now().Add(-deletedAppRetention).Unix()
-	ids, err := d.apps.GetPurgeableApplicationIDs(cutoff, deletedAppPurgeBatch)
+	ids, err := d.apps.GetPurgeableApplicationIDs(cutoff, purgeBatch)
 	if err != nil {
 		log.Error().Err(err).Msg("[STORAGE] Failed to list purgeable applications")
 		return
