@@ -286,6 +286,8 @@ func (r *EventRepository) GetByApplicationID(appID string, limit int) ([]*Event,
 // newest row for a given app or user-scoped creator: that row is a cursor's
 // only anchor (an idle client's lastEventId) and GetNextSequence's floor for
 // that app, and pruning it away is what let sequence numbers reset to 1.
+// The max-rev template_changed row per template is also kept: it is the only
+// durable copy of a template.
 func (r *EventRepository) DeleteOlderThan(timestamp int64) (int64, error) {
 	query := `DELETE FROM events
 			  WHERE created_at < $1
@@ -293,9 +295,16 @@ func (r *EventRepository) DeleteOlderThan(timestamp int64) (int64, error) {
 			      SELECT MAX(ordinal) FROM events WHERE application_id IS NOT NULL GROUP BY application_id
 			      UNION ALL
 			      SELECT MAX(ordinal) FROM events WHERE application_id IS NULL GROUP BY creator_public_key
+			      UNION ALL
+			      SELECT ordinal FROM (
+			        SELECT ordinal, RANK() OVER (
+			          PARTITION BY creator_public_key, data::jsonb->>'id'
+			          ORDER BY (data::jsonb->>'rev')::numeric DESC) AS rnk
+			        FROM events WHERE application_id IS NULL AND type = $2
+			      ) t WHERE rnk = 1
 			    )`
 
-	result, err := r.db.Exec(query, timestamp)
+	result, err := r.db.Exec(query, timestamp, EventTypeTemplateChanged)
 	if err != nil {
 		return 0, fmt.Errorf("failed to delete old events: %w", err)
 	}
