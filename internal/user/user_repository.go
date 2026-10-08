@@ -314,7 +314,7 @@ func (r *userRepository) ClearEscrow(publicKey string) error {
 // call already wrote, so a losing claimant never leaves a stray account
 // behind.
 //
-// A prior HasClaim() call (as the endpoint makes, for a cheap pre-KDF
+// A prior HasClaim() call (as the endpoint makes, for a cheap early
 // reject) is an optimization on top of this guard, not a substitute for it -
 // it is inherently racy between its own check and this transaction.
 //
@@ -396,8 +396,7 @@ func (r *userRepository) ClaimOwner(publicKey, username, passwordVerifier, handl
 
 // HasClaim reports whether this space has already been claimed. It is a
 // cheap pre-check for the claim endpoint (see owner_claim_endpoints.go's
-// Claim) to reject an already-claimed space at DB-lookup cost before doing
-// any Argon2id work - it is a pre-KDF optimization only, not the concurrency
+// Claim) so an already-claimed space answers 409 - it is not the concurrency
 // guard against two simultaneous claims (see ClaimOwner's doc comment for
 // that guard).
 func (r *userRepository) HasClaim() (bool, error) {

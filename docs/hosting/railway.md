@@ -25,6 +25,17 @@ user doesn't have to copy it manually. See
 [`prappser-extension/README.md`](../../../prappser-extension/README.md) for
 the full detection flow.
 
+The Railway template ([railway.com/new/template/nU7Fz6](https://railway.com/new/template/nU7Fz6))
+is configured in Railway's template composer, not in a repo. It sets
+`MASTER_PASSWORD` to `${{secret(32)}}`, a Railway template variable function
+(`secret(length?, alphabet?)`, see
+[Railway docs](https://docs.railway.com/templates/create)), so the secret is
+generated for you.
+
+After deploying, claim the space from the app within 30 minutes of the server
+starting. If the window passed, redeploy the service to reopen it. Once
+claimed, the space stays claimed.
+
 ## Self-management: the Railway token endpoint
 
 Once a space is running on Railway, its owner can let the server manage

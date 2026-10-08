@@ -6,9 +6,9 @@ import (
 	"encoding/base64"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/goccy/go-json"
-	"github.com/prappser/prappser-spaces/internal/keys"
 	"github.com/stretchr/testify/assert"
 	"github.com/valyala/fasthttp"
 )
@@ -142,28 +142,29 @@ func (r *ownerClaimTestRepo) ClaimOwner(publicKey, username, passwordVerifier, h
 func (r *ownerClaimTestRepo) HasClaim() (bool, error) { return r.claimed, nil }
 
 // validClaimRequest builds a well-formed claimOwnerRequest that passes every
-// validation step and successfully claims as username, proving knowledge of
-// masterPassword via a genuine Argon2id proof. A caller wanting to exercise a
-// WRONG proof passes a different masterPassword here than what the
-// OwnerClaimEndpoints instance under test was constructed with.
-func validClaimRequest(t *testing.T, masterPassword, username string) claimOwnerRequest {
+// validation step and successfully claims as username.
+func validClaimRequest(t *testing.T, username string) claimOwnerRequest {
 	t.Helper()
 	pub, _, err := ed25519.GenerateKey(rand.Reader)
 	assert.NoError(t, err)
-	salt := make([]byte, keys.SaltSize)
-	_, err = rand.Read(salt)
-	assert.NoError(t, err)
-	proof := keys.DeriveKey(masterPassword, salt)
 	secretBytes := make([]byte, 32)
 	_, err = rand.Read(secretBytes)
 	assert.NoError(t, err)
 	return claimOwnerRequest{
-		Username:            username,
-		PublicKey:           base64.StdEncoding.EncodeToString(pub),
-		MasterPasswordSalt:  base64.StdEncoding.EncodeToString(salt),
-		MasterPasswordProof: base64.StdEncoding.EncodeToString(proof),
-		AuthSecret:          base64.StdEncoding.EncodeToString(secretBytes),
+		Username:   username,
+		PublicKey:  base64.StdEncoding.EncodeToString(pub),
+		AuthSecret: base64.StdEncoding.EncodeToString(secretBytes),
 	}
+}
+
+// newOpenWindowEndpoints builds endpoints whose claim window is open.
+func newOpenWindowEndpoints(repo UserRepository) *OwnerClaimEndpoints {
+	return NewOwnerClaimEndpoints(repo, []byte("verifier-key"), time.Now(), nil)
+}
+
+// newClosedWindowEndpoints builds endpoints whose claim window has expired.
+func newClosedWindowEndpoints(repo UserRepository) *OwnerClaimEndpoints {
+	return NewOwnerClaimEndpoints(repo, []byte("verifier-key"), time.Now().Add(-ownerClaimWindow-time.Minute), nil)
 }
 
 func newClaimRequestCtx(t *testing.T, body claimOwnerRequest) *fasthttp.RequestCtx {
@@ -182,11 +183,10 @@ func newClaimRequestCtx(t *testing.T, body claimOwnerRequest) *fasthttp.RequestC
 // the HMAC password verifier, the lowercased handle, and both escrow blobs.
 func TestClaim_ShouldReturn201AndPersistFullOwnerRecordOnEmptySpace(t *testing.T) {
 	// given
-	masterPassword := "space-master-password"
 	verifierKey := []byte("verifier-key")
 	repo := newOwnerClaimTestRepo()
-	oe := NewOwnerClaimEndpoints(repo, verifierKey, masterPassword, nil)
-	req := validClaimRequest(t, masterPassword, "Alice")
+	oe := NewOwnerClaimEndpoints(repo, verifierKey, time.Now(), nil)
+	req := validClaimRequest(t, "Alice")
 	accountKeyBlob := base64.StdEncoding.EncodeToString([]byte("sealed-account-key"))
 	userState := base64.StdEncoding.EncodeToString([]byte("sealed-user-state"))
 	req.AccountKeyBlob = accountKeyBlob
@@ -228,10 +228,9 @@ func TestClaim_ShouldReturn201AndPersistFullOwnerRecordOnEmptySpace(t *testing.T
 // rejected, and the first owner's stored record is untouched by the attempt.
 func TestClaim_ShouldReturn409OnSecondClaimAndLeaveFirstOwnerUnchanged(t *testing.T) {
 	// given
-	masterPassword := "space-master-password"
 	repo := newOwnerClaimTestRepo()
-	oe := NewOwnerClaimEndpoints(repo, []byte("verifier-key"), masterPassword, nil)
-	firstReq := validClaimRequest(t, masterPassword, "alice")
+	oe := newOpenWindowEndpoints(repo)
+	firstReq := validClaimRequest(t, "alice")
 	firstCtx := newClaimRequestCtx(t, firstReq)
 	oe.Claim(firstCtx)
 	assert.Equal(t, fasthttp.StatusCreated, firstCtx.Response.StatusCode())
@@ -241,7 +240,7 @@ func TestClaim_ShouldReturn409OnSecondClaimAndLeaveFirstOwnerUnchanged(t *testin
 	firstHandleBefore := repo.handles[firstReq.PublicKey]
 
 	// when - a second, different claimant tries to claim the same space
-	secondReq := validClaimRequest(t, masterPassword, "bob")
+	secondReq := validClaimRequest(t, "bob")
 	secondCtx := newClaimRequestCtx(t, secondReq)
 	oe.Claim(secondCtx)
 
@@ -264,14 +263,13 @@ func TestClaim_ShouldReturn409OnSecondClaimAndLeaveFirstOwnerUnchanged(t *testin
 func TestClaim_ShouldReturn409AndLeaveSpaceUnclaimedWhenDevicePublicKeyAlreadyRegistered(t *testing.T) {
 	// given - a device key already registered on this space (e.g. via a
 	// prior EnsureDevice call), but the space itself is not yet claimed
-	masterPassword := "space-master-password"
 	repo := newOwnerClaimTestRepo()
 	existingDevicePub, _, err := ed25519.GenerateKey(rand.Reader)
 	assert.NoError(t, err)
 	existingDeviceKey := base64.StdEncoding.EncodeToString(existingDevicePub)
 	repo.devices[existingDeviceKey] = &Device{DevicePublicKey: existingDeviceKey, UserPublicKey: "someone-else"}
-	oe := NewOwnerClaimEndpoints(repo, []byte("verifier-key"), masterPassword, nil)
-	req := validClaimRequest(t, masterPassword, "alice")
+	oe := newOpenWindowEndpoints(repo)
+	req := validClaimRequest(t, "alice")
 	req.DevicePublicKey = existingDeviceKey
 	ctx := newClaimRequestCtx(t, req)
 
@@ -287,57 +285,6 @@ func TestClaim_ShouldReturn409AndLeaveSpaceUnclaimedWhenDevicePublicKeyAlreadyRe
 	assert.False(t, claimed, "the space must remain unclaimed after a rejected claim")
 }
 
-func TestClaim_ShouldReturn401ForWrongMasterPasswordProof(t *testing.T) {
-	// given
-	repo := newOwnerClaimTestRepo()
-	oe := NewOwnerClaimEndpoints(repo, []byte("verifier-key"), "correct-master-password", nil)
-	req := validClaimRequest(t, "wrong-master-password", "alice")
-	ctx := newClaimRequestCtx(t, req)
-
-	// when
-	oe.Claim(ctx)
-
-	// then
-	assert.Equal(t, fasthttp.StatusUnauthorized, ctx.Response.StatusCode())
-}
-
-func TestClaim_ShouldReturn400ForMasterPasswordSaltOfWrongLength(t *testing.T) {
-	// given
-	masterPassword := "space-master-password"
-	repo := newOwnerClaimTestRepo()
-	oe := NewOwnerClaimEndpoints(repo, []byte("verifier-key"), masterPassword, nil)
-	req := validClaimRequest(t, masterPassword, "alice")
-	req.MasterPasswordSalt = base64.StdEncoding.EncodeToString(make([]byte, 16)) // not keys.SaltSize (32)
-	ctx := newClaimRequestCtx(t, req)
-
-	// when
-	oe.Claim(ctx)
-
-	// then
-	assert.Equal(t, fasthttp.StatusBadRequest, ctx.Response.StatusCode())
-}
-
-// TestClaim_ShouldReturn400ForNonBase64MasterPasswordProof documents the
-// implementation's actual behavior for a malformed (not valid base64) proof:
-// it fails to decode and is rejected as a 400, distinct from a
-// correctly-encoded-but-wrong proof, which is a 401 (see
-// TestClaim_ShouldReturn401ForWrongMasterPasswordProof above).
-func TestClaim_ShouldReturn400ForNonBase64MasterPasswordProof(t *testing.T) {
-	// given
-	masterPassword := "space-master-password"
-	repo := newOwnerClaimTestRepo()
-	oe := NewOwnerClaimEndpoints(repo, []byte("verifier-key"), masterPassword, nil)
-	req := validClaimRequest(t, masterPassword, "alice")
-	req.MasterPasswordProof = "not-valid-base64!!"
-	ctx := newClaimRequestCtx(t, req)
-
-	// when
-	oe.Claim(ctx)
-
-	// then
-	assert.Equal(t, fasthttp.StatusBadRequest, ctx.Response.StatusCode())
-}
-
 // TestClaim_ShouldSucceedWithoutAuthSecretAndReportNoPasswordViaGetProfile is
 // the regression guard for the NULLIF fix in ClaimOwner: without it, an
 // empty-string verifier would satisfy GetPasswordCredential's
@@ -345,10 +292,9 @@ func TestClaim_ShouldReturn400ForNonBase64MasterPasswordProof(t *testing.T) {
 // phantom password.
 func TestClaim_ShouldSucceedWithoutAuthSecretAndReportNoPasswordViaGetProfile(t *testing.T) {
 	// given
-	masterPassword := "space-master-password"
 	repo := newOwnerClaimTestRepo()
-	oe := NewOwnerClaimEndpoints(repo, []byte("verifier-key"), masterPassword, nil)
-	req := validClaimRequest(t, masterPassword, "alice")
+	oe := newOpenWindowEndpoints(repo)
+	req := validClaimRequest(t, "alice")
 	req.AuthSecret = ""
 	ctx := newClaimRequestCtx(t, req)
 
@@ -372,10 +318,9 @@ func TestClaim_ShouldSucceedWithoutAuthSecretAndReportNoPasswordViaGetProfile(t 
 
 func TestClaim_ShouldReturn400ForPublicKeyOfWrongLength(t *testing.T) {
 	// given
-	masterPassword := "space-master-password"
 	repo := newOwnerClaimTestRepo()
-	oe := NewOwnerClaimEndpoints(repo, []byte("verifier-key"), masterPassword, nil)
-	req := validClaimRequest(t, masterPassword, "alice")
+	oe := newOpenWindowEndpoints(repo)
+	req := validClaimRequest(t, "alice")
 	req.PublicKey = base64.StdEncoding.EncodeToString(make([]byte, 16)) // not ed25519.PublicKeySize (32)
 	ctx := newClaimRequestCtx(t, req)
 
@@ -386,25 +331,19 @@ func TestClaim_ShouldReturn400ForPublicKeyOfWrongLength(t *testing.T) {
 	assert.Equal(t, fasthttp.StatusBadRequest, ctx.Response.StatusCode())
 }
 
-// TestClaim_ShouldReturn409NotUnauthorizedWhenSpaceAlreadyClaimed_EvenWithBogusProof
-// pins the memory-exhaustion mitigation described in Claim's doc comment:
-// HasClaim() must reject an already-claimed space at cheap DB-lookup cost
-// BEFORE the handler ever pays for Argon2id (keys.DeriveKey). A request
-// carrying a proof that does NOT match the master password must still come
-// back 409 (not 401) once a space is claimed - if HasClaim() ran after the
-// KDF instead of before it, this same request would produce a 401, handing
-// an attacker a free way to force expensive Argon2id work against a space
-// that has nothing left to claim.
-func TestClaim_ShouldReturn409NotUnauthorizedWhenSpaceAlreadyClaimed_EvenWithBogusProof(t *testing.T) {
-	// given - the space is already claimed (seeded directly, no need to go
-	// through Claim to get there)
-	masterPassword := "space-master-password"
+// TestClaim_ShouldReturn409WhenUsernameAlreadyUsedForPasswordLogin covers the
+// repo's OTHER rejection: even on an unclaimed space, a username already held
+// by a different password-enabled (but non-owner) account collides with
+// ClaimOwner's partial-unique-index write, exactly as
+// TestSetPassword_ShouldReturn409WhenUsernameAlreadyTakenForPasswordLogin
+// covers for SetPasswordCredentials.
+func TestClaim_ShouldReturn409WhenUsernameAlreadyUsedForPasswordLogin(t *testing.T) {
+	// given
 	repo := newOwnerClaimTestRepo()
-	repo.claimed = true
-	oe := NewOwnerClaimEndpoints(repo, []byte("verifier-key"), masterPassword, nil)
-	// deliberately wrong master password: if HasClaim() did NOT short-circuit
-	// before the proof check, this would produce 401, not 409.
-	req := validClaimRequest(t, "totally-wrong-password", "someone-else")
+	repo.accounts["existing-account"] = &User{PublicKey: "existing-account", Username: "alice", Role: RoleUser}
+	repo.verifiers["existing-account"] = "hmac-sha256$AAAA"
+	oe := newOpenWindowEndpoints(repo)
+	req := validClaimRequest(t, "alice")
 	ctx := newClaimRequestCtx(t, req)
 
 	// when
@@ -414,25 +353,68 @@ func TestClaim_ShouldReturn409NotUnauthorizedWhenSpaceAlreadyClaimed_EvenWithBog
 	assert.Equal(t, fasthttp.StatusConflict, ctx.Response.StatusCode())
 }
 
-// TestClaim_ShouldReturn409WhenUsernameAlreadyUsedForPasswordLogin covers the
-// repo's OTHER rejection: even on an unclaimed space, a username already held
-// by a different password-enabled (but non-owner) account collides with
-// ClaimOwner's partial-unique-index write, exactly as
-// TestSetPassword_ShouldReturn409WhenUsernameAlreadyTakenForPasswordLogin
-// covers for SetPasswordCredentials.
-func TestClaim_ShouldReturn409WhenUsernameAlreadyUsedForPasswordLogin(t *testing.T) {
+func TestClaim_ShouldReturn201WhenWindowIsOpen(t *testing.T) {
 	// given
-	masterPassword := "space-master-password"
 	repo := newOwnerClaimTestRepo()
-	repo.accounts["existing-account"] = &User{PublicKey: "existing-account", Username: "alice", Role: RoleUser}
-	repo.verifiers["existing-account"] = "hmac-sha256$AAAA"
-	oe := NewOwnerClaimEndpoints(repo, []byte("verifier-key"), masterPassword, nil)
-	req := validClaimRequest(t, masterPassword, "alice")
-	ctx := newClaimRequestCtx(t, req)
+	oe := newOpenWindowEndpoints(repo)
+	ctx := newClaimRequestCtx(t, validClaimRequest(t, "alice"))
+
+	// when
+	oe.Claim(ctx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusCreated, ctx.Response.StatusCode())
+}
+
+func TestClaim_ShouldReturn403AndWriteNothingWhenWindowIsClosed(t *testing.T) {
+	// given
+	repo := newOwnerClaimTestRepo()
+	oe := newClosedWindowEndpoints(repo)
+	ctx := newClaimRequestCtx(t, validClaimRequest(t, "alice"))
+
+	// when
+	oe.Claim(ctx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusForbidden, ctx.Response.StatusCode())
+	assert.False(t, repo.claimed)
+	assert.Empty(t, repo.accounts)
+}
+
+func TestClaim_ShouldReturn409WhenSpaceClaimedAndWindowIsClosed(t *testing.T) {
+	// given
+	repo := newOwnerClaimTestRepo()
+	repo.claimed = true
+	oe := newClosedWindowEndpoints(repo)
+	ctx := newClaimRequestCtx(t, validClaimRequest(t, "alice"))
 
 	// when
 	oe.Claim(ctx)
 
 	// then
 	assert.Equal(t, fasthttp.StatusConflict, ctx.Response.StatusCode())
+}
+
+func TestClaim_ShouldIgnoreLegacyMasterPasswordKeysInBody(t *testing.T) {
+	// given
+	repo := newOwnerClaimTestRepo()
+	oe := newOpenWindowEndpoints(repo)
+	req := validClaimRequest(t, "alice")
+	body, err := json.Marshal(map[string]string{
+		"username":            req.Username,
+		"publicKey":           req.PublicKey,
+		"authSecret":          req.AuthSecret,
+		"masterPasswordSalt":  "ignored",
+		"masterPasswordProof": "ignored",
+	})
+	assert.NoError(t, err)
+	ctx := &fasthttp.RequestCtx{}
+	ctx.Request.Header.SetMethod("POST")
+	ctx.Request.SetBody(body)
+
+	// when
+	oe.Claim(ctx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusCreated, ctx.Response.StatusCode())
 }

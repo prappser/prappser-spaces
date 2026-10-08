@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Interactive setup for deploy/.env. Prompts for the values needed to run
-# `docker compose up -d`, auto-generating POSTGRES_PASSWORD and, if the
-# operator leaves MASTER_PASSWORD blank, a MASTER_PASSWORD too.
+# `docker compose up -d` and auto-generates POSTGRES_PASSWORD and
+# MASTER_PASSWORD. MASTER_PASSWORD encrypts the space keys at rest and is
+# never typed anywhere, so back up deploy/.env.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -55,31 +56,7 @@ if ! validate_secret "$DOMAIN" "Domain"; then
   exit 1
 fi
 
-echo
-echo "Set MASTER_PASSWORD, used to encrypt this space's Ed25519 keys."
-echo "Press Enter with no input to auto-generate a strong password."
-read -rs -p "Master password: " MASTER_PASSWORD_INPUT
-echo
-
-if [[ -z "$MASTER_PASSWORD_INPUT" ]]; then
-  MASTER_PASSWORD="$(openssl rand -hex 32)"
-  echo "!!! Generated MASTER_PASSWORD: $MASTER_PASSWORD"
-  echo "!!! Back this up somewhere safe now. It is not stored anywhere but"
-  echo "!!! deploy/.env, and losing it after first boot means this space's"
-  echo "!!! keys can never be decrypted again."
-else
-  read -rs -p "Confirm master password: " MASTER_PASSWORD_CONFIRM
-  echo
-  if [[ "$MASTER_PASSWORD_INPUT" != "$MASTER_PASSWORD_CONFIRM" ]]; then
-    echo "Error: passwords did not match." >&2
-    exit 1
-  fi
-  if ! validate_secret "$MASTER_PASSWORD_INPUT" "MASTER_PASSWORD"; then
-    exit 1
-  fi
-  MASTER_PASSWORD="$MASTER_PASSWORD_INPUT"
-fi
-
+MASTER_PASSWORD="$(openssl rand -hex 32)"
 POSTGRES_PASSWORD="$(openssl rand -hex 24)"
 if ! validate_secret "$POSTGRES_PASSWORD" "POSTGRES_PASSWORD"; then
   exit 1
@@ -109,8 +86,10 @@ echo "Wrote $ENV_FILE (mode 600):"
 echo "  DOMAIN=$DOMAIN"
 echo "  ALLOWED_ORIGINS=$ALLOWED_ORIGINS"
 echo "  POSTGRES_PASSWORD=(generated, not shown)"
-echo "  MASTER_PASSWORD=(set, not shown)"
+echo "  MASTER_PASSWORD=(generated, not shown)"
 echo
-echo "IMPORTANT: MASTER_PASSWORD encrypts this space's keys on first boot."
-echo "It cannot be changed afterward without wiping the database. Back it"
-echo "up now if it was just generated above."
+echo "IMPORTANT: MASTER_PASSWORD encrypts this space's keys at rest. Back up"
+echo "$ENV_FILE now. It cannot change after first boot without a hosting-move"
+echo "export/import (see docs/hosting/selfhost.md)."
+echo "After 'docker compose up -d', claim the space from the app within 30"
+echo "minutes of the server starting."
