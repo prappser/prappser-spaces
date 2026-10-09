@@ -105,6 +105,10 @@ internal/
     client.go              — Client: per-connection read/write pumps
     handler.go             — Handler: upgrades HTTP to WebSocket
     message.go             — WebSocket message types
+  admin/
+    admin.go               — Overview, Limits, AccountOverview (metadata-only account view)
+    admin_repository.go    — Repository: one SQL aggregate over users, storage, members, devices
+    admin_endpoints.go     — AdminEndpoints: owner-only GET /space/accounts
   health/
     health.go              — HealthEndpoints
   status/

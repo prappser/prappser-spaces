@@ -6,6 +6,7 @@ import (
 
 	"github.com/goccy/go-json"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/prappser/prappser-spaces/internal/admin"
 	"github.com/prappser/prappser-spaces/internal/application"
 	"github.com/prappser/prappser-spaces/internal/event"
 	"github.com/prappser/prappser-spaces/internal/health"
@@ -84,7 +85,7 @@ func enrollUsernameKey(ctx *fasthttp.RequestCtx) string {
 	return strings.ToLower(username)
 }
 
-func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, statusEndpoints *status.StatusEndpoints, healthEndpoints *health.HealthEndpoints, userService *user.UserService, appEndpoints *application.ApplicationEndpoints, invitationEndpoints *invitation.InvitationEndpoints, eventEndpoints *event.EventEndpoints, setupEndpoints *setup.SetupEndpoints, storageEndpoints *storage.Endpoints, wsHandler *websocket.Handler, spaceEndpoints *space.SpaceEndpoints, pushEndpoints *push.PushEndpoints, profileEndpoints *profile.ProfileEndpoints, deviceEndpoints *user.DeviceEndpoints, passwordEndpoints *user.PasswordEndpoints, assertionEndpoints *user.AssertionEndpoints, ownerClaimEndpoints *user.OwnerClaimEndpoints, keyEndpoints *keys.KeyEndpoints, accountEndpoints *profile.AccountEndpoints) fasthttp.RequestHandler {
+func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, statusEndpoints *status.StatusEndpoints, healthEndpoints *health.HealthEndpoints, userService *user.UserService, appEndpoints *application.ApplicationEndpoints, invitationEndpoints *invitation.InvitationEndpoints, eventEndpoints *event.EventEndpoints, setupEndpoints *setup.SetupEndpoints, storageEndpoints *storage.Endpoints, wsHandler *websocket.Handler, spaceEndpoints *space.SpaceEndpoints, pushEndpoints *push.PushEndpoints, profileEndpoints *profile.ProfileEndpoints, deviceEndpoints *user.DeviceEndpoints, passwordEndpoints *user.PasswordEndpoints, assertionEndpoints *user.AssertionEndpoints, ownerClaimEndpoints *user.OwnerClaimEndpoints, keyEndpoints *keys.KeyEndpoints, accountEndpoints *profile.AccountEndpoints, adminEndpoints *admin.AdminEndpoints) fasthttp.RequestHandler {
 	authMiddleware := middleware.NewAuthMiddleware(userService)
 	corsMiddleware := middleware.NewCORSMiddleware(config.AllowedOrigins)
 	ipRateLimiter := middleware.NewRateLimiter(ipRateLimitPerMinute, time.Minute, config.TrustProxyHeaders)
@@ -227,6 +228,14 @@ func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, status
 			method := string(ctx.Method())
 			if method == "POST" {
 				authMiddleware.RequireRole(keyEndpoints.ExportIdentity, user.RoleOwner)(ctx)
+			} else {
+				ctx.Error("Method Not Allowed", fasthttp.StatusMethodNotAllowed)
+			}
+
+		case path == "/space/accounts":
+			method := string(ctx.Method())
+			if method == "GET" {
+				authMiddleware.RequireRole(adminEndpoints.ListAccounts, user.RoleOwner)(ctx)
 			} else {
 				ctx.Error("Method Not Allowed", fasthttp.StatusMethodNotAllowed)
 			}
