@@ -21,8 +21,12 @@ import (
 // newJoinTestService), so only GetByID is ever actually called there;
 // CreateInvitation tests use Create and read back createdInvite.
 type fakeInvitationRepo struct {
-	invite        *Invitation
-	createdInvite *Invitation
+	invite         *Invitation
+	createdInvite  *Invitation
+	incrementErr   error
+	incrementCalls int
+	usedBy         bool
+	recordUseCalls int
 }
 
 func (r *fakeInvitationRepo) Create(invite *Invitation) error {
@@ -31,15 +35,19 @@ func (r *fakeInvitationRepo) Create(invite *Invitation) error {
 }
 func (r *fakeInvitationRepo) GetByID(id string) (*Invitation, error) { return r.invite, nil }
 func (r *fakeInvitationRepo) Delete(id string) error                 { return nil }
-func (r *fakeInvitationRepo) IncrementUseCount(id string) error      { return nil }
+func (r *fakeInvitationRepo) IncrementUseCount(id string) error {
+	r.incrementCalls++
+	return r.incrementErr
+}
 func (r *fakeInvitationRepo) RecordUse(inviteID, userPublicKey, useID string) error {
+	r.recordUseCalls++
 	return nil
 }
 func (r *fakeInvitationRepo) GetByApplicationID(appID string) ([]*Invitation, error) {
 	return nil, nil
 }
 func (r *fakeInvitationRepo) HasBeenUsedBy(inviteID, userPublicKey string) (bool, error) {
-	return false, nil
+	return r.usedBy, nil
 }
 
 // fakeUserRepo is a minimal user.UserRepository fake that records
@@ -66,6 +74,8 @@ type fakeUserRepo struct {
 		publicKey string
 		issuer    string
 	}
+	updateRoleCalls []string
+	updateRoleErr   error
 }
 
 func (r *fakeUserRepo) CreateUser(u *user.User) error {
@@ -81,7 +91,16 @@ func (r *fakeUserRepo) CreateUser(u *user.User) error {
 func (r *fakeUserRepo) GetUserByPublicKey(publicKey string) (*user.User, error) {
 	return r.existingUser, nil
 }
-func (r *fakeUserRepo) UpdateUserRole(publicKey, role string) error { return nil }
+func (r *fakeUserRepo) UpdateUserRole(publicKey, role string) error {
+	r.updateRoleCalls = append(r.updateRoleCalls, role)
+	if r.updateRoleErr != nil {
+		return r.updateRoleErr
+	}
+	if r.existingUser != nil && r.existingUser.PublicKey == publicKey {
+		r.existingUser.Role = role
+	}
+	return nil
+}
 func (r *fakeUserRepo) UpdateAvatarStorageID(publicKey string, avatarStorageID *string) error {
 	return nil
 }
@@ -1017,4 +1036,384 @@ func TestJoin_WithoutMembershipDuration_OmitsExpiryFromProducedEvent(t *testing.
 		_, ok := events.produced.Data["membershipExpiresAt"]
 		assert.False(t, ok, "expected no membershipExpiresAt key when invite has no duration")
 	}
+}
+
+func TestCreateInvitation_ShouldDefaultToSingleUseWhenGrantsSpaceUse(t *testing.T) {
+	// given
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	assert.NoError(t, err)
+	repo := &fakeInvitationRepo{}
+	svc := NewInvitationService(repo, priv, pub, application.NewMemoryRepository(), nil, &fakeUserRepo{}, fakeEventService{}, "space-key")
+	yes, no := true, false
+
+	// when
+	resp, err := svc.CreateInvitation(CreateInvitationOptions{
+		ApplicationID:      "app-1",
+		CreatedByPublicKey: "creator-pk",
+		GrantsIdentity:     &no,
+		GrantsSpaceUse:     &yes,
+		SpaceURL:           "https://space.example",
+	})
+
+	// then
+	assert.NoError(t, err)
+	assert.True(t, repo.createdInvite.GrantsSpaceUse)
+	assert.True(t, resp.GrantsSpaceUse)
+	if assert.NotNil(t, repo.createdInvite.MaxUses) {
+		assert.Equal(t, 1, *repo.createdInvite.MaxUses)
+	}
+}
+
+func TestCreateInvitation_ShouldForceSpaceUseOffWhenMembershipOff(t *testing.T) {
+	// given
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	assert.NoError(t, err)
+	repo := &fakeInvitationRepo{}
+	svc := NewInvitationService(repo, priv, pub, application.NewMemoryRepository(), nil, &fakeUserRepo{}, fakeEventService{}, "space-key")
+	yes, no := true, false
+
+	// when
+	_, err = svc.CreateInvitation(CreateInvitationOptions{
+		ApplicationID:      "app-1",
+		CreatedByPublicKey: "creator-pk",
+		GrantsMembership:   &no,
+		GrantsSpaceUse:     &yes,
+		SpaceURL:           "https://space.example",
+	})
+
+	// then
+	assert.NoError(t, err)
+	assert.False(t, repo.createdInvite.GrantsSpaceUse)
+	assert.Nil(t, repo.createdInvite.MaxUses)
+}
+
+func TestCreateInvitation_ShouldDefaultSpaceUseToFalse(t *testing.T) {
+	// given
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	assert.NoError(t, err)
+	repo := &fakeInvitationRepo{}
+	svc := NewInvitationService(repo, priv, pub, application.NewMemoryRepository(), nil, &fakeUserRepo{}, fakeEventService{}, "space-key")
+
+	// when
+	_, err = svc.CreateInvitation(CreateInvitationOptions{
+		ApplicationID:      "app-1",
+		CreatedByPublicKey: "creator-pk",
+		SpaceURL:           "https://space.example",
+	})
+
+	// then
+	assert.NoError(t, err)
+	assert.False(t, repo.createdInvite.GrantsSpaceUse)
+}
+
+type failingEventService struct{ fakeEventService }
+
+func (failingEventService) ProduceEvent(ctx context.Context, e *event.Event) (*event.Event, error) {
+	return nil, assert.AnError
+}
+
+// joinWithSpaceUse joins as a fresh keypair (device key == account key).
+// existingRole, when set, seeds the account's stored row; seedMember makes the
+// account an app member already.
+func joinWithSpaceUse(t *testing.T, invite *Invitation, existingRole string, seedMember bool, userRepo *fakeUserRepo, invRepo *fakeInvitationRepo, events EventService) (*JoinResult, error) {
+	t.Helper()
+	acctPub, acctPriv, err := ed25519.GenerateKey(rand.Reader)
+	assert.NoError(t, err)
+	acctB64 := base64.StdEncoding.EncodeToString(acctPub)
+	if existingRole != "" {
+		userRepo.existingUser = &user.User{PublicKey: acctB64, Username: "joiner", Issuer: acctB64, Role: existingRole}
+	}
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	assert.NoError(t, err)
+	appRepo := application.NewMemoryRepository()
+	assert.NoError(t, appRepo.CreateApplication(&application.Application{ID: invite.ApplicationID, Name: "Test App"}))
+	if seedMember {
+		assert.NoError(t, appRepo.CreateMember(&application.Member{ID: "member-1", ApplicationID: invite.ApplicationID, PublicKey: acctB64}))
+	}
+	invRepo.invite = invite
+	svc := NewInvitationService(invRepo, priv, pub, appRepo, nil, userRepo, events, "space-key")
+	token, err := svc.GenerateToken(invite.ID, "https://space.example", nil)
+	assert.NoError(t, err)
+	proof := buildJoinProof(t, acctPriv, acctB64, acctB64, "joiner", invite.ID, time.Now().Unix())
+	return svc.Join(token, proof, "", "")
+}
+
+func spaceUseInvite(grants bool) *Invitation {
+	return &Invitation{ID: "invite-su", ApplicationID: "app-su", Role: "member", CreatedAt: time.Now().Unix(), GrantsMembership: true, GrantsIdentity: true, GrantsSpaceUse: grants}
+}
+
+func TestJoin_NewAccount_WithSpaceUse_ShouldPromoteToUser(t *testing.T) {
+	// given
+	userRepo := &fakeUserRepo{}
+
+	// when
+	res, err := joinWithSpaceUse(t, spaceUseInvite(true), "", false, userRepo, &fakeInvitationRepo{}, &capturingEventService{})
+
+	// then
+	assert.NoError(t, err)
+	assert.True(t, res.IsNewMember)
+	assert.Equal(t, user.RoleUser, userRepo.existingUser.Role)
+}
+
+func TestJoin_NewAccount_WithoutSpaceUse_ShouldStayGuest(t *testing.T) {
+	// given
+	userRepo := &fakeUserRepo{}
+
+	// when
+	_, err := joinWithSpaceUse(t, spaceUseInvite(false), "", false, userRepo, &fakeInvitationRepo{}, &capturingEventService{})
+
+	// then
+	assert.NoError(t, err)
+	assert.Equal(t, user.RoleGuest, userRepo.existingUser.Role)
+	assert.Empty(t, userRepo.updateRoleCalls)
+}
+
+func TestJoin_ExistingGuest_WithSpaceUse_ShouldPromoteToUser(t *testing.T) {
+	// given
+	userRepo := &fakeUserRepo{}
+
+	// when
+	_, err := joinWithSpaceUse(t, spaceUseInvite(true), user.RoleGuest, false, userRepo, &fakeInvitationRepo{}, &capturingEventService{})
+
+	// then
+	assert.NoError(t, err)
+	assert.Equal(t, user.RoleUser, userRepo.existingUser.Role)
+}
+
+func TestJoin_ExistingOwner_WithSpaceUse_ShouldBeUntouched(t *testing.T) {
+	// given
+	userRepo := &fakeUserRepo{}
+
+	// when
+	_, err := joinWithSpaceUse(t, spaceUseInvite(true), user.RoleOwner, false, userRepo, &fakeInvitationRepo{}, &capturingEventService{})
+
+	// then
+	assert.NoError(t, err)
+	assert.Equal(t, user.RoleOwner, userRepo.existingUser.Role)
+	assert.Empty(t, userRepo.updateRoleCalls)
+}
+
+func TestJoin_ExistingUser_WithSpaceUse_ShouldBeUntouched(t *testing.T) {
+	// given
+	userRepo := &fakeUserRepo{}
+
+	// when
+	_, err := joinWithSpaceUse(t, spaceUseInvite(true), user.RoleUser, false, userRepo, &fakeInvitationRepo{}, &capturingEventService{})
+
+	// then
+	assert.NoError(t, err)
+	assert.Equal(t, user.RoleUser, userRepo.existingUser.Role)
+	assert.Empty(t, userRepo.updateRoleCalls)
+}
+
+func TestJoin_ExistingGuest_AssertionWithUnenrolledDevice_ShouldStayGuest(t *testing.T) {
+	// given: a genuine assertion for a new device that does not belong to the account yet
+	userRepo := joinGuestWithAssertionDevice(t, false, false)
+
+	// then
+	assert.Equal(t, user.RoleGuest, userRepo.existingUser.Role)
+	assert.Empty(t, userRepo.updateRoleCalls)
+}
+
+func TestJoin_ExistingGuest_AssertionWithRevokedDevice_ShouldStayGuest(t *testing.T) {
+	// given: a genuine assertion for a device of the same account that was revoked
+	userRepo := joinGuestWithAssertionDevice(t, true, true)
+
+	// then
+	assert.Equal(t, user.RoleGuest, userRepo.existingUser.Role)
+	assert.Empty(t, userRepo.updateRoleCalls)
+}
+
+func joinGuestWithAssertionDevice(t *testing.T, enrolled, revoked bool) *fakeUserRepo {
+	t.Helper()
+	invite := spaceUseInvite(true)
+	acctPub, _, err := ed25519.GenerateKey(rand.Reader)
+	assert.NoError(t, err)
+	acctB64 := base64.StdEncoding.EncodeToString(acctPub)
+	userRepo := &fakeUserRepo{existingUser: &user.User{PublicKey: acctB64, Username: "joiner", Issuer: acctB64, Role: user.RoleGuest}}
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	assert.NoError(t, err)
+	spaceKeyB64 := base64.StdEncoding.EncodeToString(pub)
+	appRepo := application.NewMemoryRepository()
+	assert.NoError(t, appRepo.CreateApplication(&application.Application{ID: invite.ApplicationID, Name: "Test App"}))
+	svc := NewInvitationService(&fakeInvitationRepo{invite: invite}, priv, pub, appRepo, nil, userRepo, &capturingEventService{}, spaceKeyB64)
+	token, err := svc.GenerateToken(invite.ID, "https://space.example", nil)
+	assert.NoError(t, err)
+	_, devicePriv, deviceB64 := generateDeviceKey(t)
+	now := time.Now().Unix()
+	issuerPub, issuerPriv, err := ed25519.GenerateKey(rand.Reader)
+	assert.NoError(t, err)
+	issuerB64 := base64.StdEncoding.EncodeToString(issuerPub)
+	userRepo.existingUser.Issuer = issuerB64
+	assertion := buildAssertionJWS(t, issuerPriv, issuerB64, acctB64, spaceKeyB64, "joiner", deviceB64, now, now+120)
+	proof := buildJoinProof(t, devicePriv, acctB64, deviceB64, "joiner", invite.ID, now)
+
+	if enrolled {
+		var revokedAt *int64
+		if revoked {
+			r := now
+			revokedAt = &r
+		}
+		userRepo.devices = map[string]*user.Device{deviceB64: {DevicePublicKey: deviceB64, UserPublicKey: acctB64, RevokedAt: revokedAt}}
+	}
+
+	// when
+	_, err = svc.Join(token, proof, assertion, "")
+
+	// then
+	assert.NoError(t, err)
+	return userRepo
+}
+
+func TestJoin_NewAccount_WithSpaceUse_ClaimFailure_ShouldStayGuest(t *testing.T) {
+	// given
+	userRepo := &fakeUserRepo{}
+	invRepo := &fakeInvitationRepo{incrementErr: assert.AnError}
+
+	// when
+	_, err := joinWithSpaceUse(t, spaceUseInvite(true), "", false, userRepo, invRepo, &capturingEventService{})
+
+	// then
+	assert.Error(t, err)
+	assert.Equal(t, user.RoleGuest, userRepo.existingUser.Role)
+}
+
+func TestJoin_NewAccount_WithSpaceUse_ProduceEventFailure_ShouldStayGuest(t *testing.T) {
+	// given
+	userRepo := &fakeUserRepo{}
+
+	// when
+	_, err := joinWithSpaceUse(t, spaceUseInvite(true), "", false, userRepo, &fakeInvitationRepo{}, failingEventService{})
+
+	// then
+	assert.Error(t, err)
+	assert.Equal(t, user.RoleGuest, userRepo.existingUser.Role)
+}
+
+func TestJoin_NewAccount_WithSpaceUse_UpdateRoleError_ShouldStillJoin(t *testing.T) {
+	// given
+	userRepo := &fakeUserRepo{updateRoleErr: assert.AnError}
+
+	// when
+	res, err := joinWithSpaceUse(t, spaceUseInvite(true), "", false, userRepo, &fakeInvitationRepo{}, &capturingEventService{})
+
+	// then
+	assert.NoError(t, err)
+	assert.True(t, res.IsNewMember)
+	assert.Equal(t, user.RoleGuest, userRepo.existingUser.Role)
+}
+
+func TestJoin_AlreadyMemberGuest_WithSpaceUse_ShouldClaimUseAndPromote(t *testing.T) {
+	// given
+	userRepo := &fakeUserRepo{}
+	invRepo := &fakeInvitationRepo{}
+
+	// when
+	res, err := joinWithSpaceUse(t, spaceUseInvite(true), user.RoleGuest, true, userRepo, invRepo, &capturingEventService{})
+
+	// then
+	assert.NoError(t, err)
+	assert.False(t, res.IsNewMember)
+	assert.Equal(t, 1, invRepo.incrementCalls)
+	assert.Equal(t, 1, invRepo.recordUseCalls)
+	assert.Equal(t, user.RoleUser, userRepo.existingUser.Role)
+}
+
+func TestJoin_AlreadyMemberGuest_AlreadyUsedInvite_ShouldNotClaim(t *testing.T) {
+	// given
+	userRepo := &fakeUserRepo{}
+	invRepo := &fakeInvitationRepo{usedBy: true}
+
+	// when
+	_, err := joinWithSpaceUse(t, spaceUseInvite(true), user.RoleGuest, true, userRepo, invRepo, &capturingEventService{})
+
+	// then
+	assert.NoError(t, err)
+	assert.Zero(t, invRepo.incrementCalls)
+	assert.Equal(t, user.RoleGuest, userRepo.existingUser.Role)
+}
+
+func TestJoin_AlreadyMemberUser_WithSpaceUse_ShouldNotClaim(t *testing.T) {
+	// given
+	userRepo := &fakeUserRepo{}
+	invRepo := &fakeInvitationRepo{}
+
+	// when
+	_, err := joinWithSpaceUse(t, spaceUseInvite(true), user.RoleUser, true, userRepo, invRepo, &capturingEventService{})
+
+	// then
+	assert.NoError(t, err)
+	assert.Zero(t, invRepo.incrementCalls)
+	assert.Empty(t, userRepo.updateRoleCalls)
+}
+
+func TestJoin_AlreadyMemberGuest_ClaimFails_ShouldReturnError(t *testing.T) {
+	// given
+	userRepo := &fakeUserRepo{}
+	invRepo := &fakeInvitationRepo{incrementErr: assert.AnError}
+
+	// when
+	_, err := joinWithSpaceUse(t, spaceUseInvite(true), user.RoleGuest, true, userRepo, invRepo, &capturingEventService{})
+
+	// then
+	assert.Error(t, err)
+	assert.Zero(t, invRepo.recordUseCalls)
+	assert.Empty(t, userRepo.updateRoleCalls)
+}
+
+func TestJoin_AlreadyMemberGuest_UpdateRoleFails_ShouldReturnError(t *testing.T) {
+	// given
+	userRepo := &fakeUserRepo{updateRoleErr: assert.AnError}
+	invRepo := &fakeInvitationRepo{}
+
+	// when
+	_, err := joinWithSpaceUse(t, spaceUseInvite(true), user.RoleGuest, true, userRepo, invRepo, &capturingEventService{})
+
+	// then
+	assert.Error(t, err)
+	assert.Equal(t, user.RoleGuest, userRepo.existingUser.Role)
+	assert.Zero(t, invRepo.recordUseCalls)
+}
+
+func checkAsMember(t *testing.T, invite *Invitation, role string, invRepo *fakeInvitationRepo) *CheckInvitationResult {
+	t.Helper()
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	assert.NoError(t, err)
+	appRepo := application.NewMemoryRepository()
+	assert.NoError(t, appRepo.CreateApplication(&application.Application{ID: invite.ApplicationID, Name: "Test App"}))
+	assert.NoError(t, appRepo.CreateMember(&application.Member{ID: "member-1", ApplicationID: invite.ApplicationID, PublicKey: "member-pk"}))
+	userRepo := &fakeUserRepo{existingUser: &user.User{PublicKey: "member-pk", Role: role}}
+	invRepo.invite = invite
+	svc := NewInvitationService(invRepo, priv, pub, appRepo, nil, userRepo, fakeEventService{}, "space-key")
+	token, err := svc.GenerateToken(invite.ID, "https://space.example", nil)
+	assert.NoError(t, err)
+	res, err := svc.CheckInvitationUsage(token, "member-pk")
+	assert.NoError(t, err)
+	return res
+}
+
+func TestCheckInvitationUsage_MemberGuest_WithSpaceUse_ShouldBeValid(t *testing.T) {
+	// when
+	res := checkAsMember(t, spaceUseInvite(true), user.RoleGuest, &fakeInvitationRepo{})
+
+	// then
+	assert.True(t, res.Valid)
+}
+
+func TestCheckInvitationUsage_MemberUser_WithSpaceUse_ShouldNotBeValid(t *testing.T) {
+	// when
+	res := checkAsMember(t, spaceUseInvite(true), user.RoleUser, &fakeInvitationRepo{})
+
+	// then
+	assert.False(t, res.Valid)
+	assert.True(t, res.IsMember)
+}
+
+func TestCheckInvitationUsage_MemberGuest_WithSpaceUse_AlreadyUsed_ShouldReportAlreadyJoined(t *testing.T) {
+	// when
+	res := checkAsMember(t, spaceUseInvite(true), user.RoleGuest, &fakeInvitationRepo{usedBy: true})
+
+	// then
+	assert.False(t, res.Valid)
+	assert.True(t, res.AlreadyUsed)
 }

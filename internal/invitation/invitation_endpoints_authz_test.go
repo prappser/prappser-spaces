@@ -177,3 +177,42 @@ func TestListInvites_ShouldReturn200WhenCallerIsAdmin(t *testing.T) {
 	// then
 	assert.Equal(t, fasthttp.StatusOK, ctx.Response.StatusCode())
 }
+
+func newSpaceUseCtx(role string) *fasthttp.RequestCtx {
+	ctx := newAuthzTestCtx("POST", "owner-pk", "app-1", "", []byte(`{"grantsSpaceUse":true}`))
+	ctx.SetUserValue("user", &user.User{PublicKey: "owner-pk", Role: role})
+	return ctx
+}
+
+func TestCreateInvite_ShouldReturn403WhenNonSpaceOwnerGrantsSpaceUse(t *testing.T) {
+	// given: an app owner whose space role is only user
+	svc := newEndpointTestService(t, "app-1", "owner-pk", application.MemberRoleOwner, nil)
+	ep := &InvitationEndpoints{invitationService: svc}
+	ctx := newSpaceUseCtx(user.RoleUser)
+
+	// when
+	ep.CreateInvite(ctx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusForbidden, ctx.Response.StatusCode())
+}
+
+func TestCreateInvite_ShouldStoreGrantsSpaceUseWhenSpaceOwner(t *testing.T) {
+	// given
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	assert.NoError(t, err)
+	appRepo := application.NewMemoryRepository()
+	assert.NoError(t, appRepo.CreateApplication(&application.Application{ID: "app-1", Name: "Test App"}))
+	assert.NoError(t, appRepo.CreateMember(&application.Member{ID: "m1", ApplicationID: "app-1", PublicKey: "owner-pk", Role: application.MemberRoleOwner}))
+	repo := &fakeInvitationRepo{}
+	svc := NewInvitationService(repo, priv, pub, appRepo, nil, &fakeUserRepo{}, fakeEventService{}, "space-key")
+	ep := &InvitationEndpoints{invitationService: svc}
+	ctx := newSpaceUseCtx(user.RoleOwner)
+
+	// when
+	ep.CreateInvite(ctx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusCreated, ctx.Response.StatusCode())
+	assert.True(t, repo.createdInvite.GrantsSpaceUse)
+}

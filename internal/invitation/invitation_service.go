@@ -115,6 +115,7 @@ type CreateInvitationOptions struct {
 	// nil defaults to true, matching the DB column defaults.
 	GrantsMembership *bool
 	GrantsIdentity   *bool
+	GrantsSpaceUse   *bool
 	// MembershipDurationHours is the per-joiner membership lifetime (#117);
 	// nil means no expiry, matching today's behavior.
 	MembershipDurationHours *int
@@ -162,15 +163,17 @@ func (s *InvitationService) CreateInvitation(opts CreateInvitationOptions) (*Inv
 	if opts.GrantsIdentity != nil {
 		grantsIdentity = *opts.GrantsIdentity
 	}
+	grantsSpaceUse := opts.GrantsSpaceUse != nil && *opts.GrantsSpaceUse
 	if !grantsMembership {
 		grantsIdentity = false
+		grantsSpaceUse = false
 	}
 
 	// [D9] Identity-granting invites default to single-use - a multi-use
 	// link that mints identities is an account-farm vector. An explicit
 	// maxUses always wins.
 	maxUses := opts.MaxUses
-	if grantsIdentity && maxUses == nil {
+	if (grantsIdentity || grantsSpaceUse) && maxUses == nil {
 		one := 1
 		maxUses = &one
 	}
@@ -188,6 +191,7 @@ func (s *InvitationService) CreateInvitation(opts CreateInvitationOptions) (*Inv
 		SpaceID:                 opts.SpaceID,
 		GrantsMembership:        grantsMembership,
 		GrantsIdentity:          grantsIdentity,
+		GrantsSpaceUse:          grantsSpaceUse,
 		MembershipDurationHours: opts.MembershipDurationHours,
 	}
 
@@ -211,12 +215,13 @@ func (s *InvitationService) CreateInvitation(opts CreateInvitationOptions) (*Inv
 	// Build response - use HTTPS PWA URL for sharing
 	pwaURL := "https://prappser-app.netlify.app"
 	response := &InvitationResponse{
-		ID:        invite.ID,
-		Token:     token,
-		URL:       fmt.Sprintf("%s/join?token=%s", pwaURL, token),
-		DeepLink:  fmt.Sprintf("prappser://join?token=%s", token),
-		ExpiresAt: expiresAt,
-		CreatedAt: now,
+		ID:             invite.ID,
+		Token:          token,
+		URL:            fmt.Sprintf("%s/join?token=%s", pwaURL, token),
+		DeepLink:       fmt.Sprintf("prappser://join?token=%s", token),
+		ExpiresAt:      expiresAt,
+		CreatedAt:      now,
+		GrantsSpaceUse: grantsSpaceUse,
 	}
 
 	return response, nil
@@ -530,6 +535,14 @@ func (s *InvitationService) CheckInvitationUsage(tokenString, userPublicKey stri
 	isMember, err := s.appRepo.IsMember(invite.ApplicationID, userPublicKey)
 	if err == nil && isMember {
 		result.IsMember = true
+		// Advisory only: Join still requires the device-possession check.
+		if invite.GrantsSpaceUse {
+			if acct, _ := s.userRepository.GetUserByPublicKey(userPublicKey); acct != nil && acct.Role == user.RoleGuest {
+				result.Valid = true
+				result.Message = "Invitation is valid and ready to use"
+				return result, nil
+			}
+		}
 		result.Message = "You are already a member of this application"
 		return result, nil
 	}
@@ -905,11 +918,35 @@ func (s *InvitationService) Join(tokenString, proof, assertion, deviceName strin
 			return nil, fmt.Errorf("failed to get member: %w", err)
 		}
 
-		return &JoinResult{
+		result := &JoinResult{
 			ApplicationID: invite.ApplicationID,
 			MemberID:      member.ID,
 			IsNewMember:   false,
-		}, nil
+		}
+
+		if !s.canPromote(invite, existingUser, presentedDevicePublicKey) {
+			return result, nil
+		}
+		// Promote-then-record: a failed promotion leaves no use row, so a retry can still promote;
+		// a recorded use stops a re-joining guest draining a multi-use invite.
+		used, err := s.repo.HasBeenUsedBy(invite.ID, userPublicKey)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check invitation usage: %w", err)
+		}
+		if used {
+			return result, nil
+		}
+		if err := s.repo.IncrementUseCount(invite.ID); err != nil {
+			log.Debug().Err(err).Str("inviteId", invite.ID).Msg("[INVITE] Member promotion failed: could not claim invitation use")
+			return nil, fmt.Errorf("failed to claim invitation use: %w", err)
+		}
+		if err := s.promote(userPublicKey); err != nil {
+			return nil, err
+		}
+		if err := s.repo.RecordUse(invite.ID, userPublicKey, uuid.New().String()); err != nil {
+			return nil, fmt.Errorf("failed to record invitation use: %w", err)
+		}
+		return result, nil
 	}
 
 	// Build member_added event data with user snapshot at time of joining
@@ -1000,6 +1037,11 @@ func (s *InvitationService) Join(tokenString, proof, assertion, deviceName strin
 		return nil, fmt.Errorf("failed to record invitation use: %w", err)
 	}
 
+	// After ProduceEvent so a failed event never leaves a user with no membership. Failure is non-fatal: the use is spent and membership exists, so failing would strand the joiner behind a max-uses retry.
+	if s.canPromote(invite, existingUser, presentedDevicePublicKey) {
+		_ = s.promote(userPublicKey)
+	}
+
 	log.Info().
 		Str("inviteId", invite.ID).
 		Str("applicationId", invite.ApplicationID).
@@ -1015,4 +1057,33 @@ func (s *InvitationService) Join(tokenString, proof, assertion, deviceName strin
 		IsNewMember:   true,
 		LastEventID:   producedEvt.ID,
 	}, nil
+}
+
+// canPromote requires the flag, a guest account, and a joining device proven to be the account's own
+// (assertions alone don't prove it, since VerifyAssertion trusts the self-declared issuer).
+func (s *InvitationService) canPromote(invite *Invitation, acct *user.User, deviceKey string) bool {
+	if !invite.GrantsSpaceUse || acct == nil || acct.Role != user.RoleGuest {
+		return false
+	}
+	if deviceKey != acct.PublicKey {
+		d, err := s.userRepository.GetDevice(deviceKey)
+		if err != nil || d == nil || d.UserPublicKey != acct.PublicKey || d.RevokedAt != nil {
+			log.Warn().Err(err).
+				Str("inviteId", invite.ID).
+				Str("userPublicKey", acct.PublicKey[:min(20, len(acct.PublicKey))]+"...").
+				Msg("[INVITE] Space use not granted: joining device not proven to belong to account")
+			return false
+		}
+	}
+	return true
+}
+
+func (s *InvitationService) promote(publicKey string) error {
+	keyLog := publicKey[:min(20, len(publicKey))] + "..."
+	if err := s.userRepository.UpdateUserRole(publicKey, user.RoleUser); err != nil {
+		log.Error().Err(err).Str("userPublicKey", keyLog).Msg("[INVITE] Failed to promote guest to user")
+		return fmt.Errorf("failed to promote guest to user: %w", err)
+	}
+	log.Info().Str("userPublicKey", keyLog).Msg("[INVITE] Guest promoted to user via space-use invitation")
+	return nil
 }
