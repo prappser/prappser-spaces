@@ -3,6 +3,7 @@ package invitation
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -215,4 +216,23 @@ func TestCreateInvite_ShouldStoreGrantsSpaceUseWhenSpaceOwner(t *testing.T) {
 	// then
 	assert.Equal(t, fasthttp.StatusCreated, ctx.Response.StatusCode())
 	assert.True(t, repo.createdInvite.GrantsSpaceUse)
+}
+
+func TestJoinApplication_ShouldReturn403WhenSignupGateRefuses(t *testing.T) {
+	// given
+	invite := gatedInvite(intPtr(3))
+	svc, token, proof, err := gatedJoin(t, invite, "", true, 0, &fakeUserRepo{}, &fakeInvitationRepo{}, fakeEventService{})
+	assert.ErrorIs(t, err, ErrSingleUseInviteRequired)
+	ep := &InvitationEndpoints{invitationService: svc}
+	body, mErr := json.Marshal(JoinRequest{Proof: proof})
+	assert.NoError(t, mErr)
+	ctx := newAuthzTestCtx("POST", "", "", "", body)
+	ctx.SetUserValue("token", token)
+
+	// when
+	ep.JoinApplication(ctx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusForbidden, ctx.Response.StatusCode())
+	assert.Contains(t, string(ctx.Response.Body()), "identity not granted")
 }

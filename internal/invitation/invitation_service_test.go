@@ -27,6 +27,9 @@ type fakeInvitationRepo struct {
 	incrementCalls int
 	usedBy         bool
 	recordUseCalls int
+	releaseCalls   int
+	userCount      int
+	userCountErr   error
 }
 
 func (r *fakeInvitationRepo) Create(invite *Invitation) error {
@@ -43,6 +46,11 @@ func (r *fakeInvitationRepo) RecordUse(inviteID, userPublicKey, useID string) er
 	r.recordUseCalls++
 	return nil
 }
+func (r *fakeInvitationRepo) ReleaseUse(id string) error {
+	r.releaseCalls++
+	return nil
+}
+func (r *fakeInvitationRepo) CountUsers() (int, error) { return r.userCount, r.userCountErr }
 func (r *fakeInvitationRepo) GetByApplicationID(appID string) ([]*Invitation, error) {
 	return nil, nil
 }
@@ -1265,17 +1273,18 @@ func joinGuestWithAssertionDevice(t *testing.T, enrolled, revoked bool) *fakeUse
 	return userRepo
 }
 
-func TestJoin_NewAccount_WithSpaceUse_ClaimFailure_ShouldStayGuest(t *testing.T) {
+func TestJoin_NewAccount_WithSpaceUse_ClaimFailure_ShouldNotCreateAccount(t *testing.T) {
 	// given
 	userRepo := &fakeUserRepo{}
-	invRepo := &fakeInvitationRepo{incrementErr: assert.AnError}
+	invRepo := &fakeInvitationRepo{incrementErr: ErrMaxUsesReached}
 
 	// when
 	_, err := joinWithSpaceUse(t, spaceUseInvite(true), "", false, userRepo, invRepo, &capturingEventService{})
 
 	// then
-	assert.Error(t, err)
-	assert.Equal(t, user.RoleGuest, userRepo.existingUser.Role)
+	assert.ErrorIs(t, err, ErrMaxUsesReached)
+	assert.Nil(t, userRepo.existingUser)
+	assert.Zero(t, invRepo.releaseCalls)
 }
 
 func TestJoin_NewAccount_WithSpaceUse_ProduceEventFailure_ShouldStayGuest(t *testing.T) {
@@ -1416,4 +1425,191 @@ func TestCheckInvitationUsage_MemberGuest_WithSpaceUse_AlreadyUsed_ShouldReportA
 	// then
 	assert.False(t, res.Valid)
 	assert.True(t, res.AlreadyUsed)
+}
+
+// gatedJoin joins as a fresh keypair against an InvitationService with the
+// signup gates configured; existingRole seeds a known account when set.
+func gatedJoin(t *testing.T, invite *Invitation, existingRole string, singleUse bool, maxAccounts int, userRepo *fakeUserRepo, invRepo *fakeInvitationRepo, events EventService) (*InvitationService, string, string, error) {
+	t.Helper()
+	acctPub, acctPriv, err := ed25519.GenerateKey(rand.Reader)
+	assert.NoError(t, err)
+	acctB64 := base64.StdEncoding.EncodeToString(acctPub)
+	if existingRole != "" {
+		userRepo.existingUser = &user.User{PublicKey: acctB64, Username: "joiner", Issuer: acctB64, Role: existingRole}
+	}
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	assert.NoError(t, err)
+	appRepo := application.NewMemoryRepository()
+	assert.NoError(t, appRepo.CreateApplication(&application.Application{ID: invite.ApplicationID, Name: "Test App"}))
+	invRepo.invite = invite
+	svc := NewInvitationService(invRepo, priv, pub, appRepo, nil, userRepo, events, "space-key")
+	svc.SingleUseSignup = singleUse
+	svc.MaxAccounts = maxAccounts
+	token, err := svc.GenerateToken(invite.ID, "https://space.example", nil)
+	assert.NoError(t, err)
+	proof := buildJoinProof(t, acctPriv, acctB64, acctB64, "joiner", invite.ID, time.Now().Unix())
+	_, err = svc.Join(token, proof, "", "")
+	return svc, token, proof, err
+}
+
+func gatedInvite(maxUses *int) *Invitation {
+	inv := spaceUseInvite(false)
+	inv.MaxUses = maxUses
+	return inv
+}
+
+func intPtr(n int) *int { return &n }
+
+func TestJoin_SingleUseGate_NewAccount_MultiUseInvite_ShouldBeRefused(t *testing.T) {
+	for _, maxUses := range []*int{nil, intPtr(3)} {
+		// given
+		userRepo := &fakeUserRepo{}
+		invRepo := &fakeInvitationRepo{}
+
+		// when
+		_, _, _, err := gatedJoin(t, gatedInvite(maxUses), "", true, 0, userRepo, invRepo, &capturingEventService{})
+
+		// then
+		assert.ErrorIs(t, err, ErrSingleUseInviteRequired)
+		assert.ErrorIs(t, err, ErrIdentityNotGranted)
+		assert.Nil(t, userRepo.existingUser)
+		assert.Zero(t, invRepo.incrementCalls)
+	}
+}
+
+func TestJoin_SingleUseGate_NewAccount_SingleUseInvite_ShouldJoin(t *testing.T) {
+	// given
+	userRepo := &fakeUserRepo{}
+
+	// when
+	_, _, _, err := gatedJoin(t, gatedInvite(intPtr(1)), "", true, 0, userRepo, &fakeInvitationRepo{}, &capturingEventService{})
+
+	// then
+	assert.NoError(t, err)
+	assert.NotNil(t, userRepo.existingUser)
+}
+
+func TestJoin_SingleUseGate_ExistingAccount_MultiUseInvite_ShouldJoin(t *testing.T) {
+	// given
+	userRepo := &fakeUserRepo{}
+
+	// when
+	_, _, _, err := gatedJoin(t, gatedInvite(intPtr(3)), user.RoleUser, true, 0, userRepo, &fakeInvitationRepo{}, &capturingEventService{})
+
+	// then
+	assert.NoError(t, err)
+}
+
+func TestJoin_SingleUseGate_NewAccountWithAssertion_MultiUseInvite_ShouldBeRefused(t *testing.T) {
+	// given
+	invite := gatedInvite(intPtr(3))
+	acctPub, _, err := ed25519.GenerateKey(rand.Reader)
+	assert.NoError(t, err)
+	acctB64 := base64.StdEncoding.EncodeToString(acctPub)
+	_, devicePriv, deviceB64 := generateDeviceKey(t)
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	assert.NoError(t, err)
+	spaceKeyB64 := base64.StdEncoding.EncodeToString(pub)
+	userRepo := &fakeUserRepo{}
+	invRepo := &fakeInvitationRepo{invite: invite}
+	svc := NewInvitationService(invRepo, priv, pub, application.NewMemoryRepository(), nil, userRepo, &capturingEventService{}, spaceKeyB64)
+	svc.SingleUseSignup = true
+	token, err := svc.GenerateToken(invite.ID, "https://space.example", nil)
+	assert.NoError(t, err)
+	now := time.Now().Unix()
+	issuerPub, issuerPriv, err := ed25519.GenerateKey(rand.Reader)
+	assert.NoError(t, err)
+	issuerB64 := base64.StdEncoding.EncodeToString(issuerPub)
+	assertion := buildAssertionJWS(t, issuerPriv, issuerB64, acctB64, spaceKeyB64, "joiner", deviceB64, now, now+120)
+	proof := buildJoinProof(t, devicePriv, acctB64, deviceB64, "joiner", invite.ID, now)
+
+	// when
+	_, err = svc.Join(token, proof, assertion, "")
+
+	// then
+	assert.ErrorIs(t, err, ErrSingleUseInviteRequired)
+	assert.Nil(t, userRepo.existingUser)
+}
+
+func TestJoin_AccountCap_NewAccount_AtCap_ShouldBeRefused(t *testing.T) {
+	// given
+	userRepo := &fakeUserRepo{}
+	invRepo := &fakeInvitationRepo{userCount: 5}
+
+	// when
+	_, _, _, err := gatedJoin(t, gatedInvite(nil), "", false, 5, userRepo, invRepo, &capturingEventService{})
+
+	// then
+	assert.ErrorIs(t, err, ErrAccountLimitReached)
+	assert.ErrorIs(t, err, ErrIdentityNotGranted)
+	assert.Nil(t, userRepo.existingUser)
+}
+
+func TestJoin_AccountCap_NewAccount_BelowCap_ShouldJoin(t *testing.T) {
+	// given
+	invRepo := &fakeInvitationRepo{userCount: 4}
+
+	// when
+	_, _, _, err := gatedJoin(t, gatedInvite(nil), "", false, 5, &fakeUserRepo{}, invRepo, &capturingEventService{})
+
+	// then
+	assert.NoError(t, err)
+}
+
+func TestJoin_AccountCap_ExistingAccount_AtCap_ShouldJoin(t *testing.T) {
+	// given
+	invRepo := &fakeInvitationRepo{userCount: 5}
+
+	// when
+	_, _, _, err := gatedJoin(t, gatedInvite(nil), user.RoleUser, false, 5, &fakeUserRepo{}, invRepo, &capturingEventService{})
+
+	// then
+	assert.NoError(t, err)
+}
+
+func TestJoin_NewAccount_CreateUserFails_ShouldReleaseClaim(t *testing.T) {
+	// given
+	userRepo := &fakeUserRepo{createUserErr: assert.AnError}
+	invRepo := &fakeInvitationRepo{}
+
+	// when
+	_, _, _, err := gatedJoin(t, gatedInvite(intPtr(1)), "", false, 0, userRepo, invRepo, &capturingEventService{})
+
+	// then
+	assert.Error(t, err)
+	assert.Equal(t, 1, invRepo.incrementCalls)
+	assert.Equal(t, 1, invRepo.releaseCalls)
+}
+
+func TestJoin_NewAccount_ProduceEventFails_ShouldNotReleaseClaim(t *testing.T) {
+	// given
+	invRepo := &fakeInvitationRepo{}
+
+	// when
+	_, _, _, err := gatedJoin(t, gatedInvite(intPtr(1)), "", false, 0, &fakeUserRepo{}, invRepo, failingEventService{})
+
+	// then
+	assert.Error(t, err)
+	assert.Equal(t, 1, invRepo.incrementCalls)
+	assert.Zero(t, invRepo.releaseCalls)
+}
+
+func TestGetInviteInfo_SingleUseGate_ShouldReportEffectiveGrantsIdentity(t *testing.T) {
+	cases := []struct {
+		maxUses *int
+		want    bool
+	}{{intPtr(3), false}, {nil, false}, {intPtr(1), true}}
+	for _, c := range cases {
+		// given
+		userRepo := &fakeUserRepo{}
+		invRepo := &fakeInvitationRepo{}
+		svc, token, _, _ := gatedJoin(t, gatedInvite(c.maxUses), user.RoleUser, true, 0, userRepo, invRepo, &capturingEventService{})
+
+		// when
+		info, err := svc.GetInviteInfo(token)
+
+		// then
+		assert.NoError(t, err)
+		assert.Equal(t, c.want, info.GrantsIdentity)
+	}
 }

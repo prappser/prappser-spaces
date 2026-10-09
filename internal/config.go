@@ -28,6 +28,10 @@ type Config struct {
 	IdentityImportPassphrase string
 	// MaxAppsPerAccount caps live apps an account may own; 0 means unlimited.
 	MaxAppsPerAccount int
+	// SignupSingleUseInvites makes a single-use invite the only way to join.
+	SignupSingleUseInvites bool
+	// MaxAccounts caps accounts on the space, owner included; 0 means unlimited.
+	MaxAccounts int
 }
 
 type StorageConfig struct {
@@ -205,6 +209,22 @@ func LoadConfig() (*Config, error) {
 			config.MaxAppsPerAccount = maxApps
 		} else {
 			log.Warn().Str("var", "MAX_APPS_PER_ACCOUNT").Str("value", maxAppsStr).Msg("invalid value, limit disabled")
+		}
+	}
+
+	if v := os.Getenv("SIGNUP_SINGLE_USE_INVITES"); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			config.SignupSingleUseInvites = b
+		} else {
+			log.Warn().Str("var", "SIGNUP_SINGLE_USE_INVITES").Str("value", v).Msg("invalid value, disabled")
+		}
+	}
+
+	if maxAccountsStr := os.Getenv("MAX_ACCOUNTS"); maxAccountsStr != "" {
+		if maxAccounts, err := strconv.Atoi(maxAccountsStr); err == nil && maxAccounts >= 0 {
+			config.MaxAccounts = maxAccounts
+		} else {
+			log.Warn().Str("var", "MAX_ACCOUNTS").Str("value", maxAccountsStr).Msg("invalid value, limit disabled")
 		}
 	}
 

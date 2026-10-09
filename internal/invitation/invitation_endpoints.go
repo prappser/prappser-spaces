@@ -337,6 +337,12 @@ func (ie *InvitationEndpoints) JoinApplication(ctx *fasthttp.RequestCtx) {
 		case errors.Is(err, ErrDeviceConflict):
 			ctx.Error("device already registered to a different account", fasthttp.StatusConflict)
 			return
+		case errors.Is(err, ErrSingleUseInviteRequired):
+			ctx.Error("identity not granted: new accounts need a single-use invite", fasthttp.StatusForbidden)
+			return
+		case errors.Is(err, ErrAccountLimitReached):
+			ctx.Error("identity not granted: this space is not accepting new accounts", fasthttp.StatusForbidden)
+			return
 		case errors.Is(err, ErrIdentityNotGranted):
 			ctx.Error("identity not granted", fasthttp.StatusForbidden)
 			return

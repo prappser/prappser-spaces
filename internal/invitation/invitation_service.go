@@ -45,7 +45,9 @@ var (
 	// ErrIdentityNotGranted is returned by Join when a space configured not
 	// to anchor new accounts (grants_identity=false) is presented with a
 	// brand-new, non-assertion-backed account (D6).
-	ErrIdentityNotGranted = errors.New("invitation does not grant identity")
+	ErrIdentityNotGranted      = errors.New("invitation does not grant identity")
+	ErrSingleUseInviteRequired = fmt.Errorf("%w: new accounts need a single-use invite", ErrIdentityNotGranted)
+	ErrAccountLimitReached     = fmt.Errorf("%w: this space is not accepting new accounts", ErrIdentityNotGranted)
 	// ErrMembershipNotGranted is returned by Join for a preview-only invite
 	// (grants_membership=false) - defence in depth, since no real
 	// membership-free preview exists yet (D7).
@@ -87,6 +89,10 @@ type InvitationService struct {
 	// spacePublicKey is this space's own base64-encoded Ed25519 public key -
 	// the expected audience for an assertion presented on Join (#111).
 	spacePublicKey string
+	// SingleUseSignup limits new-account signup to invites with MaxUses == 1.
+	SingleUseSignup bool
+	// MaxAccounts caps total accounts for new signups; 0 means off.
+	MaxAccounts int
 }
 
 func NewInvitationService(repo InvitationRepository, privateKey ed25519.PrivateKey, publicKey ed25519.PublicKey, appRepo application.ApplicationRepository, db *sql.DB, userRepository user.UserRepository, eventService EventService, spacePublicKey string) *InvitationService {
@@ -395,7 +401,7 @@ func (s *InvitationService) GetInviteInfo(tokenString string) (*InviteInfo, erro
 		IsExpired:               isExpired,
 		IsValid:                 !isExpired && !isMaxUsesReached,
 		GrantsMembership:        invite.GrantsMembership,
-		GrantsIdentity:          invite.GrantsIdentity,
+		GrantsIdentity:          invite.GrantsIdentity && s.signupBlocked(invite) == nil,
 		MembershipDurationHours: invite.MembershipDurationHours,
 	}
 
@@ -759,6 +765,12 @@ func (s *InvitationService) Join(tokenString, proof, assertion, deviceName strin
 		log.Debug().Msg("[JOIN] Join failed: invitation does not grant identity to a new account")
 		return nil, ErrIdentityNotGranted
 	}
+	if isNewAccount {
+		if err := s.signupBlocked(invite); err != nil {
+			log.Debug().Err(err).Msg("[JOIN] Join failed: signup gate")
+			return nil, err
+		}
+	}
 
 	// [G2] PoP gate for every non-assertion join, not just new accounts: the
 	// presented device key must either equal the account key, or already be
@@ -780,6 +792,15 @@ func (s *InvitationService) Join(tokenString, proof, assertion, deviceName strin
 		}
 	}
 
+	heldClaim := false
+	defer func() {
+		if heldClaim {
+			if err := s.repo.ReleaseUse(invite.ID); err != nil {
+				log.Error().Err(err).Str("inviteId", invite.ID).Msg("[INVITE] Failed to release invitation use")
+			}
+		}
+	}()
+
 	if isNewAccount {
 		log.Debug().Str("username", userName).Msg("[JOIN_SERVICE] User not found, creating member user")
 
@@ -800,6 +821,12 @@ func (s *InvitationService) Join(tokenString, proof, assertion, deviceName strin
 				return nil, ErrDeviceConflict
 			}
 		}
+
+		if err := s.repo.IncrementUseCount(invite.ID); err != nil {
+			log.Debug().Str("inviteId", invite.ID).Err(err).Msg("[INVITE] Join failed: could not claim invitation use")
+			return nil, fmt.Errorf("failed to claim invitation use: %w", err)
+		}
+		heldClaim = true
 
 		// Create user with guest role. Issuer stays empty (COALESCE ->
 		// self) on the plain-join path; an assertion pins it to the
@@ -907,6 +934,12 @@ func (s *InvitationService) Join(tokenString, proof, assertion, deviceName strin
 	}
 
 	if isMember {
+		if heldClaim {
+			heldClaim = false
+			if err := s.repo.ReleaseUse(invite.ID); err != nil {
+				log.Error().Err(err).Str("inviteId", invite.ID).Msg("[INVITE] Failed to release invitation use")
+			}
+		}
 		// User is already a member - return success with existing data (idempotent)
 		log.Debug().
 			Str("applicationId", invite.ApplicationID).
@@ -997,20 +1030,17 @@ func (s *InvitationService) Join(tokenString, proof, assertion, deviceName strin
 
 	// [D11] Atomically claim a use before producing the event - the
 	// conditional UPDATE in IncrementUseCount closes the TOCTOU race the
-	// earlier precheck alone can't. This never ran for the already-a-member
-	// path above, which returns before reaching here.
-	// ponytail: a raced single-use invite can still orphan a created account
-	// if this claim fails after CreateUser already ran above - the account
-	// row persists but membership never happens (bounded blast radius: no
-	// membership grant). A proper fix claims the use before user creation
-	// and needs rework of the idempotent re-join path.
-	if err := s.repo.IncrementUseCount(invite.ID); err != nil {
-		log.Debug().
-			Str("inviteId", invite.ID).
-			Err(err).
-			Msg("[INVITE] Join failed: could not claim invitation use")
-		return nil, fmt.Errorf("failed to claim invitation use: %w", err)
+	// earlier precheck alone can't. A new account already holds its claim.
+	if !heldClaim {
+		if err := s.repo.IncrementUseCount(invite.ID); err != nil {
+			log.Debug().
+				Str("inviteId", invite.ID).
+				Err(err).
+				Msg("[INVITE] Join failed: could not claim invitation use")
+			return nil, fmt.Errorf("failed to claim invitation use: %w", err)
+		}
 	}
+	heldClaim = false
 
 	// Produce event (validates, sequences, persists, and executes - no authorization needed)
 	// Authorization was already done by validating the invitation token
@@ -1057,6 +1087,24 @@ func (s *InvitationService) Join(tokenString, proof, assertion, deviceName strin
 		IsNewMember:   true,
 		LastEventID:   producedEvt.ID,
 	}, nil
+}
+
+// ponytail: soft cap, count-then-insert, so parallel joins can overshoot; take an
+// advisory lock inside a tx if it must be exact.
+func (s *InvitationService) signupBlocked(invite *Invitation) error {
+	if s.SingleUseSignup && (invite.MaxUses == nil || *invite.MaxUses != 1) {
+		return ErrSingleUseInviteRequired
+	}
+	if s.MaxAccounts > 0 {
+		n, err := s.repo.CountUsers()
+		if err != nil {
+			return fmt.Errorf("failed to count accounts: %w", err)
+		}
+		if n >= s.MaxAccounts {
+			return ErrAccountLimitReached
+		}
+	}
+	return nil
 }
 
 // canPromote requires the flag, a guest account, and a joining device proven to be the account's own
