@@ -188,6 +188,8 @@ func main() {
 
 	invitationRepository := invitation.NewInvitationRepository(db)
 	invitationService := invitation.NewInvitationService(invitationRepository, privateKey, publicKey, appRepository, db, userRepository, eventService, spacePublicKeyString)
+	invitationService.SingleUseSignup = config.SignupSingleUseInvites
+	invitationService.MaxAccounts = config.MaxAccounts
 
 	setupEndpoints := setup.NewSetupEndpoints(db)
 

@@ -15,6 +15,8 @@ type InvitationRepository interface {
 	RecordUse(inviteID, userPublicKey string, useID string) error
 	GetByApplicationID(appID string) ([]*Invitation, error)
 	HasBeenUsedBy(inviteID, userPublicKey string) (bool, error)
+	ReleaseUse(id string) error
+	CountUsers() (int, error)
 }
 
 type invitationRepository struct {
@@ -134,6 +136,17 @@ func (r *invitationRepository) IncrementUseCount(id string) error {
 	}
 
 	return nil
+}
+
+func (r *invitationRepository) ReleaseUse(id string) error {
+	_, err := r.db.Exec(`UPDATE invitations SET used_count = used_count - 1 WHERE id = $1 AND used_count > 0`, id)
+	return err
+}
+
+func (r *invitationRepository) CountUsers() (int, error) {
+	var n int
+	err := r.db.QueryRow(`SELECT COUNT(*) FROM users`).Scan(&n)
+	return n, err
 }
 
 func (r *invitationRepository) RecordUse(inviteID, userPublicKey string, useID string) error {

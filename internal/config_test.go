@@ -34,3 +34,31 @@ func TestLoadConfig_LimitsInvalidOrNegative_ShouldDefaultToOff(t *testing.T) {
 	assert.Equal(t, int64(0), config.Storage.AccountQuota)
 	assert.Equal(t, 0, config.MaxAppsPerAccount)
 }
+
+func TestLoadConfig_SignupLimitsUnset_ShouldDefaultToOff(t *testing.T) {
+	// given
+	t.Setenv("MASTER_PASSWORD", "test")
+
+	// when
+	config, err := LoadConfig()
+
+	// then
+	require.NoError(t, err)
+	assert.False(t, config.SignupSingleUseInvites)
+	assert.Equal(t, 0, config.MaxAccounts)
+}
+
+func TestLoadConfig_SignupLimitsSet_ShouldParse(t *testing.T) {
+	// given
+	t.Setenv("MASTER_PASSWORD", "test")
+	t.Setenv("SIGNUP_SINGLE_USE_INVITES", "true")
+	t.Setenv("MAX_ACCOUNTS", "10")
+
+	// when
+	config, err := LoadConfig()
+
+	// then
+	require.NoError(t, err)
+	assert.True(t, config.SignupSingleUseInvites)
+	assert.Equal(t, 10, config.MaxAccounts)
+}
