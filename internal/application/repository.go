@@ -11,6 +11,9 @@ import (
 // evaluated lazily at read time, never by a scheduler.
 const activeMemberPredicate = `(m.membership_expires_at IS NULL OR m.membership_expires_at > EXTRACT(EPOCH FROM NOW()))`
 
+// ActiveMemberPredicate requires members aliased as m.
+const ActiveMemberPredicate = activeMemberPredicate
+
 type Repository struct {
 	db *sql.DB
 }

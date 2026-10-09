@@ -27,6 +27,7 @@ import (
 
 	_ "github.com/lib/pq"
 	"github.com/prappser/prappser-spaces/internal"
+	"github.com/prappser/prappser-spaces/internal/admin"
 	"github.com/prappser/prappser-spaces/internal/application"
 	"github.com/prappser/prappser-spaces/internal/event"
 	"github.com/prappser/prappser-spaces/internal/health"
@@ -238,7 +239,9 @@ func main() {
 	ownerClaimEndpoints := user.NewOwnerClaimEndpoints(userRepository, verifierKey, time.Now(), &spaceCreatorAdapter{service: spaceService})
 	assertionEndpoints := user.NewAssertionEndpoints(userRepository, privateKey, spacePublicKeyString)
 
-	requestHandler := internal.NewRequestHandler(config, userEndpoints, statusEndpoints, healthEndpoints, userService, appEndpoints, invitationEndpoints, eventEndpoints, setupEndpoints, storageEndpoints, wsHandler, spaceEndpoints, pushEndpoints, profileEndpoints, deviceEndpoints, passwordEndpoints, assertionEndpoints, ownerClaimEndpoints, keyEndpoints, accountEndpoints)
+	adminEndpoints := admin.NewAdminEndpoints(admin.NewRepository(db), admin.Limits{AccountQuotaBytes: config.Storage.AccountQuota, MaxAppsPerAccount: config.MaxAppsPerAccount})
+
+	requestHandler := internal.NewRequestHandler(config, userEndpoints, statusEndpoints, healthEndpoints, userService, appEndpoints, invitationEndpoints, eventEndpoints, setupEndpoints, storageEndpoints, wsHandler, spaceEndpoints, pushEndpoints, profileEndpoints, deviceEndpoints, passwordEndpoints, assertionEndpoints, ownerClaimEndpoints, keyEndpoints, accountEndpoints, adminEndpoints)
 
 	serverAddr := fmt.Sprintf(":%s", config.Port)
 	log.Info().Str("addr", serverAddr).Msg("Starting HTTP server")
