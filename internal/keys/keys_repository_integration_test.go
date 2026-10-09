@@ -6,6 +6,7 @@ import (
 	"context"
 	"database/sql"
 	"testing"
+	"time"
 
 	_ "github.com/lib/pq"
 
@@ -21,7 +22,39 @@ func getTestDB(t *testing.T) *sql.DB {
 	return testdb.Connect(t, "keys")
 }
 
-func TestKeyRepository_SaveAndGetSpaceKey_Integration(t *testing.T) {
+// seedSpaceKey inserts a legacy space_keys row; the service no longer writes
+// one, so tests seed it directly.
+func seedSpaceKey(t *testing.T, db *sql.DB, enc *EncryptedKey) {
+	t.Helper()
+	_, err := db.Exec(
+		`INSERT INTO space_keys (id, public_key, encrypted_private_key, salt, nonce, created_at, algorithm)
+		 VALUES ('main', $1, $2, $3, $4, $5, 'ed25519')`,
+		[]byte(enc.PublicKey), enc.EncryptedPrivateKey, enc.Salt, enc.Nonce, time.Now().Unix(),
+	)
+	if err != nil {
+		t.Fatalf("Failed to seed space key: %v", err)
+	}
+}
+
+func TestKeyRepository_HasUsers_Integration(t *testing.T) {
+	db := getTestDB(t)
+	defer db.Close()
+	repo := NewKeyRepository(db)
+	ctx := context.Background()
+
+	empty, err := repo.HasUsers(ctx)
+	if err != nil || empty {
+		t.Fatalf("expected no users, got %v, %v", empty, err)
+	}
+
+	testdb.InsertTestUser(t, db, "pk-1")
+	got, err := repo.HasUsers(ctx)
+	if err != nil || !got {
+		t.Fatalf("expected users, got %v, %v", got, err)
+	}
+}
+
+func TestKeyRepository_GetSpaceKey_ReturnsSeededRow_Integration(t *testing.T) {
 	db := getTestDB(t)
 	defer db.Close()
 
@@ -40,11 +73,7 @@ func TestKeyRepository_SaveAndGetSpaceKey_Integration(t *testing.T) {
 		t.Fatalf("Failed to encrypt key: %v", err)
 	}
 
-	// Save to database
-	err = repo.SaveSpaceKey(ctx, enc)
-	if err != nil {
-		t.Fatalf("Failed to save server key: %v", err)
-	}
+	seedSpaceKey(t, db, enc)
 
 	// Retrieve from database
 	retrieved, err := repo.GetSpaceKey(ctx)

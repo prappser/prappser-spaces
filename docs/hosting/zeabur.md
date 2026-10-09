@@ -15,15 +15,17 @@ and creates two services:
   repo id `925100212`), listening on port `4545`, with a persistent volume at
   `/app/storage`.
 
-Deploying the template asks for two inputs:
+Deploying the template asks for one input:
 
-- **`MASTER_PASSWORD`**: a random secret that encrypts the space's keys at rest, generate it (`openssl rand -hex 32`) and never type it into the app
 - **`SERVER_DOMAIN`**: the domain the service is deployed to (a generated
   `*.zeabur.app` subdomain, or a custom domain you attach)
 
+The `/app/storage` volume holds the space's identity key at
+`.space/identity.key`, so keep it and back it up. The backup is a secret.
+
 Every other environment variable on the `prappser-spaces` service is wired
 automatically from the `postgresql` service and from `SERVER_DOMAIN`:
-`DATABASE_URL`, `MASTER_PASSWORD`, `PORT`, `EXTERNAL_URL`, `ALLOWED_ORIGINS`,
+`DATABASE_URL`, `PORT`, `EXTERNAL_URL`, `ALLOWED_ORIGINS`,
 `LOG_LEVEL`, `STORAGE_TYPE`, `STORAGE_PATH`, `STORAGE_MAX_FILE_SIZE_MB`, and
 `STORAGE_CHUNK_SIZE_MB`.
 

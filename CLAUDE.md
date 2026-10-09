@@ -12,7 +12,7 @@
 ## Quick Commands
 
 ```bash
-go run .                                          # Dev server (requires DATABASE_URL + MASTER_PASSWORD env vars)
+go run .                                          # Dev server (requires DATABASE_URL env var)
 go test ./internal/... .                          # Unit tests
 docker compose up -d && go test -tags=integration ./internal/... .  # Integration tests
 ```
@@ -24,13 +24,13 @@ docker compose up -d && go test -tags=integration ./internal/... .  # Integratio
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `DATABASE_URL` | Yes | — | PostgreSQL connection string |
-| `MASTER_PASSWORD` | Yes | — | Random secret that encrypts the space Ed25519 keys at rest (generated, never typed into the app) |
+| `MASTER_PASSWORD` | No | — | Legacy. Only used once to migrate an existing space's encrypted `space_keys` row into the key file, and to allow rollback to an older image |
 | `PORT` | No | `4545` | HTTP listen port |
 | `EXTERNAL_URL` | No | `http://localhost:{PORT}` | Public URL for invite links |
 | `ALLOWED_ORIGINS` | No | prappser.app + localhost:* | Comma-separated CORS origins |
 | `LOG_LEVEL` | No | `info` | debug/info/warn/error |
 | `STORAGE_TYPE` | No | `local` | `local` or `s3` |
-| `STORAGE_PATH` | No | `./storage` | Local storage path |
+| `STORAGE_PATH` | No | `./storage` | Storage path; also holds the space identity key at `.space/identity.key` (persist and back up, even with `s3`) |
 | `STORAGE_ACCOUNT_QUOTA_MB` | No | `0` | Per-account file storage quota in MB; `0` = off, space owner exempt |
 | `MAX_APPS_PER_ACCOUNT` | No | `0` | Max live apps one account may own; `0` = off, space owner exempt |
 | `SIGNUP_SINGLE_USE_INVITES` | No | `false` | `true` = a new account can only join through a single-use invite (hosted-space friends beta) |
@@ -86,10 +86,10 @@ internal/
     invitation_service.go
     invitation_endpoints.go
   keys/
-    crypto.go              — Ed25519 keygen, AES-GCM encrypt/decrypt
+    crypto.go              — Ed25519 keygen, AES-GCM encrypt/decrypt (AES-GCM only for the legacy MASTER_PASSWORD row and identity export)
     crypto_test.go
     keys_repository.go     — KeyRepository (stores encrypted space keypair)
-    keys_service.go        — KeyService: Initialize(), PrivateKey(), PublicKey()
+    keys_service.go        — KeyService: Initialize(), PrivateKey(), PublicKey(); the identity key is the PEM file `<STORAGE_PATH>/.space/identity.key` (0600), the legacy `space_keys` row is only read to migrate it
     keys_repository_integration_test.go
   storage/
     models.go              — StorageItem types

@@ -21,9 +21,6 @@ type Config struct {
 	TrustProxyHeaders bool
 	// IdentityImport/IdentityImportPassphrase (SPACE_IDENTITY_IMPORT /
 	// SPACE_IDENTITY_IMPORT_PASSPHRASE) are optional, import-only: set both
-	// during a hosting move to re-encrypt an exported identity blob under
-	// this instance's MasterPassword (see keys.KeyService.Initialize and
-	// docs/hosting/selfhost.md). Both empty is the normal case.
 	IdentityImport           string
 	IdentityImportPassphrase string
 	// MaxAppsPerAccount caps live apps an account may own; 0 means unlimited.
@@ -35,16 +32,17 @@ type Config struct {
 }
 
 type StorageConfig struct {
-	StorageType  string
-	LocalPath    string
-	S3Endpoint   string
-	S3Bucket     string
-	S3AccessKey  string
-	S3SecretKey  string
-	S3Region     string
-	S3UseSSL     bool
-	MaxFileSize  int64
-	ChunkSize    int64
+	StorageType       string
+	LocalPath         string
+	LocalPathExplicit bool
+	S3Endpoint        string
+	S3Bucket          string
+	S3AccessKey       string
+	S3SecretKey       string
+	S3Region          string
+	S3UseSSL          bool
+	MaxFileSize       int64
+	ChunkSize         int64
 	// AccountQuota is the per-uploader byte cap; 0 means unlimited.
 	AccountQuota int64
 }
@@ -123,11 +121,6 @@ func LoadConfig() (*Config, error) {
 	envJWTExpirationHours := os.Getenv("JWT_EXPIRATION_HOURS")
 	envChallengeTTLSec := os.Getenv("CHALLENGE_TTL_SEC")
 
-	// Validate required config
-	if envMasterPassword == "" {
-		return nil, fmt.Errorf("MASTER_PASSWORD environment variable is required")
-	}
-
 	// Build config with defaults and env overrides
 	config := &Config{
 		MasterPassword: envMasterPassword,
@@ -169,6 +162,7 @@ func LoadConfig() (*Config, error) {
 
 	config.Storage.StorageType = getEnvOrDefault("STORAGE_TYPE", "local")
 	config.Storage.LocalPath = getEnvOrDefault("STORAGE_PATH", "./storage")
+	config.Storage.LocalPathExplicit = os.Getenv("STORAGE_PATH") != ""
 
 	config.Storage.S3Endpoint = os.Getenv("STORAGE_S3_ENDPOINT")
 	config.Storage.S3Bucket = os.Getenv("STORAGE_S3_BUCKET")

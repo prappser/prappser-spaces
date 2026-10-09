@@ -21,6 +21,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 	_ "time/tzdata" // embeds the IANA zone database - the container has no system zoneinfo
@@ -113,7 +114,14 @@ func main() {
 	}
 
 	keyRepo := keys.NewKeyRepository(db)
-	keyService := keys.NewKeyService(keyRepo, config.MasterPassword, config.IdentityImport, config.IdentityImportPassphrase)
+	keyPath, err := filepath.Abs(filepath.Join(config.Storage.LocalPath, ".space", "identity.key"))
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to resolve space key file path")
+		return
+	}
+	keyService := keys.NewKeyService(keyRepo, config.MasterPassword, config.IdentityImport, config.IdentityImportPassphrase,
+		keyPath,
+		config.Storage.StorageType == "s3" && !config.Storage.LocalPathExplicit)
 	if err := keyService.Initialize(context.Background()); err != nil {
 		log.Fatal().Err(err).Msg("Failed to initialize space keys")
 		return

@@ -146,6 +146,10 @@ func (e *Endpoints) Upload(ctx *fasthttp.RequestCtx) {
 	stored, err := e.service.Upload(ctx, appID, publicKey, spaceID, req, file, baseURL, isSpaceOwner(ctx))
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to upload file")
+		if errors.Is(err, ErrInvalidPath) {
+			ctx.Error("Invalid storage id", fasthttp.StatusBadRequest)
+			return
+		}
 		if writeLimitError(ctx, err) {
 			return
 		}
@@ -329,6 +333,10 @@ func (e *Endpoints) InitChunkedUpload(ctx *fasthttp.RequestCtx) {
 	response, err := e.service.InitChunkedUpload(ctx, &appID, publicKey, spaceID, &req, isSpaceOwner(ctx))
 	if err != nil {
 		log.Error().Err(err).Msg("[STORAGE] Failed to init chunked upload")
+		if errors.Is(err, ErrInvalidPath) {
+			ctx.Error("Invalid storage id", fasthttp.StatusBadRequest)
+			return
+		}
 		if writeLimitError(ctx, err) {
 			return
 		}
@@ -417,6 +425,10 @@ func (e *Endpoints) CompleteChunkedUpload(ctx *fasthttp.RequestCtx) {
 	completedStorage, err := e.service.CompleteChunkedUpload(ctx, storageID, baseURL)
 	if err != nil {
 		log.Error().Err(err).Str("storageId", storageID).Msg("[STORAGE] Failed to complete chunked upload")
+		if errors.Is(err, ErrInvalidPath) {
+			ctx.Error("Invalid storage id", fasthttp.StatusBadRequest)
+			return
+		}
 		if writeLimitError(ctx, err) {
 			return
 		}
@@ -463,6 +475,10 @@ func (e *Endpoints) GetFile(ctx *fasthttp.RequestCtx) {
 		log.Error().Err(err).Str("storageId", storageID).Msg("[STORAGE] GetData failed")
 		if errors.Is(err, ErrBlobNotFound) {
 			ctx.Error("file not found", fasthttp.StatusNotFound)
+			return
+		}
+		if errors.Is(err, ErrInvalidPath) {
+			ctx.Error("Invalid storage id", fasthttp.StatusBadRequest)
 			return
 		}
 		ctx.Error("Failed to retrieve file", fasthttp.StatusInternalServerError)
@@ -577,6 +593,9 @@ func (e *Endpoints) DeleteFile(ctx *fasthttp.RequestCtx) {
 	if err := e.service.Delete(ctx, storageID, publicKey); err != nil {
 		errMsg := err.Error()
 		switch {
+		case errors.Is(err, ErrInvalidPath):
+			log.Error().Err(err).Str("storageId", storageID).Msg("[STORAGE] Delete rejected invalid path")
+			ctx.Error("Invalid storage id", fasthttp.StatusBadRequest)
 		case strings.Contains(errMsg, "not authorized"):
 			ctx.Error("Not authorized to delete this file", fasthttp.StatusForbidden)
 		case strings.Contains(errMsg, "not found"):

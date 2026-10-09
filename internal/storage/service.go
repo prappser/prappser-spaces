@@ -98,6 +98,9 @@ func (s *Service) checkQuota(uploaderPublicKey string, size int64, quotaExempt b
 // against it instead (see GetFile's inlineContentTypes). isValidContentType
 // below replaces the shape validation the allowlist provided incidentally.
 func (s *Service) Upload(ctx context.Context, appID *string, uploaderPublicKey string, spaceID *string, req *UploadRequest, data io.Reader, baseURL string, quotaExempt bool) (*Storage, error) {
+	if err := validateStorageID(req.ID); err != nil {
+		return nil, err
+	}
 	if !isValidContentType(req.ContentType) {
 		return nil, fmt.Errorf("invalid content type: %q", req.ContentType)
 	}
@@ -343,6 +346,9 @@ func (s *Service) PurgeUnreferenced(ctx context.Context, cutoff int64, limit int
 // See Upload's doc-comment: no content-type allowlist here either, so the
 // same isValidContentType gate applies.
 func (s *Service) InitChunkedUpload(ctx context.Context, appID *string, uploaderPublicKey string, spaceID *string, req *ChunkedUploadInitRequest, quotaExempt bool) (*ChunkedUploadInitResponse, error) {
+	if err := validateStorageID(req.ID); err != nil {
+		return nil, err
+	}
 	if !isValidContentType(req.ContentType) {
 		return nil, fmt.Errorf("invalid content type: %q", req.ContentType)
 	}

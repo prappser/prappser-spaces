@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -10,6 +11,8 @@ import (
 
 	"github.com/rs/zerolog/log"
 )
+
+var ErrInvalidPath = errors.New("invalid storage path")
 
 type LocalStorage struct {
 	basePath string
@@ -46,8 +49,40 @@ func NewLocalStorage(config *BackendConfig) (*LocalStorage, error) {
 	}, nil
 }
 
-func (s *LocalStorage) Store(ctx context.Context, path string, reader io.Reader) error {
+// validateStorageID rejects client-chosen ids that are not a single plain path
+// segment, before they reach the DB or a backend path.
+func validateStorageID(id string) error {
+	if id == "" || strings.ContainsAny(id, `/\`) || strings.HasPrefix(id, ".") {
+		return fmt.Errorf("%w: storage id %q", ErrInvalidPath, id)
+	}
+	return nil
+}
+
+// resolve maps a relative storage path to a file under basePath. Dot-prefixed
+// segments are refused so a client-chosen id can neither climb out of basePath
+// nor reach hidden dirs such as .space, which holds the space identity key.
+func (s *LocalStorage) resolve(path string) (string, error) {
+	if path == "" || filepath.IsAbs(path) {
+		return "", fmt.Errorf("%w: %q", ErrInvalidPath, path)
+	}
+	for _, seg := range strings.Split(filepath.ToSlash(path), "/") {
+		if seg == "" || strings.HasPrefix(seg, ".") {
+			return "", fmt.Errorf("%w: %q", ErrInvalidPath, path)
+		}
+	}
+	// Lexical check only: symlinks under basePath are not followed or refused.
 	fullPath := filepath.Join(s.basePath, path)
+	if rel, err := filepath.Rel(s.basePath, fullPath); err != nil || !filepath.IsLocal(rel) {
+		return "", fmt.Errorf("%w: %q", ErrInvalidPath, path)
+	}
+	return fullPath, nil
+}
+
+func (s *LocalStorage) Store(ctx context.Context, path string, reader io.Reader) error {
+	fullPath, err := s.resolve(path)
+	if err != nil {
+		return err
+	}
 	dir := filepath.Dir(fullPath)
 
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -71,7 +106,10 @@ func (s *LocalStorage) Store(ctx context.Context, path string, reader io.Reader)
 }
 
 func (s *LocalStorage) Get(ctx context.Context, path string) (io.ReadCloser, error) {
-	fullPath := filepath.Join(s.basePath, path)
+	fullPath, err := s.resolve(path)
+	if err != nil {
+		return nil, err
+	}
 
 	file, err := os.Open(fullPath)
 	if err != nil {
@@ -91,7 +129,10 @@ func (s *LocalStorage) Get(ctx context.Context, path string) (io.ReadCloser, err
 }
 
 func (s *LocalStorage) Delete(ctx context.Context, path string) error {
-	fullPath := filepath.Join(s.basePath, path)
+	fullPath, err := s.resolve(path)
+	if err != nil {
+		return err
+	}
 
 	if err := os.Remove(fullPath); err != nil && !os.IsNotExist(err) {
 		return err
@@ -101,9 +142,12 @@ func (s *LocalStorage) Delete(ctx context.Context, path string) error {
 }
 
 func (s *LocalStorage) Exists(ctx context.Context, path string) (bool, error) {
-	fullPath := filepath.Join(s.basePath, path)
+	fullPath, err := s.resolve(path)
+	if err != nil {
+		return false, err
+	}
 
-	_, err := os.Stat(fullPath)
+	_, err = os.Stat(fullPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return false, nil

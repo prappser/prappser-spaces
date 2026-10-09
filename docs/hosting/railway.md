@@ -26,11 +26,11 @@ user doesn't have to copy it manually. See
 the full detection flow.
 
 The Railway template ([railway.com/new/template/nU7Fz6](https://railway.com/new/template/nU7Fz6))
-is configured in Railway's template composer, not in a repo. It sets
-`MASTER_PASSWORD` to `${{secret(32)}}`, a Railway template variable function
-(`secret(length?, alphabet?)`, see
-[Railway docs](https://docs.railway.com/templates/create)), so the secret is
-generated for you.
+is configured in Railway's template composer, not in a repo. It no longer needs
+`MASTER_PASSWORD`: the space's identity key is a file on the service volume.
+Spaces deployed from an older template version keep `MASTER_PASSWORD` set,
+which is harmless. Remove it only after a restart whose log shows the key
+loaded from the file.
 
 After deploying, claim the space from the app within 30 minutes of the server
 starting. If the window passed, redeploy the service to reopen it. Once
@@ -69,10 +69,12 @@ domain.
 
 Set the same variables listed in the main
 [Configuration table](../../README.md#configuration):
-`DATABASE_URL`, `MASTER_PASSWORD`, `PORT`, `EXTERNAL_URL`, `ALLOWED_ORIGINS`,
-`LOG_LEVEL`, `STORAGE_TYPE`, `STORAGE_PATH`. Attach a persistent volume at the
-path set by `STORAGE_PATH` (`/app/storage` if left at its default), otherwise
-uploaded files are lost on every redeploy.
+`DATABASE_URL`, `PORT`, `EXTERNAL_URL`, `ALLOWED_ORIGINS`, `LOG_LEVEL`,
+`STORAGE_TYPE`, `STORAGE_PATH`. A persistent volume at the path set by
+`STORAGE_PATH` (`/app/storage` if left at its default) is mandatory. It holds
+the space's identity key, so without it the space loses its identity on
+redeploy and every login breaks. Uploaded files are lost too. Back the volume
+up, the backup is a secret.
 
 ## Updates
 

@@ -4,7 +4,10 @@ package keys
 
 import (
 	"context"
+	"crypto/ed25519"
 	"database/sql"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -81,83 +84,125 @@ func insertTestUserAndDevice(t *testing.T, db *sql.DB, publicKey, username strin
 	assert.NoError(t, err)
 }
 
-// TestIdentityMigration_HostingMove_Integration covers acceptance criterion
-// 1 end to end: export under the old MASTER_PASSWORD, import under a new
-// one against the SAME database, and confirm the space's identity, a
-// pre-migration JWT, and unrelated app data (users/devices) all survive the
-// move untouched, while the encrypted key material itself is re-wrapped.
-func TestIdentityMigration_HostingMove_Integration(t *testing.T) {
-	db := testdb.Connect(t, "keys")
-	defer db.Close()
-	ctx := context.Background()
+type spaceKeyRow struct {
+	pub, ct, salt, nonce []byte
+}
 
-	// given - the "old host": a space identity plus some unrelated data
-	repo := NewKeyRepository(db)
-	oldService := NewKeyService(repo, "pw-old", "", "")
-	assert.NoError(t, oldService.Initialize(ctx))
-	pub0 := oldService.PublicKey()
-
-	insertTestUserAndDevice(t, db, "user-pk-1", "alice")
-	insertTestUserAndDevice(t, db, "user-pk-2", "bob")
-	usersBefore := snapshotUsers(t, db)
-	devicesBefore := snapshotDevices(t, db)
-
-	var pubKeyColBefore, privKeyColBefore, saltColBefore, nonceColBefore []byte
+func readSpaceKeyRow(t *testing.T, db *sql.DB) spaceKeyRow {
+	t.Helper()
+	var r spaceKeyRow
 	assert.NoError(t, db.QueryRow(
 		`SELECT public_key, encrypted_private_key, salt, nonce FROM space_keys WHERE id = 'main'`,
-	).Scan(&pubKeyColBefore, &privKeyColBefore, &saltColBefore, &nonceColBefore))
+	).Scan(&r.pub, &r.ct, &r.salt, &r.nonce))
+	return r
+}
 
-	// a pre-migration JWT, standing in for a live session minted by the old host
+func signTestJWT(t *testing.T, priv ed25519.PrivateKey) string {
+	t.Helper()
 	claims := testClaims{
 		UserPublicKey: "user-pk-1",
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
 		},
 	}
-	tokenString, err := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims).SignedString(oldService.PrivateKey())
+	token, err := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims).SignedString(priv)
 	assert.NoError(t, err)
+	return token
+}
 
-	// when - export under the old master password, then simulate the move:
-	// a fresh KeyService against the SAME db, but a new MASTER_PASSWORD and
-	// the export blob configured for import.
-	blob, err := oldService.ExportIdentity("export-passphrase-1234")
+// TestIdentityMigration_LegacyRowToKeyFile_Integration: migrating leaves the
+// space_keys row byte-identical (so rollback still works) and a JWT signed
+// before the migration validates against the migrated key.
+func TestIdentityMigration_LegacyRowToKeyFile_Integration(t *testing.T) {
+	db := testdb.Connect(t, "keys")
+	defer db.Close()
+	ctx := context.Background()
+
+	// given - a legacy row, accounts, and a JWT signed by the legacy key
+	legacyPriv, _, err := GenerateEd25519KeyPair()
 	assert.NoError(t, err)
+	legacyEnc, err := EncryptPrivateKey(legacyPriv, "pw-old")
+	assert.NoError(t, err)
+	seedSpaceKey(t, db, legacyEnc)
+	insertTestUserAndDevice(t, db, "user-pk-1", "alice")
+	insertTestUserAndDevice(t, db, "user-pk-2", "bob")
+	usersBefore := snapshotUsers(t, db)
+	devicesBefore := snapshotDevices(t, db)
+	rowBefore := readSpaceKeyRow(t, db)
+	tokenString := signTestJWT(t, legacyPriv)
 
-	newService := NewKeyService(repo, "pw-new", blob, "export-passphrase-1234")
-	err = newService.Initialize(ctx)
+	keyFile := filepath.Join(t.TempDir(), ".space", "identity.key")
+	service := NewKeyService(NewKeyRepository(db), "pw-old", "", "", keyFile, false)
+
+	// when
+	err = service.Initialize(ctx)
 
 	// then
 	assert.NoError(t, err)
-	assert.Equal(t, pub0, newService.PublicKey())
+	assert.Equal(t, legacyPriv.Seed(), service.PrivateKey().Seed())
 
 	parsed, err := jwt.ParseWithClaims(tokenString, &testClaims{}, func(token *jwt.Token) (interface{}, error) {
-		return newService.PublicKey(), nil
+		return service.PublicKey(), nil
 	})
 	assert.NoError(t, err)
-	assert.True(t, parsed.Valid, "a pre-migration JWT must still validate against the new host's public key")
+	assert.True(t, parsed.Valid, "a pre-migration JWT must still validate after migration")
+
+	assert.Equal(t, rowBefore, readSpaceKeyRow(t, db), "space_keys row must stay byte-identical")
+	rowEnc, err := NewKeyRepository(db).GetSpaceKey(ctx)
+	assert.NoError(t, err)
+	rowPriv, err := DecryptPrivateKey(rowEnc, "pw-old")
+	assert.NoError(t, err)
+	assert.Equal(t, legacyPriv.Seed(), rowPriv.Seed(), "legacy DecryptPrivateKey must still work on the row")
 
 	assert.Equal(t, usersBefore, snapshotUsers(t, db))
 	assert.Equal(t, devicesBefore, snapshotDevices(t, db))
-
-	var pubKeyColAfter, privKeyColAfter, saltColAfter, nonceColAfter []byte
-	assert.NoError(t, db.QueryRow(
-		`SELECT public_key, encrypted_private_key, salt, nonce FROM space_keys WHERE id = 'main'`,
-	).Scan(&pubKeyColAfter, &privKeyColAfter, &saltColAfter, &nonceColAfter))
-	assert.Equal(t, pubKeyColBefore, pubKeyColAfter, "public_key must be unchanged across a re-wrap")
-	assert.NotEqual(t, privKeyColBefore, privKeyColAfter, "encrypted_private_key must change - re-wrapped under the new master password")
-	assert.NotEqual(t, saltColBefore, saltColAfter, "salt must change - EncryptPrivateKey always generates a fresh one")
-	assert.NotEqual(t, nonceColBefore, nonceColAfter, "nonce must change - EncryptPrivateKey always generates a fresh one")
 }
 
-// TestIdentityMigration_FreshSchemaImport_Integration covers importing into
-// an empty database (no prior space_keys row) - the other supported path
-// alongside the hosting-move re-wrap above.
+// TestIdentityMigration_HostingMoveWithRow_Integration: the blob restores the
+// key file with MASTER_PASSWORD unset, and the row is left untouched.
+func TestIdentityMigration_HostingMoveWithRow_Integration(t *testing.T) {
+	db := testdb.Connect(t, "keysmove")
+	defer db.Close()
+	ctx := context.Background()
+
+	// given
+	priv, _, err := GenerateEd25519KeyPair()
+	assert.NoError(t, err)
+	enc, err := EncryptPrivateKey(priv, "pw-old")
+	assert.NoError(t, err)
+	seedSpaceKey(t, db, enc)
+	rowBefore := readSpaceKeyRow(t, db)
+	blobEnc, err := EncryptPrivateKey(priv, "export-passphrase-1234")
+	assert.NoError(t, err)
+	blob, err := EncodeIdentityBlob(blobEnc)
+	assert.NoError(t, err)
+	tokenString := signTestJWT(t, priv)
+
+	service := NewKeyService(NewKeyRepository(db), "", blob, "export-passphrase-1234",
+		filepath.Join(t.TempDir(), ".space", "identity.key"), false)
+
+	// when
+	err = service.Initialize(ctx)
+
+	// then
+	assert.NoError(t, err)
+	assert.Equal(t, priv.Seed(), service.PrivateKey().Seed())
+	parsed, err := jwt.ParseWithClaims(tokenString, &testClaims{}, func(token *jwt.Token) (interface{}, error) {
+		return service.PublicKey(), nil
+	})
+	assert.NoError(t, err)
+	assert.True(t, parsed.Valid)
+	assert.Equal(t, rowBefore, readSpaceKeyRow(t, db), "import must not rewrite the row")
+}
+
+// TestIdentityMigration_FreshSchemaImport_Integration: import into an empty
+// database writes the key file and no space_keys row.
 func TestIdentityMigration_FreshSchemaImport_Integration(t *testing.T) {
 	db := testdb.Connect(t, "keysimport")
 	defer db.Close()
 	ctx := context.Background()
 
-	// given - a blob exported from a keypair that has never touched this DB
+	// given
 	priv, pub, err := GenerateEd25519KeyPair()
 	assert.NoError(t, err)
 	enc, err := EncryptPrivateKey(priv, "export-passphrase-1234")
@@ -166,7 +211,8 @@ func TestIdentityMigration_FreshSchemaImport_Integration(t *testing.T) {
 	assert.NoError(t, err)
 
 	repo := NewKeyRepository(db)
-	service := NewKeyService(repo, "pw-new", blob, "export-passphrase-1234")
+	keyFile := filepath.Join(t.TempDir(), ".space", "identity.key")
+	service := NewKeyService(repo, "", blob, "export-passphrase-1234", keyFile, false)
 
 	// when
 	err = service.Initialize(ctx)
@@ -174,27 +220,26 @@ func TestIdentityMigration_FreshSchemaImport_Integration(t *testing.T) {
 	// then
 	assert.NoError(t, err)
 	assert.Equal(t, pub, service.PublicKey())
-
 	stored, err := repo.GetSpaceKey(ctx)
 	assert.NoError(t, err)
-	assert.Equal(t, []byte(pub), []byte(stored.PublicKey))
+	assert.Nil(t, stored, "no space_keys row is written")
 }
 
-// TestIdentityMigration_MismatchGuard_Integration covers the safety check
-// that stops Initialize from silently swapping a space's identity: an
-// import blob for a DIFFERENT keypair than the one already stored must fail
-// startup rather than overwrite it.
+// TestIdentityMigration_MismatchGuard_Integration: an import blob for a
+// different keypair than the row's must fail startup and write nothing.
 func TestIdentityMigration_MismatchGuard_Integration(t *testing.T) {
 	db := testdb.Connect(t, "keysmismatch")
 	defer db.Close()
 	ctx := context.Background()
 
-	// given - an existing space identity ...
-	repo := NewKeyRepository(db)
-	existingService := NewKeyService(repo, "pw-existing", "", "")
-	assert.NoError(t, existingService.Initialize(ctx))
+	// given
+	existingPriv, _, err := GenerateEd25519KeyPair()
+	assert.NoError(t, err)
+	existingEnc, err := EncryptPrivateKey(existingPriv, "pw-existing")
+	assert.NoError(t, err)
+	seedSpaceKey(t, db, existingEnc)
+	rowBefore := readSpaceKeyRow(t, db)
 
-	// ... and an import blob for a completely different keypair
 	otherPriv, _, err := GenerateEd25519KeyPair()
 	assert.NoError(t, err)
 	otherEnc, err := EncryptPrivateKey(otherPriv, "other-passphrase-1234")
@@ -202,15 +247,35 @@ func TestIdentityMigration_MismatchGuard_Integration(t *testing.T) {
 	otherBlob, err := EncodeIdentityBlob(otherEnc)
 	assert.NoError(t, err)
 
+	keyFile := filepath.Join(t.TempDir(), ".space", "identity.key")
+	service := NewKeyService(NewKeyRepository(db), "", otherBlob, "other-passphrase-1234", keyFile, false)
+
 	// when
-	mismatchedService := NewKeyService(repo, "pw-new", otherBlob, "other-passphrase-1234")
-	err = mismatchedService.Initialize(ctx)
+	err = service.Initialize(ctx)
 
 	// then
 	assert.Error(t, err)
+	_, statErr := os.Stat(keyFile)
+	assert.True(t, os.IsNotExist(statErr))
+	assert.Equal(t, rowBefore, readSpaceKeyRow(t, db))
+}
 
-	// and the original identity must be left untouched
-	stored, getErr := repo.GetSpaceKey(ctx)
-	assert.NoError(t, getErr)
-	assert.Equal(t, []byte(existingService.PublicKey()), []byte(stored.PublicKey))
+// TestIdentityMigration_UsersWithoutKeyOrRow_Integration: accounts exist but
+// neither key file nor row does, so a fresh key must not be minted.
+func TestIdentityMigration_UsersWithoutKeyOrRow_Integration(t *testing.T) {
+	db := testdb.Connect(t, "keysnokey")
+	defer db.Close()
+
+	// given
+	insertTestUserAndDevice(t, db, "user-pk-1", "alice")
+	keyFile := filepath.Join(t.TempDir(), ".space", "identity.key")
+	service := NewKeyService(NewKeyRepository(db), "", "", "", keyFile, false)
+
+	// when
+	err := service.Initialize(context.Background())
+
+	// then
+	assert.Error(t, err)
+	_, statErr := os.Stat(keyFile)
+	assert.True(t, os.IsNotExist(statErr))
 }

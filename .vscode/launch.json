@@ -10,7 +10,6 @@
             "preLaunchTask": "ensure-postgres",
             "env": {
                 "DATABASE_URL": "postgresql://test:test@localhost:5433/prappser_test?sslmode=disable",
-                "MASTER_PASSWORD": "Prappser2025",
                 "PORT": "4545",
                 "EXTERNAL_URL": "http://localhost:4545",
                 "ALLOWED_ORIGINS": "https://prappser.app,http://localhost:*,https://localhost:*",
@@ -32,7 +31,6 @@
             "preLaunchTask": "ensure-postgres",
             "env": {
                 "DATABASE_URL": "postgresql://test:test@localhost:5433/prappser_test?sslmode=disable",
-                "MASTER_PASSWORD": "Prappser2025",
                 "PORT": "4545",
                 "EXTERNAL_URL": "https://communal-correctly-satyr.ngrok-free.app",
                 "ALLOWED_ORIGINS": "https://prappser.app,http://localhost:*,https://localhost:*,https://communal-correctly-satyr.ngrok-free.app",

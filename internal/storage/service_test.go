@@ -679,3 +679,25 @@ func TestGetFile_PoisonedContentType_FallsBackToOctetStream(t *testing.T) {
 	assert.Equal(t, fasthttp.StatusOK, ctx.Response.StatusCode())
 	assert.Equal(t, "application/octet-stream", string(ctx.Response.Header.ContentType()))
 }
+
+func TestUploadAndInitChunked_ShouldRejectBadStorageID(t *testing.T) {
+	// given: nil repo, so any DB write would panic
+	backend := newMockBackend()
+	svc := &Service{backend: backend, maxFileSize: 1024}
+	badIDs := []string{"", ".space", "../x", "a/b", `a\b`}
+
+	for _, id := range badIDs {
+		// when
+		_, uploadErr := svc.Upload(context.Background(), nil, "pk", nil, &UploadRequest{ID: id, ContentType: "image/png"}, strings.NewReader("x"), "", false)
+		_, initErr := svc.InitChunkedUpload(context.Background(), nil, "pk", nil, &ChunkedUploadInitRequest{ID: id, ContentType: "image/png"}, false)
+
+		// then
+		assert.ErrorIs(t, uploadErr, ErrInvalidPath, id)
+		assert.ErrorIs(t, initErr, ErrInvalidPath, id)
+	}
+	assert.Empty(t, backend.objects)
+}
+
+func TestValidateStorageID_ShouldAcceptUUID(t *testing.T) {
+	assert.NoError(t, validateStorageID("3f2b8c1e-9d4a-4e7b-8a61-0c5d2f9e7a10"))
+}

@@ -49,9 +49,10 @@ cd deploy
 cp .env.example .env
 ```
 
-Fill in `DOMAIN`, `POSTGRES_PASSWORD`, and `MASTER_PASSWORD` at minimum.
-`MASTER_PASSWORD` is a random secret (`openssl rand -hex 32`) that encrypts the
-space's keys at rest. You never type it into the app, so back up `.env`.
+Fill in `DOMAIN` and `POSTGRES_PASSWORD` at minimum. There is no key secret
+to set: the space's identity key is created on first boot as a file on the
+`app_storage` volume (`.space/identity.key`), so that volume must be
+persistent and backed up (see §8). `MASTER_PASSWORD` is legacy, see §7 and §9.
 After the stack starts, claim the space from the app within 30 minutes; if the
 window passed, restart the server to reopen it.
 `ALLOWED_ORIGINS`, `LOG_LEVEL`, `WATCHTOWER_POLL_INTERVAL`, and
@@ -192,6 +193,15 @@ watchtower label from `prappser-spaces` until you are ready to move back to
 docker compose stop watchtower
 ```
 
+**Rolling back below the release that moved the identity key onto the
+volume:** this works for a space created before that release, as long as
+`MASTER_PASSWORD` is still set. A space created fresh by that release has no
+`space_keys` row, so an older image either refuses to boot without
+`MASTER_PASSWORD` or, if one happens to be set, mints a new identity and
+breaks every login. Remove `MASTER_PASSWORD` from `.env` only after a restart
+whose log shows the key loaded from the file, and only if you accept losing
+this rollback path.
+
 ## 8. Backups
 
 Dump the database:
@@ -206,46 +216,56 @@ Example daily cron entry (2am, keeps the dump in the deploy directory):
 0 2 * * * cd /path/to/deploy && docker compose exec -T postgres pg_dump -U prappser prappser > backup-$(date +\%Y\%m\%d).sql
 ```
 
-Uploaded files live in the `app_storage` named volume; back it up separately
-if you need file-level recovery, for example with `docker run --rm -v
-app_storage:/data -v $(pwd):/backup alpine tar czf /backup/storage.tar.gz -C
-/data .`
+The `app_storage` named volume holds the uploaded files and the space's
+identity key (`.space/identity.key`), so it must be backed up too, for example
+with `docker run --rm -v app_storage:/data -v $(pwd):/backup alpine tar czf
+/backup/storage.tar.gz -C /data .`
+
+**The volume backup is a secret.** The key inside it is plaintext, so store
+the tarball like a password. On a space created after the key moved onto the
+volume, a `pg_dump` alone cannot log anyone in: without the key file the
+server refuses to start (or, on a fresh database, would mint a new identity).
+Losing the volume without an identity export loses the space identity, which
+breaks every password login and session. Take an identity export (§9, step 1)
+and keep it with the backups. The server refuses to start if the key file is
+missing but the space has accounts, or has a legacy row it cannot decrypt.
 
 ## 9. Moving to new hosting
 
-A `pg_dump` restore (§8) carries everything, including `space_keys` -
-encrypted under the OLD host's `MASTER_PASSWORD`. If the new host boots with
-a different `MASTER_PASSWORD`, it can't decrypt that row. Export/import
-decouples the two: you export the space's identity keypair, wrapped under a
-passphrase you choose, and the new host unwraps and re-encrypts it under
-whatever `MASTER_PASSWORD` it's given.
+The space's identity lives in two places: the database holds accounts and
+data, and the `app_storage` volume holds the identity key file. A `pg_dump`
+restore (§8) alone does not carry the identity.
 
-If you're keeping the same `MASTER_PASSWORD` on the new host, none of this
-is needed - skip straight to a normal restore. This exists so you *can*
-change it.
+If you carry the `app_storage` volume to the new host along with the dump,
+there is nothing else to do: the key file comes with it. Restore both and
+start the stack.
+
+If the volume is not carried (or is lost), use export/import. You export the
+space's identity keypair wrapped under a passphrase you choose, and the new
+host unwraps it and writes the key file.
 
 1. On the OLD, still-running host: in the app, go to Settings → My Space →
    Export identity key, choose a passphrase, and store the resulting blob
    in a password manager. **This must happen before the move** - there is
    no way to export from a host that's already offline.
-2. Take the `pg_dump` (§8) and back up the `app_storage` volume as usual.
-3. On the NEW host's `.env`, set the new `MASTER_PASSWORD` plus:
+2. Take the `pg_dump` (§8), and the `app_storage` volume backup if you have
+   one.
+3. On the NEW host's `.env`, set:
    ```
    SPACE_IDENTITY_IMPORT=PRAPSPACE1....
    SPACE_IDENTITY_IMPORT_PASSPHRASE=...
    ```
-4. Restore the dump into an empty database, then start the stack. Watch the
-   logs for `[KEYS] identity imported, re-encrypted under current
-   MASTER_PASSWORD`. A public-key mismatch between the restored dump and the
-   import blob aborts startup instead of silently swapping identities - if
-   you see that error, double check you're pointed at the right database
-   and the right export blob.
+4. Restore the dump into an empty database, then start the stack. The import
+   writes `.space/identity.key` on the volume. A public-key mismatch between
+   the existing key and the import blob aborts startup instead of silently
+   swapping identities - if you see that error, double check you're pointed at
+   the right database, volume, and export blob.
 5. Verify `GET /status` on the new host reports the same `identityPublicKey`
    it reported on the old one before the move.
 6. Flip DNS. The `SPACE_IDENTITY_IMPORT*` vars can be removed at your
-   leisure afterwards - once the row decrypts under `MASTER_PASSWORD`,
-   `Initialize` short-circuits before ever looking at them, so leaving them
-   set is a no-op, not a repeat import.
+   leisure afterwards - once the key file exists, the blob is only decoded
+   and compared against it, so leaving them set is a no-op, not a repeat
+   import.
 
 **Cutover warning:** existing members are unaffected by the move itself -
 their sessions and enrolled devices keep working, since the identity key

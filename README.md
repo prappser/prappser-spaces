@@ -28,7 +28,6 @@ docker compose up -d
 
 # Set required environment variables
 export DATABASE_URL="postgres://test:test@localhost:5433/prappser_test?sslmode=disable"
-export MASTER_PASSWORD="$(openssl rand -hex 32)"
 
 # Run the server
 go run .
@@ -41,7 +40,7 @@ The server starts on port `4545` by default and runs database migrations automat
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `DATABASE_URL` | Yes | - | PostgreSQL connection string |
-| `MASTER_PASSWORD` | Yes | - | Random secret that encrypts the space's keys at rest. Generate it, never type it into the app |
+| `MASTER_PASSWORD` | No | - | Legacy. Only used once to migrate an existing space's encrypted key from the database into the key file, and to allow rollback to an older image. New installs need no secret |
 | `PORT` | No | `4545` | HTTP listen port |
 | `EXTERNAL_URL` | No | `http://localhost:4545` | Public URL (used in invite links); overrides PORT |
 | `HOSTING_PROVIDER` | No | - | Set to `zeabur` for automatic URL resolution |
@@ -49,7 +48,7 @@ The server starts on port `4545` by default and runs database migrations automat
 | `LOG_LEVEL` | No | `info` | `debug`, `info`, `warn`, or `error` |
 | `JWT_EXPIRATION_HOURS` | No | `24` | JWT token lifetime in hours |
 | `STORAGE_TYPE` | No | `local` | `local` or `s3` |
-| `STORAGE_PATH` | No | `./storage` | Local storage path (when `STORAGE_TYPE=local`) |
+| `STORAGE_PATH` | No | `./storage` | Storage path. Also holds the space identity key at `.space/identity.key`, so it must be persistent and backed up, even with `STORAGE_TYPE=s3` |
 | `STORAGE_MAX_FILE_SIZE_MB` | No | `50` | Maximum file size in MB |
 | `STORAGE_CHUNK_SIZE_MB` | No | `5` | Chunk size for chunked uploads |
 
@@ -75,7 +74,8 @@ docker compose down
 docker build -t prappser-spaces .
 docker run \
   -e DATABASE_URL="postgres://user:pass@host:5432/prappser?sslmode=disable" \
-  -e MASTER_PASSWORD="$(openssl rand -hex 32)" \
+  -v prappser_storage:/app/storage \
+  -e STORAGE_PATH=/app/storage \
   -p 4545:4545 \
   prappser-spaces
 ```
