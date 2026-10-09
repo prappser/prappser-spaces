@@ -289,6 +289,21 @@ func (s *Service) CleanupApplicationStorage(ctx context.Context, appID string) e
 	return s.repo.DeleteByApplicationID(appID)
 }
 
+// DeletePersonalBlobs deletes the blobs of an uploader's app-less files and
+// leaves the rows to the caller, so a failed delete can be retried.
+func (s *Service) DeletePersonalBlobs(ctx context.Context, publicKey string) error {
+	storageList, err := s.repo.GetPersonalByUploader(publicKey)
+	if err != nil {
+		return err
+	}
+	for _, stored := range storageList {
+		if err := s.deleteBlobs(ctx, stored); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (s *Service) deleteBlobs(ctx context.Context, stored *Storage) error {
 	var errs []error
 	if err := s.backend.Delete(ctx, stored.StoragePath); err != nil {
