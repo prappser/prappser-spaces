@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Interactive setup for deploy/.env. Prompts for the values needed to run
-# `docker compose up -d` and auto-generates POSTGRES_PASSWORD and
-# MASTER_PASSWORD. MASTER_PASSWORD encrypts the space keys at rest and is
-# never typed anywhere, so back up deploy/.env.
+# `docker compose up -d` and auto-generates POSTGRES_PASSWORD. The space's
+# identity key lives on the app_storage volume, not in deploy/.env.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -28,8 +27,7 @@ validate_secret() {
   # Rejects characters that would break the KEY='value' .env format written
   # below. Every value we write is single-quoted so that compose's dotenv
   # parser does not try to interpolate $VAR references inside it (an
-  # unquoted "myp$ecret123" silently truncates to "myp" and gets baked into
-  # the encrypted space keys forever) -- so a literal single quote can't be
+  # unquoted "myp$ecret123" silently truncates to "myp") -- so a literal single quote can't be
   # part of the value either, alongside '|' and newlines.
   local value="$1" label="$2"
   if [[ "$value" == *"'"* ]]; then
@@ -56,7 +54,6 @@ if ! validate_secret "$DOMAIN" "Domain"; then
   exit 1
 fi
 
-MASTER_PASSWORD="$(openssl rand -hex 32)"
 POSTGRES_PASSWORD="$(openssl rand -hex 24)"
 if ! validate_secret "$POSTGRES_PASSWORD" "POSTGRES_PASSWORD"; then
   exit 1
@@ -76,7 +73,6 @@ umask 177
 {
   printf "DOMAIN='%s'\n" "$DOMAIN"
   printf "POSTGRES_PASSWORD='%s'\n" "$POSTGRES_PASSWORD"
-  printf "MASTER_PASSWORD='%s'\n" "$MASTER_PASSWORD"
   printf "ALLOWED_ORIGINS='%s'\n" "$ALLOWED_ORIGINS"
 } > "$ENV_FILE"
 chmod 600 "$ENV_FILE"
@@ -86,10 +82,10 @@ echo "Wrote $ENV_FILE (mode 600):"
 echo "  DOMAIN=$DOMAIN"
 echo "  ALLOWED_ORIGINS=$ALLOWED_ORIGINS"
 echo "  POSTGRES_PASSWORD=(generated, not shown)"
-echo "  MASTER_PASSWORD=(generated, not shown)"
 echo
-echo "IMPORTANT: MASTER_PASSWORD encrypts this space's keys at rest. Back up"
-echo "$ENV_FILE now. It cannot change after first boot without a hosting-move"
-echo "export/import (see docs/hosting/selfhost.md)."
+echo "IMPORTANT: this space's identity key is stored on the app_storage Docker"
+echo "volume. Back that volume up (the backup is a secret, it holds the key in"
+echo "plaintext). Losing it without an identity export breaks every login (see"
+echo "docs/hosting/selfhost.md)."
 echo "After 'docker compose up -d', claim the space from the app within 30"
 echo "minutes of the server starting."

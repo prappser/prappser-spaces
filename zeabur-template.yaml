@@ -13,18 +13,14 @@ spec:
 
     Event-driven application sync server with PostgreSQL backend.
 
-    ## Configuration
-    - **MASTER_PASSWORD**: Random secret that encrypts the space keys at rest (generate it, never type it into the app)
+    ## Storage
+    The space's identity key lives on the `/app/storage` volume. Keep that volume and back it up, the backup is a secret.
 
     ## Endpoints
     - HTTP API: `https://{domain}/api/*`
     - WebSocket: `wss://{domain}/ws`
 
   variables:
-    - key: MASTER_PASSWORD
-      type: STRING
-      name: Key Encryption Secret
-      description: Random secret that encrypts the space keys at rest (e.g. openssl rand -hex 32)
     - key: SERVER_DOMAIN
       type: DOMAIN
       name: Server Domain
@@ -81,8 +77,6 @@ spec:
         env:
           DATABASE_URL:
             default: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/prappser?sslmode=disable
-          MASTER_PASSWORD:
-            default: ${MASTER_PASSWORD}
           PORT:
             default: "4545"
           EXTERNAL_URL:

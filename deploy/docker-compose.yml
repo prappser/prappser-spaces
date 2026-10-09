@@ -37,7 +37,9 @@ services:
       - com.centurylinklabs.watchtower.enable=true
     environment:
       DATABASE_URL: postgres://prappser:${POSTGRES_PASSWORD}@postgres:5432/prappser?sslmode=disable
-      MASTER_PASSWORD: ${MASTER_PASSWORD}
+      # Legacy: only used to migrate an old space's key into the storage volume
+      # and to allow rolling back to an older image. New installs leave it unset.
+      MASTER_PASSWORD: ${MASTER_PASSWORD:-}
       PORT: "4545"
       EXTERNAL_URL: https://${DOMAIN}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://prappser.app}

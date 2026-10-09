@@ -16,10 +16,10 @@ infrastructure you want to manage yourself.
 Regardless of hosting method, the server needs:
 
 - **`DATABASE_URL`**: PostgreSQL 16 connection string
-- **`MASTER_PASSWORD`**: a random secret that encrypts the space's keys at rest, required with no default. Generate it (`openssl rand -hex 32`), never type it into the app
 - **`EXTERNAL_URL`**: the public URL clients use to reach the server
 - **`ALLOWED_ORIGINS`**: comma-separated list of CORS origins allowed to call the API
-- A persistent volume mounted at the path set by `STORAGE_PATH` (default `/app/storage`), so uploaded files survive container restarts
+- A persistent volume mounted at the path set by `STORAGE_PATH` (default `/app/storage`), so uploaded files survive container restarts. It also holds the space's identity key at `.space/identity.key`, so it must be backed up and the backup kept secret. This applies even with `STORAGE_TYPE=s3`
+- No secret is needed to protect the identity key. `MASTER_PASSWORD` is legacy: it is only used once to migrate an older space's encrypted key into the file, and to keep rollback to an older image possible
 - A PostgreSQL 16 instance (bundled in the Zeabur/Railway templates and in the self-host compose stack)
 
 The server exposes plain HTTP endpoints under the root path (for example

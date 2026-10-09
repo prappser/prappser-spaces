@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -24,7 +25,7 @@ const lastSeenTouchThrottle = 5 * time.Minute
 // tests in keys_service_test.go).
 type keyRepository interface {
 	GetSpaceKey(ctx context.Context) (*EncryptedKey, error)
-	SaveSpaceKey(ctx context.Context, enc *EncryptedKey) error
+	HasUsers(ctx context.Context) (bool, error)
 	TouchLastSeen(ctx context.Context, ts int64) error
 }
 
@@ -33,6 +34,8 @@ type KeyService struct {
 	masterPassword   string
 	importBlob       string
 	importPassphrase string
+	keyFilePath      string
+	keyDirEphemeral  bool
 	privateKey       ed25519.PrivateKey
 	publicKey        ed25519.PublicKey
 
@@ -47,129 +50,191 @@ type KeyService struct {
 	lastTouchWriteAt time.Time
 }
 
-// NewKeyService creates a new KeyService. importBlob/importPassphrase are
-// SPACE_IDENTITY_IMPORT / SPACE_IDENTITY_IMPORT_PASSPHRASE (see
-// internal/config.go) - both empty is the normal, non-migration case; see
-// Initialize for how they're used.
-func NewKeyService(repo *KeyRepository, masterPassword, importBlob, importPassphrase string) *KeyService {
+func NewKeyService(repo *KeyRepository, masterPassword, importBlob, importPassphrase, keyFilePath string, keyDirEphemeral bool) *KeyService {
 	return &KeyService{
 		repo:             repo,
 		masterPassword:   masterPassword,
 		importBlob:       importBlob,
 		importPassphrase: importPassphrase,
+		keyFilePath:      keyFilePath,
+		keyDirEphemeral:  keyDirEphemeral,
 		touchThrottle:    lastSeenTouchThrottle,
 	}
 }
 
-// Initialize loads or creates this space's identity keypair. Order matters:
-//  1. No existing row, no import configured -> generate a fresh keypair
-//     (original, pre-#115 behavior).
-//  2. Existing row, decrypts under masterPassword -> use it as-is; this
-//     short-circuits before the import branch below, which is what makes
-//     leaving SPACE_IDENTITY_IMPORT* set across restarts an idempotent
-//     no-op once the row has been re-encrypted under the current
-//     masterPassword.
-//  3. Existing row, decrypt fails, import configured -> this is a hosting
-//     move: decode+decrypt the import blob, require its public key to
-//     match the existing row's (a mismatch means wrong database or wrong
-//     blob - fail startup loudly rather than silently swap identities),
-//     then re-encrypt under masterPassword and upsert.
-//  4. No existing row, import configured -> same import path, minus the
-//     mismatch check (nothing to compare against on a fresh DB).
-//  5. Existing row, decrypt fails, no import configured -> original wrong-
-//     MASTER_PASSWORD error.
+const missingKeyAlternatives = "restore the storage volume, or set SPACE_IDENTITY_IMPORT"
+
+// Initialize resolves the space identity. A: key file present: load it and
+// cross-check the row and import by public key only, never Argon2. B: row, no
+// file: B1 MASTER_PASSWORD decrypts it, B2 import, B3 refuse. C: no row: C1
+// import, C2 accounts exist so refuse, C4 generate. Never writes space_keys.
 func (s *KeyService) Initialize(ctx context.Context) error {
-	enc, err := s.repo.GetSpaceKey(ctx)
+	path := s.keyFilePath
+
+	row, err := s.repo.GetSpaceKey(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to load space key: %w", err)
 	}
+	if row != nil && row.LastSeenAt != nil {
+		s.lastSeenAt = *row.LastSeenAt
+	}
 
-	if enc == nil && s.importBlob == "" {
-		log.Info().Msg("No space keys found, generating new Ed25519 keypair...")
+	filePriv, err := loadKeyFile(path)
+	if err != nil {
+		return err
+	}
+	if filePriv != nil {
+		return s.useFile(filePriv, row)
+	}
 
-		priv, pub, err := GenerateEd25519KeyPair()
+	if row != nil {
+		return s.initFromRow(row)
+	}
+
+	if s.importBlob != "" {
+		priv, err := s.decryptImport()
 		if err != nil {
-			return fmt.Errorf("failed to generate keypair: %w", err)
+			return err
 		}
-
-		newEnc, err := EncryptPrivateKey(priv, s.masterPassword)
-		if err != nil {
-			return fmt.Errorf("failed to encrypt private key: %w", err)
-		}
-
-		if err := s.repo.SaveSpaceKey(ctx, newEnc); err != nil {
-			return fmt.Errorf("failed to save space key: %w", err)
-		}
-
-		s.privateKey = priv
-		s.publicKey = pub
-		log.Info().Msg("New Ed25519 keypair generated and stored")
-		return nil
+		log.Info().Msg("[KEYS] importing identity from SPACE_IDENTITY_IMPORT")
+		return s.persist(priv, nil)
 	}
 
-	if enc != nil {
-		if priv, decryptErr := DecryptPrivateKey(enc, s.masterPassword); decryptErr == nil {
-			log.Info().Msg("Loading existing space keys from database...")
-			s.privateKey = priv
-			s.publicKey = enc.PublicKey
-			if enc.LastSeenAt != nil {
-				s.lastSeenAt = *enc.LastSeenAt
-			}
-			return nil
-		}
+	hasUsers, err := s.repo.HasUsers(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to check for existing accounts: %w", err)
+	}
+	if hasUsers {
+		return fmt.Errorf("space key file %s missing but the space has accounts: storage volume lost or not persistent; %s", path, missingKeyAlternatives)
 	}
 
-	if s.importBlob == "" {
-		return fmt.Errorf("failed to decrypt space key (wrong MASTER_PASSWORD?)")
+	priv, _, err := GenerateEd25519KeyPair()
+	if err != nil {
+		return fmt.Errorf("failed to generate keypair: %w", err)
 	}
-
-	return s.importIdentity(ctx, enc)
+	log.Info().Msg("[KEYS] no space key found, generating new Ed25519 keypair")
+	return s.persist(priv, nil)
 }
 
-// importIdentity handles Initialize's hosting-move branch: decode+decrypt
-// s.importBlob under s.importPassphrase, verify it matches existing (if
-// any), then re-encrypt under masterPassword and persist. existing is the
-// row Initialize already loaded (nil on a fresh DB).
-func (s *KeyService) importIdentity(ctx context.Context, existing *EncryptedKey) error {
+func (s *KeyService) initFromRow(row *EncryptedKey) error {
+	decryptFailed := false
+	if s.masterPassword != "" {
+		priv, err := DecryptPrivateKey(row, s.masterPassword)
+		if err == nil {
+			if !bytes.Equal(pubOf(priv), row.PublicKey) {
+				return fmt.Errorf("space_keys row is corrupt: decrypted key does not match its public key")
+			}
+			if err := s.checkImportMatches(row.PublicKey); err != nil {
+				return err
+			}
+			log.Info().Msg("[KEYS] migrating legacy space_keys row to key file")
+			return s.persist(priv, row)
+		}
+		decryptFailed = true
+	}
+
+	if s.importBlob != "" {
+		priv, err := s.decryptImport()
+		if err != nil {
+			return err
+		}
+		if !bytes.Equal(pubOf(priv), row.PublicKey) {
+			return errImportMismatch
+		}
+		log.Info().Msg("[KEYS] importing identity from SPACE_IDENTITY_IMPORT")
+		return s.persist(priv, row)
+	}
+
+	if !decryptFailed {
+		return fmt.Errorf("space key file %s missing; set MASTER_PASSWORD once to migrate the legacy space_keys row, %s", s.keyFilePath, missingKeyAlternatives)
+	}
+	return fmt.Errorf("cannot decrypt the space_keys row with MASTER_PASSWORD (wrong password or corrupt row): space key file %s missing; set the correct MASTER_PASSWORD, %s", s.keyFilePath, missingKeyAlternatives)
+}
+
+var errImportMismatch = errors.New("identity import public key mismatch: this space already holds a different identity (wrong database, volume or import blob)")
+
+func pubOf(priv ed25519.PrivateKey) ed25519.PublicKey {
+	return priv.Public().(ed25519.PublicKey)
+}
+
+// checkImportMatches is a no-op without SPACE_IDENTITY_IMPORT; otherwise the
+// blob's public key must equal pub.
+func (s *KeyService) checkImportMatches(pub ed25519.PublicKey) error {
+	if s.importBlob == "" {
+		return nil
+	}
 	blob, err := DecodeIdentityBlob(s.importBlob)
 	if err != nil {
 		return fmt.Errorf("failed to decode SPACE_IDENTITY_IMPORT: %w", err)
 	}
-
-	priv, err := DecryptPrivateKey(blob, s.importPassphrase)
-	if err != nil {
-		return fmt.Errorf("failed to decrypt SPACE_IDENTITY_IMPORT (wrong passphrase?): %w", err)
-	}
-	pub := priv.Public().(ed25519.PublicKey)
-
-	// Corruption check: blob.PublicKey is the blob's own Pub field, decoded
-	// (but otherwise unused) by DecodeIdentityBlob. Re-derive the public key
-	// from the just-decrypted private key and require the two to match -
-	// AES-GCM alone doesn't catch a payload that was assembled inconsistently
-	// (e.g. re-encrypted under the wrong key) but still decrypts cleanly.
 	if !bytes.Equal(blob.PublicKey, pub) {
-		return fmt.Errorf("SPACE_IDENTITY_IMPORT is corrupted: decrypted private key does not match the blob's public key")
+		return errImportMismatch
 	}
+	return nil
+}
 
-	if existing != nil && !bytes.Equal(existing.PublicKey, pub) {
-		return fmt.Errorf("identity import public key mismatch: this database already holds a different space identity (wrong database or wrong import blob)")
+func (s *KeyService) useFile(priv ed25519.PrivateKey, row *EncryptedKey) error {
+	pub := pubOf(priv)
+	if row != nil && !bytes.Equal(row.PublicKey, pub) {
+		return fmt.Errorf("space key file %s does not match the space_keys row (wrong volume or database)", s.keyFilePath)
 	}
-
-	newEnc, err := EncryptPrivateKey(priv, s.masterPassword)
-	if err != nil {
-		return fmt.Errorf("failed to encrypt imported private key: %w", err)
+	if err := s.checkImportMatches(pub); err != nil {
+		return err
 	}
-	if err := s.repo.SaveSpaceKey(ctx, newEnc); err != nil {
-		return fmt.Errorf("failed to save imported space key: %w", err)
-	}
-
 	s.privateKey = priv
 	s.publicKey = pub
-	if existing != nil && existing.LastSeenAt != nil {
-		s.lastSeenAt = *existing.LastSeenAt
+	log.Info().Str("path", s.keyFilePath).Str("publicKey", s.PublicKeyBase64()).Msg("[KEYS] space key loaded from file")
+	if s.masterPassword != "" {
+		log.Info().Msg("[KEYS] MASTER_PASSWORD is only needed for rolling back to a pre-key-file release")
 	}
-	log.Info().Msg("[KEYS] identity imported, re-encrypted under current MASTER_PASSWORD")
 	return nil
+}
+
+func (s *KeyService) persist(priv ed25519.PrivateKey, row *EncryptedKey) error {
+	if s.keyDirEphemeral {
+		return fmt.Errorf("refusing to write space key file %s: STORAGE_TYPE=s3 with STORAGE_PATH unset would put it on ephemeral disk; set STORAGE_PATH to a persistent volume", s.keyFilePath)
+	}
+	err := writeKeyFile(s.keyFilePath, priv)
+	if errors.Is(err, errKeyFileExists) {
+		existing, loadErr := loadKeyFile(s.keyFilePath)
+		if loadErr != nil {
+			return loadErr
+		}
+		if existing == nil {
+			return fmt.Errorf("space key file %s vanished during write", s.keyFilePath)
+		}
+		return s.useFile(existing, row)
+	}
+	if err != nil {
+		return err
+	}
+
+	written, err := loadKeyFile(s.keyFilePath)
+	if err != nil {
+		return err
+	}
+	if written == nil || !bytes.Equal(pubOf(written), pubOf(priv)) {
+		return fmt.Errorf("space key file %s does not match the key just written", s.keyFilePath)
+	}
+	s.privateKey = written
+	s.publicKey = pubOf(written)
+	log.Info().Str("path", s.keyFilePath).Str("publicKey", s.PublicKeyBase64()).Msg("[KEYS] space key written to file")
+	return nil
+}
+
+func (s *KeyService) decryptImport() (ed25519.PrivateKey, error) {
+	blob, err := DecodeIdentityBlob(s.importBlob)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode SPACE_IDENTITY_IMPORT: %w", err)
+	}
+	priv, err := DecryptPrivateKey(blob, s.importPassphrase)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decrypt SPACE_IDENTITY_IMPORT (wrong passphrase?): %w", err)
+	}
+	if !bytes.Equal(blob.PublicKey, pubOf(priv)) {
+		return nil, fmt.Errorf("SPACE_IDENTITY_IMPORT is corrupted: decrypted private key does not match the blob's public key")
+	}
+	return priv, nil
 }
 
 func (s *KeyService) PrivateKey() ed25519.PrivateKey {

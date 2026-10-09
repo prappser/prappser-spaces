@@ -25,7 +25,6 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgres://test:test@postgres:5432/prappser_e2e?sslmode=disable
-      MASTER_PASSWORD: e2e-master-password
       TRUST_PROXY: "false"
       LOG_LEVEL: warn
     ports:

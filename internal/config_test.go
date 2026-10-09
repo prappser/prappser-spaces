@@ -62,3 +62,30 @@ func TestLoadConfig_SignupLimitsSet_ShouldParse(t *testing.T) {
 	assert.True(t, config.SignupSingleUseInvites)
 	assert.Equal(t, 10, config.MaxAccounts)
 }
+
+func TestLoadConfig_MasterPasswordUnset_ShouldLoad(t *testing.T) {
+	// given
+	t.Setenv("MASTER_PASSWORD", "")
+	t.Setenv("STORAGE_PATH", "")
+
+	// when
+	config, err := LoadConfig()
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, "", config.MasterPassword)
+	assert.False(t, config.Storage.LocalPathExplicit)
+}
+
+func TestLoadConfig_StoragePathSet_ShouldMarkExplicit(t *testing.T) {
+	// given
+	t.Setenv("STORAGE_PATH", "/data")
+
+	// when
+	config, err := LoadConfig()
+
+	// then
+	require.NoError(t, err)
+	assert.True(t, config.Storage.LocalPathExplicit)
+	assert.Equal(t, "/data", config.Storage.LocalPath)
+}
