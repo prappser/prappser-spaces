@@ -50,6 +50,7 @@ type CreateInviteRequest struct {
 	// (see CreateInvitationOptions).
 	GrantsMembership *bool `json:"grantsMembership,omitempty"`
 	GrantsIdentity   *bool `json:"grantsIdentity,omitempty"`
+	GrantsSpaceUse   *bool `json:"grantsSpaceUse,omitempty"`
 	// MembershipDurationHours is optional (#117); nil means no expiry.
 	MembershipDurationHours *int `json:"membershipDurationHours,omitempty"`
 }
@@ -95,6 +96,12 @@ func (ie *InvitationEndpoints) CreateInvite(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
+	if req.GrantsSpaceUse != nil && *req.GrantsSpaceUse && authenticatedUser.Role != user.RoleOwner {
+		log.Error().Str("publicKey", authenticatedUser.PublicKey).Msg("Non-owner tried to grant space use")
+		ctx.Error("only the space owner can grant space use", fasthttp.StatusForbidden)
+		return
+	}
+
 	// Create invitation
 	opts := CreateInvitationOptions{
 		ApplicationID:           appID,
@@ -106,6 +113,7 @@ func (ie *InvitationEndpoints) CreateInvite(ctx *fasthttp.RequestCtx) {
 		SpaceURL:                httputil.PublicURL(ctx, ie.externalURLOverride),
 		GrantsMembership:        req.GrantsMembership,
 		GrantsIdentity:          req.GrantsIdentity,
+		GrantsSpaceUse:          req.GrantsSpaceUse,
 		MembershipDurationHours: req.MembershipDurationHours,
 	}
 

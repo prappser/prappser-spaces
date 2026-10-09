@@ -16,6 +16,8 @@ type Invitation struct {
 	SpaceID            *string `json:"spaceId,omitempty"`
 	GrantsMembership   bool    `json:"grantsMembership"`
 	GrantsIdentity     bool    `json:"grantsIdentity"`
+	// GrantsSpaceUse can only be set by the space owner; joining through it promotes a guest account to the user role.
+	GrantsSpaceUse bool `json:"grantsSpaceUse"`
 	// MembershipDurationHours is the per-joiner membership lifetime (#117):
 	// when set, Join computes an absolute membership_expires_at from it at
 	// join time rather than storing the duration on the member itself.
@@ -32,12 +34,13 @@ type InvitationUse struct {
 
 // InvitationResponse is returned when creating an invitation
 type InvitationResponse struct {
-	ID        string `json:"id"`
-	Token     string `json:"token"`
-	URL       string `json:"url"`
-	DeepLink  string `json:"deepLink"`
-	ExpiresAt *int64 `json:"expiresAt,omitempty"`
-	CreatedAt int64  `json:"createdAt"`
+	ID             string `json:"id"`
+	Token          string `json:"token"`
+	URL            string `json:"url"`
+	DeepLink       string `json:"deepLink"`
+	ExpiresAt      *int64 `json:"expiresAt,omitempty"`
+	CreatedAt      int64  `json:"createdAt"`
+	GrantsSpaceUse bool   `json:"grantsSpaceUse"`
 }
 
 // InvitationOptions contains options for creating an invitation
