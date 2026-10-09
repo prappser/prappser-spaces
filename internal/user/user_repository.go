@@ -170,16 +170,22 @@ func (r *userRepository) SetUserIssuer(publicKey, issuer string) error {
 // longer matches the current verifier is worse than a cleared one - it would
 // look present to a client but fail to decrypt.
 //
-// handle is COALESCEd, not overwritten: LOAD-BEARING - once GetPasswordHandle
+// handle is frozen while a verifier is live: LOAD-BEARING - once GetPasswordHandle
 // has handed a stored handle out to a client (via GetSalt), a later password
 // change (e.g. after a username rename) must not silently re-point it to the
 // new username. The client's escrow blob is sealed under a wrapKey derived
 // from the salt GetSalt computed from the ORIGINAL handle at set-password
 // time; re-pointing the handle would change that derived salt and make the
 // escrow permanently undecryptable.
+//
+// With a NULL verifier (never set, or ClearEscrow) no escrow is reachable -
+// login, enroll and GetSalt all need a verifier, and GetSalt falls back to
+// lower(username) - and this same UPDATE overwrites both blobs, so the handle
+// is re-pointed to the submitted one. Otherwise a rename after ClearEscrow
+// would leave the stored handle stale and every later GetSalt wrong.
 func (r *userRepository) SetPasswordCredentials(publicKey, passwordVerifier, handle, accountKeyBlob, userState string) error {
 	_, err := r.db.Exec(
-		"UPDATE users SET password_verifier = $1, password_handle = COALESCE(password_handle, $2), account_key_blob = NULLIF($3, ''), user_state_blob = NULLIF($4, '') WHERE public_key = $5",
+		"UPDATE users SET password_verifier = $1, password_handle = CASE WHEN password_verifier IS NULL THEN $2 ELSE COALESCE(password_handle, $2) END, account_key_blob = NULLIF($3, ''), user_state_blob = NULLIF($4, '') WHERE public_key = $5",
 		passwordVerifier, handle, accountKeyBlob, userState, publicKey,
 	)
 	if err != nil {
@@ -270,9 +276,8 @@ func (r *userRepository) UpdateUserState(publicKey, userState string) error {
 // row regardless of current state, so clearing an already-clear account is
 // idempotent, not an error.
 //
-// password_handle is deliberately left untouched: SetPasswordCredentials's
-// doc comment above forbids re-pointing a handle while a blob sealed under
-// its derived salt might still exist, and clearing it here buys nothing -
+// password_handle is deliberately left untouched: clearing it here buys
+// nothing, SetPasswordCredentials re-points it when the verifier is NULL, and
 // the partial unique index on lower(username) (migration 000023) is gated on
 // password_verifier IS NOT NULL, so nulling the verifier already releases
 // the username slot.

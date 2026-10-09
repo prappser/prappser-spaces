@@ -83,12 +83,12 @@ func (r *passwordTestRepo) SetPasswordCredentials(publicKey, passwordVerifier, h
 			return ErrUsernameTaken
 		}
 	}
-	r.verifiers[publicKey] = passwordVerifier
-	// Mirrors the real UPDATE's COALESCE(password_handle, $2): a handle
-	// already on file for this account is never re-pointed.
-	if _, exists := r.handles[publicKey]; !exists {
+	// Mirrors the real UPDATE's CASE: with no live verifier the handle is
+	// re-pointed, otherwise COALESCE(password_handle, $2) keeps the one on file.
+	if _, exists := r.handles[publicKey]; r.verifiers[publicKey] == "" || !exists {
 		r.handles[publicKey] = handle
 	}
+	r.verifiers[publicKey] = passwordVerifier
 	// Mirrors the real UPDATE's per-column NULLIF($n,''): each blob clears
 	// independently of the other, not only when both are empty.
 	r.escrow[publicKey] = struct{ accountKeyBlob, userState string }{accountKeyBlob, userState}
@@ -251,6 +251,34 @@ func TestGetSalt_ShouldStaySameAcrossUsernameRename(t *testing.T) {
 	// then - same salt under the new username, NOT the fresh HMAC fallback
 	assert.Equal(t, before.Salt, after.Salt)
 	assert.NotEqual(t, base64.StdEncoding.EncodeToString(deterministicSalt(saltSecret, "alice2")), after.Salt)
+}
+
+// TestGetSalt_ShouldFollowNewUsernameWhenPasswordResetAfterClearEscrowAndRename
+// covers the stale-handle bug: with no live verifier the handle must be
+// re-pointed, or GetSalt keeps returning the salt of the pre-rename name.
+func TestGetSalt_ShouldFollowNewUsernameWhenPasswordResetAfterClearEscrowAndRename(t *testing.T) {
+	// given
+	saltSecret := []byte("salt-secret")
+	repo := newPasswordTestRepo()
+	repo.accounts["account-1"] = &User{PublicKey: "account-1", Username: "alice"}
+	pe := NewPasswordEndpoints(repo, saltSecret, []byte("verifier-key"))
+	setCtx := newSetPasswordRequestCtx(t, &User{PublicKey: "account-1", Username: "alice"}, setPasswordRequest{AuthSecret: randomAuthSecret(t)})
+	pe.SetPassword(setCtx)
+	assert.Equal(t, fasthttp.StatusNoContent, setCtx.Response.StatusCode())
+	assert.NoError(t, repo.ClearEscrow("account-1"))
+	assert.NoError(t, repo.UpdateUsername("account-1", "Bob"))
+
+	// when
+	resetCtx := newSetPasswordRequestCtx(t, &User{PublicKey: "account-1", Username: "Bob"}, setPasswordRequest{AuthSecret: randomAuthSecret(t)})
+	pe.SetPassword(resetCtx)
+	assert.Equal(t, fasthttp.StatusNoContent, resetCtx.Response.StatusCode())
+	ctx := newSaltRequestCtx("Bob")
+	pe.GetSalt(ctx)
+
+	// then
+	var resp saltResponse
+	assert.NoError(t, json.Unmarshal(ctx.Response.Body(), &resp))
+	assert.Equal(t, base64.StdEncoding.EncodeToString(deterministicSalt(saltSecret, "bob")), resp.Salt)
 }
 
 func TestGetSalt_ShouldReturn400ForEmptyUsername(t *testing.T) {

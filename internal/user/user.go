@@ -119,7 +119,7 @@ type UserRepository interface {
 	// SetPasswordCredentials sets the password-login verifier, handle, and
 	// escrowed account-key/user-state blobs for an account in a single write
 	// (see user_repository.go's doc comment for why they move together, and
-	// why handle is COALESCEd rather than overwritten). Returns
+	// why a handle is frozen while a verifier is live and re-pointed once it is NULL). Returns
 	// ErrUsernameTaken if another account already holds that username as its
 	// password-login handle (case-insensitive). An empty accountKeyBlob or
 	// userState clears that column.
