@@ -143,6 +143,27 @@ func (r *Repository) GetByApplicationID(appID string) ([]*Storage, error) {
 	return storageList, rows.Err()
 }
 
+func (r *Repository) GetPersonalByUploader(publicKey string) ([]*Storage, error) {
+	rows, err := r.db.Query(`SELECT id, storage_path, thumbnail_path FROM storage
+		WHERE uploader_public_key = $1 AND application_id IS NULL`, publicKey)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var list []*Storage
+	for rows.Next() {
+		s := &Storage{}
+		var thumbnailPath sql.NullString
+		if err := rows.Scan(&s.ID, &s.StoragePath, &thumbnailPath); err != nil {
+			return nil, err
+		}
+		s.ThumbnailPath = thumbnailPath.String
+		list = append(list, s)
+	}
+	return list, rows.Err()
+}
+
 func (r *Repository) UpdateStatus(id, status string) error {
 	return r.execWithRowCheck(`UPDATE storage SET status = $1 WHERE id = $2`, status, id)
 }

@@ -226,6 +226,7 @@ func main() {
 	spaceEndpoints := space.NewSpaceEndpoints(spaceService, userRepository)
 
 	profileEndpoints := profile.NewProfileEndpoints(userRepository, appRepository, eventService)
+	accountEndpoints := profile.NewAccountEndpoints(db, appRepository, eventService, storageService)
 
 	// Password-login secrets (salt derivation + verifier HMAC key) are
 	// derived from the space keypair, not stored independently - rotating
@@ -237,7 +238,7 @@ func main() {
 	ownerClaimEndpoints := user.NewOwnerClaimEndpoints(userRepository, verifierKey, time.Now(), &spaceCreatorAdapter{service: spaceService})
 	assertionEndpoints := user.NewAssertionEndpoints(userRepository, privateKey, spacePublicKeyString)
 
-	requestHandler := internal.NewRequestHandler(config, userEndpoints, statusEndpoints, healthEndpoints, userService, appEndpoints, invitationEndpoints, eventEndpoints, setupEndpoints, storageEndpoints, wsHandler, spaceEndpoints, pushEndpoints, profileEndpoints, deviceEndpoints, passwordEndpoints, assertionEndpoints, ownerClaimEndpoints, keyEndpoints)
+	requestHandler := internal.NewRequestHandler(config, userEndpoints, statusEndpoints, healthEndpoints, userService, appEndpoints, invitationEndpoints, eventEndpoints, setupEndpoints, storageEndpoints, wsHandler, spaceEndpoints, pushEndpoints, profileEndpoints, deviceEndpoints, passwordEndpoints, assertionEndpoints, ownerClaimEndpoints, keyEndpoints, accountEndpoints)
 
 	serverAddr := fmt.Sprintf(":%s", config.Port)
 	log.Info().Str("addr", serverAddr).Msg("Starting HTTP server")
