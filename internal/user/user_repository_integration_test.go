@@ -444,6 +444,31 @@ func TestUserRepository_GetPasswordHandle_ShouldRoundTripAndCoalesceOnResubmit_I
 	assert.Equal(t, "handle-first", handle)
 }
 
+func TestUserRepository_SetPasswordCredentials_ShouldRepointHandleAfterClearEscrowAndRename_Integration(t *testing.T) {
+	// given - a cleared account (NULL verifier, stale handle) that was renamed
+	db := getTestDB(t)
+	defer db.Close()
+	repo := NewUserRepository(db)
+
+	if _, err := db.Exec(
+		"INSERT INTO users (public_key, username, role, created_at, issuer) VALUES ($1,$2,$3,$4,$1)",
+		"test-user-1", "Alice", "user", time.Now().Unix(),
+	); err != nil {
+		t.Fatalf("Failed to insert test user: %v", err)
+	}
+	assert.NoError(t, repo.SetPasswordCredentials("test-user-1", "hmac-sha256$AAAA", "alice", "", ""))
+	assert.NoError(t, repo.ClearEscrow("test-user-1"))
+	assert.NoError(t, repo.UpdateUsername("test-user-1", "Bob"))
+
+	// when
+	assert.NoError(t, repo.SetPasswordCredentials("test-user-1", "hmac-sha256$BBBB", "bob", "", ""))
+
+	// then - the stale handle is replaced, not COALESCEd
+	handle, err := repo.GetPasswordHandle("Bob")
+	assert.NoError(t, err)
+	assert.Equal(t, "bob", handle)
+}
+
 func TestUserRepository_GetPasswordHandle_ShouldReturnEmptyForUnknownUsername_Integration(t *testing.T) {
 	// given
 	db := getTestDB(t)
