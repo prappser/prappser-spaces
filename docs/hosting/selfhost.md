@@ -204,26 +204,14 @@ this rollback path.
 
 ## 8. Backups
 
-Dump the database:
-
-```bash
-docker compose exec postgres pg_dump -U prappser prappser > backup.sql
-```
-
-Example daily cron entry (2am, keeps the dump in the deploy directory):
-
-```
-0 2 * * * cd /path/to/deploy && docker compose exec -T postgres pg_dump -U prappser prappser > backup-$(date +\%Y\%m\%d).sql
-```
-
-The `app_storage` named volume holds the uploaded files and the space's
-identity key (`.space/identity.key`), so it must be backed up too, for example
-with `docker run --rm -v app_storage:/data -v $(pwd):/backup alpine tar czf
-/backup/storage.tar.gz -C /data .`
+Run [`deploy/backup.sh`](../../deploy/backup.sh) from cron. It dumps the
+database, archives the `app_storage` volume (which holds
+`.space/identity.key`), encrypts both with age, and uploads them with rclone.
+Setup and the restore runbook are in [deploy/README.md](../../deploy/README.md#backups).
 
 **The volume backup is a secret.** The key inside it is plaintext, so store
-the tarball like a password. On a space created after the key moved onto the
-volume, a `pg_dump` alone cannot log anyone in: without the key file the
+any unencrypted copy like a password. On a space created after the key moved
+onto the volume, a `pg_dump` alone cannot log anyone in: without the key file the
 server refuses to start (or, on a fresh database, would mint a new identity).
 Losing the volume without an identity export loses the space identity, which
 breaks every password login and session. Take an identity export (§9, step 1)

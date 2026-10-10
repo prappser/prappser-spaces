@@ -73,8 +73,23 @@ Set the same variables listed in the main
 `STORAGE_TYPE`, `STORAGE_PATH`. A persistent volume at the path set by
 `STORAGE_PATH` (`/app/storage` if left at its default) is mandatory. It holds
 the space's identity key, so without it the space loses its identity on
-redeploy and every login breaks. Uploaded files are lost too. Back the volume
-up, the backup is a secret.
+redeploy and every login breaks. Uploaded files are lost too.
+
+## Backups
+
+Enable Railway's native volume backups on the app volume. A Railway cron
+service can't mount the app's volume, so for an off-site encrypted copy run [`deploy/backup.sh`](../../deploy/backup.sh) from an
+operator machine with `DUMP_CMD` and `STORAGE_CMD` set to `railway ssh`
+commands. `railway ssh` may add carriage returns, so base64-wrap on the remote
+side and decode locally:
+
+```bash
+export DUMP_CMD='railway ssh --service Postgres -- "pg_dump -U \$POSTGRES_USER --no-owner --no-acl \$POSTGRES_DB | base64" | tr -d "\r" | base64 -d'
+export STORAGE_CMD='railway ssh --service prappser-spaces -- "tar czf - -C /app/storage . | base64" | tr -d "\r" | base64 -d'
+```
+
+Run it once by hand before trusting it. Setup and restore are in
+[deploy/README.md](../../deploy/README.md#backups).
 
 ## Updates
 
