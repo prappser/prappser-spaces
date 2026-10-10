@@ -25,7 +25,7 @@ user doesn't have to copy it manually. See
 [`prappser-extension/README.md`](../../../prappser-extension/README.md) for
 the full detection flow.
 
-The Railway template ([railway.com/new/template/nU7Fz6](https://railway.com/new/template/nU7Fz6))
+The Railway template ([railway.com/deploy/nU7Fz6](https://railway.com/deploy/nU7Fz6?referralCode=TGTe5H))
 is configured in Railway's template composer, not in a repo. It no longer needs
 `MASTER_PASSWORD`: the space's identity key is a file on the service volume.
 Spaces deployed from an older template version keep `MASTER_PASSWORD` set,
