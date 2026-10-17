@@ -184,6 +184,12 @@ func (s *InvitationService) CreateInvitation(opts CreateInvitationOptions) (*Inv
 		maxUses = &one
 	}
 
+	var expiresAt *int64
+	if opts.ExpiresInHours != nil {
+		exp := time.Now().Add(time.Duration(*opts.ExpiresInHours) * time.Hour).Unix()
+		expiresAt = &exp
+	}
+
 	// Create invitation
 	now := time.Now().Unix()
 	invite := &Invitation{
@@ -192,6 +198,7 @@ func (s *InvitationService) CreateInvitation(opts CreateInvitationOptions) (*Inv
 		CreatedByPublicKey:      opts.CreatedByPublicKey,
 		Role:                    opts.Role,
 		MaxUses:                 maxUses,
+		ExpiresAt:               expiresAt,
 		UsedCount:               0,
 		CreatedAt:               now,
 		SpaceID:                 opts.SpaceID,
@@ -207,12 +214,6 @@ func (s *InvitationService) CreateInvitation(opts CreateInvitationOptions) (*Inv
 	}
 
 	// Generate JWT token
-	var expiresAt *int64
-	if opts.ExpiresInHours != nil {
-		exp := time.Now().Add(time.Duration(*opts.ExpiresInHours) * time.Hour).Unix()
-		expiresAt = &exp
-	}
-
 	token, err := s.GenerateToken(invite.ID, opts.SpaceURL, expiresAt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate token: %w", err)

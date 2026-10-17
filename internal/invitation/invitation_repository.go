@@ -32,8 +32,8 @@ func (r *invitationRepository) Create(invite *Invitation) error {
 		INSERT INTO invitations (
 			id, application_id, created_by_public_key,
 			role, max_uses, used_count, created_at, space_id,
-			grants_membership, grants_identity, membership_duration_hours, grants_space_use
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+			grants_membership, grants_identity, membership_duration_hours, grants_space_use, expires_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 	`
 
 	_, err := r.db.Exec(query,
@@ -49,6 +49,7 @@ func (r *invitationRepository) Create(invite *Invitation) error {
 		invite.GrantsIdentity,
 		invite.MembershipDurationHours,
 		invite.GrantsSpaceUse,
+		invite.ExpiresAt,
 	)
 
 	return err
@@ -58,7 +59,7 @@ func (r *invitationRepository) GetByID(id string) (*Invitation, error) {
 	query := `
 		SELECT id, application_id, created_by_public_key,
 		       role, max_uses, used_count, created_at, space_id,
-		       grants_membership, grants_identity, membership_duration_hours, grants_space_use
+		       grants_membership, grants_identity, membership_duration_hours, grants_space_use, expires_at
 		FROM invitations
 		WHERE id = $1
 	`
@@ -77,6 +78,7 @@ func (r *invitationRepository) GetByID(id string) (*Invitation, error) {
 		&invite.GrantsIdentity,
 		&invite.MembershipDurationHours,
 		&invite.GrantsSpaceUse,
+		&invite.ExpiresAt,
 	)
 
 	if err == sql.ErrNoRows {
@@ -163,7 +165,7 @@ func (r *invitationRepository) GetByApplicationID(appID string) ([]*Invitation, 
 	query := `
 		SELECT id, application_id, created_by_public_key,
 		       role, max_uses, used_count, created_at, space_id,
-		       grants_membership, grants_identity, membership_duration_hours, grants_space_use
+		       grants_membership, grants_identity, membership_duration_hours, grants_space_use, expires_at
 		FROM invitations
 		WHERE application_id = $1
 		ORDER BY created_at DESC
@@ -191,6 +193,7 @@ func (r *invitationRepository) GetByApplicationID(appID string) ([]*Invitation, 
 			&invite.GrantsIdentity,
 			&invite.MembershipDurationHours,
 			&invite.GrantsSpaceUse,
+			&invite.ExpiresAt,
 		)
 		if err != nil {
 			return nil, err
