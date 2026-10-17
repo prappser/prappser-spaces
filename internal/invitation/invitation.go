@@ -11,6 +11,7 @@ type Invitation struct {
 	CreatedByPublicKey string  `json:"createdByPublicKey"`
 	Role               string  `json:"role"`
 	MaxUses            *int    `json:"maxUses,omitempty"`
+	ExpiresAt          *int64  `json:"expiresAt,omitempty"`
 	UsedCount          int     `json:"usedCount"`
 	CreatedAt          int64   `json:"createdAt"`
 	SpaceID            *string `json:"spaceId,omitempty"`

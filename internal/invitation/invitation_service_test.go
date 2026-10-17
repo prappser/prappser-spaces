@@ -5,6 +5,8 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
@@ -1612,4 +1614,51 @@ func TestGetInviteInfo_SingleUseGate_ShouldReportEffectiveGrantsIdentity(t *test
 		assert.NoError(t, err)
 		assert.Equal(t, c.want, info.GrantsIdentity)
 	}
+}
+
+func TestCreateInvitation_ShouldPersistExpiresAtMatchingToken(t *testing.T) {
+	// given
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	assert.NoError(t, err)
+	repo := &fakeInvitationRepo{}
+	svc := NewInvitationService(repo, priv, pub, application.NewMemoryRepository(), nil, &fakeUserRepo{}, fakeEventService{}, "space-key")
+	hours := 24
+
+	// when
+	resp, err := svc.CreateInvitation(CreateInvitationOptions{
+		ApplicationID:      "app-1",
+		CreatedByPublicKey: "creator-pk",
+		ExpiresInHours:     &hours,
+		SpaceURL:           "https://space.example",
+	})
+
+	// then
+	assert.NoError(t, err)
+	assert.NotNil(t, repo.createdInvite.ExpiresAt)
+	assert.Equal(t, *resp.ExpiresAt, *repo.createdInvite.ExpiresAt)
+	body, err := json.Marshal(repo.createdInvite)
+	assert.NoError(t, err)
+	assert.Contains(t, string(body), fmt.Sprintf(`"expiresAt":%d`, *resp.ExpiresAt))
+}
+
+func TestCreateInvitation_ShouldLeaveExpiresAtNilWhenNoExpiry(t *testing.T) {
+	// given
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	assert.NoError(t, err)
+	repo := &fakeInvitationRepo{}
+	svc := NewInvitationService(repo, priv, pub, application.NewMemoryRepository(), nil, &fakeUserRepo{}, fakeEventService{}, "space-key")
+
+	// when
+	_, err = svc.CreateInvitation(CreateInvitationOptions{
+		ApplicationID:      "app-1",
+		CreatedByPublicKey: "creator-pk",
+		SpaceURL:           "https://space.example",
+	})
+
+	// then
+	assert.NoError(t, err)
+	assert.Nil(t, repo.createdInvite.ExpiresAt)
+	body, err := json.Marshal(repo.createdInvite)
+	assert.NoError(t, err)
+	assert.NotContains(t, string(body), "expiresAt")
 }
