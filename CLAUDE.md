@@ -34,6 +34,7 @@ docker compose up -d && go test -tags=integration ./internal/... .  # Integratio
 | `STORAGE_ACCOUNT_QUOTA_MB` | No | `0` | Per-account file storage quota in MB; `0` = off, space owner exempt |
 | `MAX_APPS_PER_ACCOUNT` | No | `0` | Max live apps one account may own; `0` = off, space owner exempt |
 | `SIGNUP_SINGLE_USE_INVITES` | No | `false` | `true` = a new account can only join through a single-use invite (hosted-space friends beta) |
+| `OPEN_REGISTRATION` | No | `false` | `true` = anyone can create a `user` account with username + password via `POST /users/register`; capped by `MAX_ACCOUNTS`, 5 attempts/hour per IP |
 | `MAX_ACCOUNTS` | No | `0` | Max accounts on the space, owner included; `0` = off. Full space refuses new accounts |
 | `SPACE_IDENTITY_IMPORT` | No | — | Import-only; `PRAPSPACE1...` blob from `POST /space/identity/export`, set during a hosting move (see `docs/hosting/selfhost.md`) |
 | `SPACE_IDENTITY_IMPORT_PASSPHRASE` | No | — | Passphrase that decrypts `SPACE_IDENTITY_IMPORT` |

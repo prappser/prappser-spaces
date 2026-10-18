@@ -176,6 +176,13 @@ type UserRepository interface {
 	// owner already exists, so the two are equivalent on legacy data, but
 	// only the claim table is authoritative for spaces claimed since #114.
 	HasClaim() (bool, error)
+	// RegisterUser creates a 'user'-role account with password credentials,
+	// escrow, and its first device in one transaction (POST /users/register).
+	// Returns ErrUsernameTaken, ErrAccountExists, or ErrDeviceKeyTaken on the
+	// matching unique violation. userState may be empty.
+	RegisterUser(publicKey, username, passwordVerifier, handle, accountKeyBlob, userState, devicePublicKey string, deviceName *string, createdAt int64) error
+	// CountUsers counts every account on the space, owner and guests included.
+	CountUsers() (int, error)
 }
 
 // ErrUsernameTaken is returned by SetPasswordCredentials and UpdateUsername
@@ -191,6 +198,10 @@ var ErrSpaceAlreadyClaimed = errors.New("space already claimed")
 // ErrDeviceKeyTaken is returned by ClaimOwner when the claim's
 // devicePublicKey is already registered as a device on this space.
 var ErrDeviceKeyTaken = errors.New("device key already registered on this space")
+
+// ErrAccountExists is returned by RegisterUser when the account public key
+// already has a users row.
+var ErrAccountExists = errors.New("account already exists")
 
 // SpaceCreator creates a default space for new owners.
 type SpaceCreator interface {

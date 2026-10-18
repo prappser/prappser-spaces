@@ -29,6 +29,8 @@ const (
 	spaceOwnerClaimPkey      = "space_owner_claim_pkey"
 	usersPasswordUsernameIdx = "users_password_username_idx"
 	userDevicesPkey          = "user_devices_pkey"
+	// usersPkey is the public_key primary key; only RegisterUser maps it.
+	usersPkey = "users_pkey"
 )
 
 type userRepository struct {
@@ -410,4 +412,59 @@ func (r *userRepository) HasClaim() (bool, error) {
 		return false, fmt.Errorf("failed to check for existing claim: %w", err)
 	}
 	return exists, nil
+}
+
+// RegisterUser backs POST /users/register (see register_endpoints.go). Unlike
+// ClaimOwner it writes no space_owner_claim row, and a public_key collision is
+// a real answer (ErrAccountExists, e.g. a retry after a lost response), not a 500.
+func (r *userRepository) RegisterUser(publicKey, username, passwordVerifier, handle, accountKeyBlob, userState, devicePublicKey string, deviceName *string, createdAt int64) error {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(
+		`INSERT INTO users (public_key, username, role, created_at, issuer, password_verifier, password_handle, account_key_blob, user_state_blob)
+		 VALUES ($1, $2, 'user', $3, $1, $4, $5, $6, NULLIF($7, ''))`,
+		publicKey, username, createdAt, passwordVerifier, handle, accountKeyBlob, userState,
+	); err != nil {
+		var pqErr *pq.Error
+		if errors.As(err, &pqErr) && pqErr.Code == pqUniqueViolation {
+			switch pqErr.Constraint {
+			case usersPasswordUsernameIdx:
+				return ErrUsernameTaken
+			case usersPkey:
+				return ErrAccountExists
+			}
+		}
+		return fmt.Errorf("failed to register user: %w", err)
+	}
+
+	if _, err := tx.Exec(
+		`INSERT INTO user_devices (device_public_key, user_public_key, device_name, created_at)
+		 VALUES ($1, $2, $3, $4)`,
+		devicePublicKey, publicKey, deviceName, createdAt,
+	); err != nil {
+		var pqErr *pq.Error
+		if errors.As(err, &pqErr) && pqErr.Code == pqUniqueViolation && pqErr.Constraint == userDevicesPkey {
+			return ErrDeviceKeyTaken
+		}
+		return fmt.Errorf("failed to create user device: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit registration: %w", err)
+	}
+	return nil
+}
+
+// CountUsers is the same count the invite signup gate uses
+// (invitationRepository.CountUsers), so both share MAX_ACCOUNTS.
+func (r *userRepository) CountUsers() (int, error) {
+	var n int
+	if err := r.db.QueryRow(`SELECT COUNT(*) FROM users`).Scan(&n); err != nil {
+		return 0, fmt.Errorf("failed to count users: %w", err)
+	}
+	return n, nil
 }

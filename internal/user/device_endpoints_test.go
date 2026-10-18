@@ -133,6 +133,10 @@ func (r *deviceTestRepo) ClaimOwner(publicKey, username, passwordVerifier, handl
 	return nil
 }
 func (r *deviceTestRepo) HasClaim() (bool, error) { return false, nil }
+func (r *deviceTestRepo) RegisterUser(publicKey, username, passwordVerifier, handle, accountKeyBlob, userState, devicePublicKey string, deviceName *string, createdAt int64) error {
+	return nil
+}
+func (r *deviceTestRepo) CountUsers() (int, error) { return 0, nil }
 
 // buildDelegationJWS signs a delegation payload with signerPriv using the
 // given signing method (EdDSA for valid delegations, something else to

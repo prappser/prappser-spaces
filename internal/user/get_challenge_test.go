@@ -83,6 +83,10 @@ func (r *getChallengeTestRepo) ClaimOwner(publicKey, username, passwordVerifier,
 	return nil
 }
 func (r *getChallengeTestRepo) HasClaim() (bool, error) { return false, nil }
+func (r *getChallengeTestRepo) RegisterUser(publicKey, username, passwordVerifier, handle, accountKeyBlob, userState, devicePublicKey string, deviceName *string, createdAt int64) error {
+	return nil
+}
+func (r *getChallengeTestRepo) CountUsers() (int, error) { return 0, nil }
 
 func newGetChallengeTestEndpoints(repo UserRepository) *UserEndpoints {
 	pub, priv, _ := ed25519.GenerateKey(rand.Reader)

@@ -55,6 +55,10 @@ func (noopUserRepository) ClaimOwner(publicKey, username, passwordVerifier, hand
 	return nil
 }
 func (noopUserRepository) HasClaim() (bool, error) { return false, nil }
+func (noopUserRepository) RegisterUser(publicKey, username, passwordVerifier, handle, accountKeyBlob, userState, devicePublicKey string, deviceName *string, createdAt int64) error {
+	return nil
+}
+func (noopUserRepository) CountUsers() (int, error) { return 0, nil }
 
 // newTestRequestHandler builds the real NewRequestHandler with only
 // userEndpoints wired for real; every other endpoint dependency is nil,
@@ -66,7 +70,7 @@ func newTestRequestHandler(t *testing.T) fasthttp.RequestHandler {
 	assert.NoError(t, err)
 	userEndpoints := user.NewEndpoints(noopUserRepository{}, user.Config{ChallengeTTLSec: 300}, priv, pub, nil, nil)
 	cfg := &Config{TrustProxyHeaders: true}
-	return NewRequestHandler(cfg, userEndpoints, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	return NewRequestHandler(cfg, userEndpoints, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 }
 
 func newAuthRouteRequestCtx(path string) *fasthttp.RequestCtx {
@@ -164,4 +168,25 @@ func TestSpacePublicKey_ShouldReturn405OnPost(t *testing.T) {
 
 	// then
 	assert.Equal(t, fasthttp.StatusMethodNotAllowed, ctx.Response.StatusCode())
+}
+
+// TestRateLimiting_RegisterIsCappedPerIPIncludingRefusals checks POST
+// /users/register has its own tight per-IP budget that counts closed-space
+// refusals too.
+func TestRateLimiting_RegisterIsCappedPerIPIncludingRefusals(t *testing.T) {
+	// given
+	registerEndpoints := user.NewRegisterEndpoints(noopUserRepository{}, []byte("k"), false, 0)
+	handler := NewRequestHandler(&Config{TrustProxyHeaders: true}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, registerEndpoints)
+
+	// when / then
+	for i := 0; i < registerLimit; i++ {
+		ctx := newAuthRouteRequestCtxWithMethod("POST", "/users/register")
+		handler(ctx)
+		assert.Equal(t, fasthttp.StatusForbidden, ctx.Response.StatusCode())
+		assert.Contains(t, string(ctx.Response.Body()), "registration_closed")
+	}
+	ctx := newAuthRouteRequestCtxWithMethod("POST", "/users/register")
+	handler(ctx)
+	assert.Equal(t, fasthttp.StatusTooManyRequests, ctx.Response.StatusCode())
+	assert.NotEmpty(t, ctx.Response.Header.Peek("Retry-After"))
 }

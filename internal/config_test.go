@@ -63,6 +63,44 @@ func TestLoadConfig_SignupLimitsSet_ShouldParse(t *testing.T) {
 	assert.Equal(t, 10, config.MaxAccounts)
 }
 
+func TestLoadConfig_OpenRegistrationUnset_ShouldDefaultToOff(t *testing.T) {
+	// given
+	t.Setenv("MASTER_PASSWORD", "test")
+
+	// when
+	config, err := LoadConfig()
+
+	// then
+	require.NoError(t, err)
+	assert.False(t, config.OpenRegistration)
+}
+
+func TestLoadConfig_OpenRegistrationTrue_ShouldEnable(t *testing.T) {
+	// given
+	t.Setenv("MASTER_PASSWORD", "test")
+	t.Setenv("OPEN_REGISTRATION", "true")
+
+	// when
+	config, err := LoadConfig()
+
+	// then
+	require.NoError(t, err)
+	assert.True(t, config.OpenRegistration)
+}
+
+func TestLoadConfig_OpenRegistrationInvalid_ShouldStayOff(t *testing.T) {
+	// given
+	t.Setenv("MASTER_PASSWORD", "test")
+	t.Setenv("OPEN_REGISTRATION", "yes please")
+
+	// when
+	config, err := LoadConfig()
+
+	// then
+	require.NoError(t, err)
+	assert.False(t, config.OpenRegistration)
+}
+
 func TestLoadConfig_MasterPasswordUnset_ShouldLoad(t *testing.T) {
 	// given
 	t.Setenv("MASTER_PASSWORD", "")

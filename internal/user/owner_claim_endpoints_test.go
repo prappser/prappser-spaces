@@ -140,6 +140,10 @@ func (r *ownerClaimTestRepo) ClaimOwner(publicKey, username, passwordVerifier, h
 }
 
 func (r *ownerClaimTestRepo) HasClaim() (bool, error) { return r.claimed, nil }
+func (r *ownerClaimTestRepo) RegisterUser(publicKey, username, passwordVerifier, handle, accountKeyBlob, userState, devicePublicKey string, deviceName *string, createdAt int64) error {
+	return nil
+}
+func (r *ownerClaimTestRepo) CountUsers() (int, error) { return 0, nil }
 
 // validClaimRequest builds a well-formed claimOwnerRequest that passes every
 // validation step and successfully claims as username.

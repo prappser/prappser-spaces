@@ -6,24 +6,28 @@ import (
 )
 
 type HealthEndpoints struct {
-	version string
+	version          string
+	registrationOpen func() bool
 }
 
-func NewEndpoints(version string) *HealthEndpoints {
+func NewEndpoints(version string, registrationOpen func() bool) *HealthEndpoints {
 	return &HealthEndpoints{
-		version: version,
+		version:          version,
+		registrationOpen: registrationOpen,
 	}
 }
 
 type HealthResponse struct {
-	Status  string `json:"status"`
-	Version string `json:"version"`
+	Status           string `json:"status"`
+	Version          string `json:"version"`
+	RegistrationOpen bool   `json:"registrationOpen"`
 }
 
 func (h *HealthEndpoints) Health(ctx *fasthttp.RequestCtx) {
 	response := HealthResponse{
-		Status:  "ok",
-		Version: h.version,
+		Status:           "ok",
+		Version:          h.version,
+		RegistrationOpen: h.registrationOpen(),
 	}
 
 	ctx.SetContentType("application/json")

@@ -280,6 +280,10 @@ func (m *mockUserRepoStorage) ClaimOwner(_, _, _, _, _, _, _ string, _ *string, 
 	return nil
 }
 func (m *mockUserRepoStorage) HasClaim() (bool, error) { return false, nil }
+func (m *mockUserRepoStorage) RegisterUser(publicKey, username, passwordVerifier, handle, accountKeyBlob, userState, devicePublicKey string, deviceName *string, createdAt int64) error {
+	return nil
+}
+func (m *mockUserRepoStorage) CountUsers() (int, error) { return 0, nil }
 
 // ---- helpers ----
 
