@@ -133,6 +133,10 @@ func (r *passwordTestRepo) ClaimOwner(publicKey, username, passwordVerifier, han
 	return nil
 }
 func (r *passwordTestRepo) HasClaim() (bool, error) { return false, nil }
+func (r *passwordTestRepo) RegisterUser(publicKey, username, passwordVerifier, handle, accountKeyBlob, userState, devicePublicKey string, deviceName *string, createdAt int64) error {
+	return nil
+}
+func (r *passwordTestRepo) CountUsers() (int, error) { return 0, nil }
 
 func newSaltRequestCtx(username string) *fasthttp.RequestCtx {
 	ctx := &fasthttp.RequestCtx{}

@@ -27,6 +27,8 @@ type Config struct {
 	MaxAppsPerAccount int
 	// SignupSingleUseInvites makes a single-use invite the only way to join.
 	SignupSingleUseInvites bool
+	// OpenRegistration lets anyone create a user account via POST /users/register.
+	OpenRegistration bool
 	// MaxAccounts caps accounts on the space, owner included; 0 means unlimited.
 	MaxAccounts int
 }
@@ -211,6 +213,14 @@ func LoadConfig() (*Config, error) {
 			config.SignupSingleUseInvites = b
 		} else {
 			log.Warn().Str("var", "SIGNUP_SINGLE_USE_INVITES").Str("value", v).Msg("invalid value, disabled")
+		}
+	}
+
+	if v := os.Getenv("OPEN_REGISTRATION"); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			config.OpenRegistration = b
+		} else {
+			log.Warn().Str("var", "OPEN_REGISTRATION").Str("value", v).Msg("invalid value, registration disabled")
 		}
 	}
 

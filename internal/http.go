@@ -34,6 +34,12 @@ const (
 	// the username they're targeting.
 	passwordEnrollLimit  = 5
 	passwordEnrollWindow = 15 * time.Minute
+
+	// registerLimit/Window cap POST /users/register per IP, refusals
+	// included - tighter than the general budget because each success
+	// creates an account on an open space.
+	registerLimit  = 5
+	registerWindow = time.Hour
 )
 
 // challengePublicKeyKey extracts the publicKey query param used by
@@ -85,12 +91,13 @@ func enrollUsernameKey(ctx *fasthttp.RequestCtx) string {
 	return strings.ToLower(username)
 }
 
-func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, statusEndpoints *status.StatusEndpoints, healthEndpoints *health.HealthEndpoints, userService *user.UserService, appEndpoints *application.ApplicationEndpoints, invitationEndpoints *invitation.InvitationEndpoints, eventEndpoints *event.EventEndpoints, setupEndpoints *setup.SetupEndpoints, storageEndpoints *storage.Endpoints, wsHandler *websocket.Handler, spaceEndpoints *space.SpaceEndpoints, pushEndpoints *push.PushEndpoints, profileEndpoints *profile.ProfileEndpoints, deviceEndpoints *user.DeviceEndpoints, passwordEndpoints *user.PasswordEndpoints, assertionEndpoints *user.AssertionEndpoints, ownerClaimEndpoints *user.OwnerClaimEndpoints, keyEndpoints *keys.KeyEndpoints, accountEndpoints *profile.AccountEndpoints, adminEndpoints *admin.AdminEndpoints) fasthttp.RequestHandler {
+func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, statusEndpoints *status.StatusEndpoints, healthEndpoints *health.HealthEndpoints, userService *user.UserService, appEndpoints *application.ApplicationEndpoints, invitationEndpoints *invitation.InvitationEndpoints, eventEndpoints *event.EventEndpoints, setupEndpoints *setup.SetupEndpoints, storageEndpoints *storage.Endpoints, wsHandler *websocket.Handler, spaceEndpoints *space.SpaceEndpoints, pushEndpoints *push.PushEndpoints, profileEndpoints *profile.ProfileEndpoints, deviceEndpoints *user.DeviceEndpoints, passwordEndpoints *user.PasswordEndpoints, assertionEndpoints *user.AssertionEndpoints, ownerClaimEndpoints *user.OwnerClaimEndpoints, keyEndpoints *keys.KeyEndpoints, accountEndpoints *profile.AccountEndpoints, adminEndpoints *admin.AdminEndpoints, registerEndpoints *user.RegisterEndpoints) fasthttp.RequestHandler {
 	authMiddleware := middleware.NewAuthMiddleware(userService)
 	corsMiddleware := middleware.NewCORSMiddleware(config.AllowedOrigins)
 	ipRateLimiter := middleware.NewRateLimiter(ipRateLimitPerMinute, time.Minute, config.TrustProxyHeaders)
 	identifierRateLimiter := middleware.NewRateLimiter(identifierRateLimitPerMinute, time.Minute, config.TrustProxyHeaders)
 	passwordRateLimiter := middleware.NewRateLimiter(passwordEnrollLimit, passwordEnrollWindow, config.TrustProxyHeaders)
+	registerRateLimiter := middleware.NewRateLimiter(registerLimit, registerWindow, config.TrustProxyHeaders)
 
 	handler := func(ctx *fasthttp.RequestCtx) {
 		path := string(ctx.Path())
@@ -114,6 +121,13 @@ func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, status
 			method := string(ctx.Method())
 			if method == "POST" {
 				ipRateLimiter.LimitByIP(ownerClaimEndpoints.Claim)(ctx)
+			} else {
+				ctx.Error("Method Not Allowed", fasthttp.StatusMethodNotAllowed)
+			}
+		case path == "/users/register":
+			method := string(ctx.Method())
+			if method == "POST" {
+				registerRateLimiter.LimitByIP(ipRateLimiter.LimitByIP(registerEndpoints.Register))(ctx)
 			} else {
 				ctx.Error("Method Not Allowed", fasthttp.StatusMethodNotAllowed)
 			}

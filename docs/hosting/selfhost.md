@@ -59,6 +59,13 @@ window passed, restart the server to reopen it.
 `DOCKER_CONFIG_PATH` all have sane defaults in the compose file if left
 blank.
 
+`OPEN_REGISTRATION` is off by default. Setting it to `true` lets anyone who
+can reach the space create an account with a username and a password, without
+an invite. These accounts have the `user` role and can create apps within the
+quotas. `MAX_ACCOUNTS` still caps the total number of accounts and is strongly
+advised whenever open registration is on. `SIGNUP_SINGLE_USE_INVITES` does not
+affect it.
+
 ## 5. Start the stack
 
 ```bash

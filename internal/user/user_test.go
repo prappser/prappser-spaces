@@ -103,6 +103,10 @@ func (m *mockUserRepository) ClaimOwner(publicKey, username, passwordVerifier, h
 	return nil
 }
 func (m *mockUserRepository) HasClaim() (bool, error) { return false, nil }
+func (m *mockUserRepository) RegisterUser(publicKey, username, passwordVerifier, handle, accountKeyBlob, userState, devicePublicKey string, deviceName *string, createdAt int64) error {
+	return nil
+}
+func (m *mockUserRepository) CountUsers() (int, error) { return 0, nil }
 
 func TestGenerateChallenge_ShouldGenerateUniqueChallenge(t *testing.T) {
 	// when

@@ -177,6 +177,10 @@ func (r *rebindTestRepo) ClaimOwner(publicKey, username, passwordVerifier, handl
 	return nil
 }
 func (r *rebindTestRepo) HasClaim() (bool, error) { return false, nil }
+func (r *rebindTestRepo) RegisterUser(publicKey, username, passwordVerifier, handle, accountKeyBlob, userState, devicePublicKey string, deviceName *string, createdAt int64) error {
+	return nil
+}
+func (r *rebindTestRepo) CountUsers() (int, error) { return 0, nil }
 
 // newRebindRequestCtx marshals the POST /identity/rebind request and sets
 // the authenticated user in context the way RequireAuth would - RebindIssuer

@@ -176,6 +176,10 @@ func (r *fakeUserRepo) ClaimOwner(publicKey, username, passwordVerifier, handle,
 	return nil
 }
 func (r *fakeUserRepo) HasClaim() (bool, error) { return false, nil }
+func (r *fakeUserRepo) RegisterUser(publicKey, username, passwordVerifier, handle, accountKeyBlob, userState, devicePublicKey string, deviceName *string, createdAt int64) error {
+	return nil
+}
+func (r *fakeUserRepo) CountUsers() (int, error) { return 0, nil }
 
 // buildAssertionJWS signs an identity-assertion JWT with signerPriv, matching
 // the frozen wire format VerifyAssertion expects (iss, user_id, aud,

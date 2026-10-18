@@ -154,7 +154,6 @@ func main() {
 	spaceService := space.NewSpaceService(spaceRepository, privateKey, publicKey)
 	userService := user.NewUserService(userRepository, &spaceLookupAdapter{repo: spaceRepository}, config.Users, privateKey, publicKey)
 	userEndpoints := user.NewEndpoints(userRepository, config.Users, privateKey, publicKey, userService, &spaceCreatorAdapter{service: spaceService})
-	healthEndpoints := health.NewEndpoints("1.0.0")
 
 	appRepository := application.NewRepository(db)
 	storageRepo := storage.NewRepository(db)
@@ -247,11 +246,13 @@ func main() {
 	deviceEndpoints := user.NewDeviceEndpoints(userRepository, verifierKey, spacePublicKeyString)
 	passwordEndpoints := user.NewPasswordEndpoints(userRepository, saltSecret, verifierKey)
 	ownerClaimEndpoints := user.NewOwnerClaimEndpoints(userRepository, verifierKey, time.Now(), &spaceCreatorAdapter{service: spaceService})
+	registerEndpoints := user.NewRegisterEndpoints(userRepository, verifierKey, config.OpenRegistration, config.MaxAccounts)
+	healthEndpoints := health.NewEndpoints("1.0.0", registerEndpoints.RegistrationOpen)
 	assertionEndpoints := user.NewAssertionEndpoints(userRepository, privateKey, spacePublicKeyString)
 
 	adminEndpoints := admin.NewAdminEndpoints(admin.NewRepository(db), admin.Limits{AccountQuotaBytes: config.Storage.AccountQuota, MaxAppsPerAccount: config.MaxAppsPerAccount})
 
-	requestHandler := internal.NewRequestHandler(config, userEndpoints, statusEndpoints, healthEndpoints, userService, appEndpoints, invitationEndpoints, eventEndpoints, setupEndpoints, storageEndpoints, wsHandler, spaceEndpoints, pushEndpoints, profileEndpoints, deviceEndpoints, passwordEndpoints, assertionEndpoints, ownerClaimEndpoints, keyEndpoints, accountEndpoints, adminEndpoints)
+	requestHandler := internal.NewRequestHandler(config, userEndpoints, statusEndpoints, healthEndpoints, userService, appEndpoints, invitationEndpoints, eventEndpoints, setupEndpoints, storageEndpoints, wsHandler, spaceEndpoints, pushEndpoints, profileEndpoints, deviceEndpoints, passwordEndpoints, assertionEndpoints, ownerClaimEndpoints, keyEndpoints, accountEndpoints, adminEndpoints, registerEndpoints)
 
 	serverAddr := fmt.Sprintf(":%s", config.Port)
 	log.Info().Str("addr", serverAddr).Msg("Starting HTTP server")
