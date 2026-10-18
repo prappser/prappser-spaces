@@ -161,6 +161,20 @@ func TestRegister_ShouldReturnAccountExistsForReusedPublicKey_Integration(t *tes
 	assert.Equal(t, "account_exists", responseCode(t, ctx))
 }
 
+func TestRegister_ShouldReturnAccountExistsForIdenticalRetry_Integration(t *testing.T) {
+	// given
+	db, _, re := newRegisterIntegrationEndpoints(t, true, 0)
+	req := validRegisterRequest(t, uniqueUsername(t, "Retry"))
+	assert.Equal(t, fasthttp.StatusCreated, register(t, db, re, req).Response.StatusCode())
+
+	// when
+	ctx := register(t, db, re, req)
+
+	// then
+	assert.Equal(t, fasthttp.StatusConflict, ctx.Response.StatusCode())
+	assert.Equal(t, "account_exists", responseCode(t, ctx))
+}
+
 func TestRegister_ShouldReturnDeviceKeyTakenAndRollBackUserRow_Integration(t *testing.T) {
 	// given
 	db, _, re := newRegisterIntegrationEndpoints(t, true, 0)

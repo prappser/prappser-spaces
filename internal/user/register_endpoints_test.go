@@ -123,6 +123,38 @@ func TestRegister_ShouldRejectInvalidRequestsWith400(t *testing.T) {
 	}
 }
 
+func TestRegister_ShouldRejectBodyOverCapWith400BeforeAnyRepoCall(t *testing.T) {
+	// given
+	repo := &registerTestRepo{countErr: errors.New("must not be called")}
+	re := newOpenRegisterEndpoints(repo, 5)
+	ctx := &fasthttp.RequestCtx{}
+	ctx.Request.SetBody([]byte(strings.Repeat(" ", maxRegisterBodyLen+1)))
+
+	// when
+	re.Register(ctx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusBadRequest, ctx.Response.StatusCode())
+	assert.Equal(t, "request body too large", string(ctx.Response.Body()))
+	assert.Equal(t, 0, repo.registerCalls)
+}
+
+func TestRegister_ShouldAcceptUserStateAtMaxLength(t *testing.T) {
+	// given
+	repo := &registerTestRepo{}
+	re := newOpenRegisterEndpoints(repo, 0)
+	req := validRegisterRequest(t, "alice")
+	req.UserState = strings.Repeat("A", maxUserStateBlobLen)
+	ctx := newRegisterCtx(t, req)
+
+	// when
+	re.Register(ctx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusCreated, ctx.Response.StatusCode())
+	assert.Equal(t, 1, repo.registerCalls)
+}
+
 func TestRegister_ShouldRejectBadJSONWith400(t *testing.T) {
 	// given
 	repo := &registerTestRepo{}

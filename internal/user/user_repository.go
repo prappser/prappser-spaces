@@ -433,6 +433,14 @@ func (r *userRepository) RegisterUser(publicKey, username, passwordVerifier, han
 		if errors.As(err, &pqErr) && pqErr.Code == pqUniqueViolation {
 			switch pqErr.Constraint {
 			case usersPasswordUsernameIdx:
+				// An identical retry violates both constraints and Postgres may report either; the existing public_key decides.
+				var exists bool
+				if qErr := r.db.QueryRow("SELECT EXISTS (SELECT 1 FROM users WHERE public_key = $1)", publicKey).Scan(&exists); qErr != nil {
+					return fmt.Errorf("failed to check for existing account: %w", qErr)
+				}
+				if exists {
+					return ErrAccountExists
+				}
 				return ErrUsernameTaken
 			case usersPkey:
 				return ErrAccountExists

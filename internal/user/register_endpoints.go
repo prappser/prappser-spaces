@@ -28,6 +28,9 @@ func NewRegisterEndpoints(userRepository UserRepository, verifierKey []byte, ope
 	return &RegisterEndpoints{userRepository: userRepository, verifierKey: verifierKey, openRegistration: openRegistration, maxAccounts: maxAccounts}
 }
 
+// Above the 64 KiB userState max; public route on a server that accepts 50 MiB bodies.
+const maxRegisterBodyLen = 128 * 1024
+
 // registerRequest is the request body for POST /users/register. Unlike a
 // claim, devicePublicKey, authSecret, and accountKeyBlob are all required.
 type registerRequest struct {
@@ -48,8 +51,14 @@ type registerRequest struct {
 // registering stays the salt it gets afterwards.
 func (re *RegisterEndpoints) Register(ctx *fasthttp.RequestCtx) {
 	if !re.openRegistration {
-		log.Error().Msg("[REGISTER] Registration is closed")
+		log.Debug().Msg("[REGISTER] Registration is closed")
 		writeCodedError(ctx, fasthttp.StatusForbidden, "registration is closed on this space", "registration_closed")
+		return
+	}
+
+	if len(ctx.PostBody()) > maxRegisterBodyLen {
+		log.Debug().Msg("[REGISTER] Request body too large")
+		ctx.Error("request body too large", fasthttp.StatusBadRequest)
 		return
 	}
 
@@ -115,7 +124,7 @@ func (re *RegisterEndpoints) Register(ctx *fasthttp.RequestCtx) {
 		return
 	}
 	if limitReached {
-		log.Error().Msg("[REGISTER] Account limit reached")
+		log.Debug().Msg("[REGISTER] Account limit reached")
 		writeCodedError(ctx, fasthttp.StatusForbidden, "this space is not accepting new accounts", "account_limit_reached")
 		return
 	}
@@ -125,15 +134,15 @@ func (re *RegisterEndpoints) Register(ctx *fasthttp.RequestCtx) {
 	switch {
 	case err == nil:
 	case errors.Is(err, ErrUsernameTaken):
-		log.Error().Msg("[REGISTER] Username already taken")
+		log.Debug().Msg("[REGISTER] Username already taken")
 		writeCodedError(ctx, fasthttp.StatusConflict, "username is already taken on this space", "username_taken")
 		return
 	case errors.Is(err, ErrAccountExists):
-		log.Error().Msg("[REGISTER] Account already exists")
+		log.Debug().Msg("[REGISTER] Account already exists")
 		writeCodedError(ctx, fasthttp.StatusConflict, "an account with this public key already exists", "account_exists")
 		return
 	case errors.Is(err, ErrDeviceKeyTaken):
-		log.Error().Msg("[REGISTER] Device key already registered")
+		log.Debug().Msg("[REGISTER] Device key already registered")
 		writeCodedError(ctx, fasthttp.StatusConflict, "device key is already registered on this space", "device_key_taken")
 		return
 	default:
