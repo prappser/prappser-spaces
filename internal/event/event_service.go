@@ -90,6 +90,11 @@ func (s *EventService) AcceptEvent(ctx context.Context, event *Event, submitter 
 	// Set space ID from submitter's JWT claims
 	event.SpaceID = submitter.SpaceID
 
+	// ponytail: the guard isn't atomic with the insert, so an event racing CompleteMove can land on the tombstone (hidden, purged with it); row-lock if that matters.
+	if err := s.appRepo.MoveGuard(appID, submitter.PublicKey, true); err != nil {
+		return nil, err
+	}
+
 	app, err := s.appRepo.GetApplicationByID(appID)
 	if err != nil {
 		return nil, fmt.Errorf("application not found: %w", err)
@@ -381,10 +386,14 @@ var explicitRecipientEventTypes = map[EventType]bool{
 	EventTypeReminderFired: true,
 }
 
+func isUserChannelFanout(t EventType) bool {
+	return t == EventTypeApplicationDeleted || t == EventTypeApplicationMoved
+}
+
 // broadcastEvent sends an event to all relevant WebSocket clients and queues web push
 // notifications for offline members.
-// For application_deleted events, it additionally broadcasts to each member's user channel
-// so all devices receive the deletion regardless of which app they have focused.
+// For application_deleted and application_moved events, it additionally broadcasts to each
+// member's user channel so all devices receive them regardless of which app they have focused.
 func (s *EventService) broadcastEvent(event *Event) {
 	if s.broadcaster != nil {
 		s.broadcaster.BroadcastToApplication(event.ApplicationID, event)
@@ -394,7 +403,7 @@ func (s *EventService) broadcastEvent(event *Event) {
 	// A failed fetch is non-fatal: log a warning, skip the member-dependent paths,
 	// and still deliver the app-channel WebSocket broadcast above.
 	var members []*application.Member
-	if event.ApplicationID != "" && (event.Type == EventTypeApplicationDeleted || s.pusher != nil) {
+	if event.ApplicationID != "" && (isUserChannelFanout(event.Type) || s.pusher != nil) {
 		var err error
 		members, err = s.appRepo.GetMembersByApplicationID(event.ApplicationID)
 		if err != nil {
@@ -402,9 +411,9 @@ func (s *EventService) broadcastEvent(event *Event) {
 		}
 	}
 
-	// application_deleted: also broadcast to each member's user channel so all
-	// devices receive the deletion regardless of which app they have open.
-	if event.Type == EventTypeApplicationDeleted && s.broadcaster != nil {
+	// application_deleted/application_moved: also broadcast to each member's user
+	// channel so all devices receive them regardless of which app they have open.
+	if isUserChannelFanout(event.Type) && s.broadcaster != nil {
 		for _, member := range members {
 			s.broadcaster.BroadcastToUser(member.PublicKey, event)
 		}
@@ -455,6 +464,32 @@ func (s *EventService) broadcastEvent(event *Event) {
 			s.pusher.Push(event, appName, creatorDisplayName, recipientKeys)
 		}
 	}
+}
+
+// ProduceApplicationMoved records that an application finished moving to another space.
+func (s *EventService) ProduceApplicationMoved(ctx context.Context, appID, creatorPublicKey, targetSpaceURL, inviteToken string) error {
+	id, err := uuid.NewV7()
+	if err != nil {
+		id = uuid.New()
+	}
+	data, err := MarshalData(&ApplicationMovedData{
+		Version:        1,
+		ApplicationID:  appID,
+		TargetSpaceURL: targetSpaceURL,
+		InviteToken:    inviteToken,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to marshal application_moved data: %w", err)
+	}
+	_, err = s.ProduceEvent(ctx, &Event{
+		ID:               id.String(),
+		Type:             EventTypeApplicationMoved,
+		CreatorPublicKey: creatorPublicKey,
+		ApplicationID:    appID,
+		Version:          1,
+		Data:             data,
+	})
+	return err
 }
 
 // GetEventsSince retrieves events since a given event ID for the authenticated user's applications

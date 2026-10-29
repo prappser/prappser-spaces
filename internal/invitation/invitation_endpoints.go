@@ -52,7 +52,8 @@ type CreateInviteRequest struct {
 	GrantsIdentity   *bool `json:"grantsIdentity,omitempty"`
 	GrantsSpaceUse   *bool `json:"grantsSpaceUse,omitempty"`
 	// MembershipDurationHours is optional (#117); nil means no expiry.
-	MembershipDurationHours *int `json:"membershipDurationHours,omitempty"`
+	MembershipDurationHours *int     `json:"membershipDurationHours,omitempty"`
+	MemberPublicKeys        []string `json:"memberPublicKeys,omitempty"`
 }
 
 // CreateInvite handles POST /applications/{id}/invites
@@ -96,6 +97,10 @@ func (ie *InvitationEndpoints) CreateInvite(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
+	if !ie.guardApp(ctx, appID, authenticatedUser.PublicKey, true) {
+		return
+	}
+
 	if req.GrantsSpaceUse != nil && *req.GrantsSpaceUse && authenticatedUser.Role != user.RoleOwner {
 		log.Error().Str("publicKey", authenticatedUser.PublicKey).Msg("Non-owner tried to grant space use")
 		ctx.Error("only the space owner can grant space use", fasthttp.StatusForbidden)
@@ -115,6 +120,7 @@ func (ie *InvitationEndpoints) CreateInvite(ctx *fasthttp.RequestCtx) {
 		GrantsIdentity:          req.GrantsIdentity,
 		GrantsSpaceUse:          req.GrantsSpaceUse,
 		MembershipDurationHours: req.MembershipDurationHours,
+		MemberPublicKeys:        req.MemberPublicKeys,
 	}
 
 	response, err := ie.invitationService.CreateInvitation(opts)
@@ -325,6 +331,10 @@ func (ie *InvitationEndpoints) JoinApplication(ctx *fasthttp.RequestCtx) {
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to join application")
 
+		if application.WriteMoveError(ctx, err) {
+			return
+		}
+
 		// #110/#111: sentinel errors first - checked with errors.Is rather
 		// than by message.
 		switch {
@@ -354,6 +364,12 @@ func (ie *InvitationEndpoints) JoinApplication(ctx *fasthttp.RequestCtx) {
 			return
 		case errors.Is(err, ErrMaxUsesReached):
 			ctx.Error("Invitation has reached maximum uses", fasthttp.StatusGone)
+			return
+		case errors.Is(err, ErrInviteNotForMember):
+			body, _ := json.Marshal(map[string]string{"error": "invitation is not for this account", "code": "invite_not_for_member"})
+			ctx.SetContentType("application/json")
+			ctx.SetStatusCode(fasthttp.StatusForbidden)
+			ctx.SetBody(body)
 			return
 		}
 
@@ -410,6 +426,10 @@ func (ie *InvitationEndpoints) RevokeInvite(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
+	if !ie.guardApp(ctx, appID, authenticatedUser.PublicKey, true) {
+		return
+	}
+
 	// Get invitation to verify it exists
 	invite, err := ie.invitationService.repo.GetByID(inviteID)
 	if err != nil {
@@ -434,6 +454,18 @@ func (ie *InvitationEndpoints) RevokeInvite(ctx *fasthttp.RequestCtx) {
 
 	// Return success (204 No Content)
 	ctx.SetStatusCode(fasthttp.StatusNoContent)
+}
+
+func (ie *InvitationEndpoints) guardApp(ctx *fasthttp.RequestCtx, appID, publicKey string, write bool) bool {
+	err := ie.invitationService.appRepo.MoveGuard(appID, publicKey, write)
+	if err == nil {
+		return true
+	}
+	if !application.WriteMoveError(ctx, err) {
+		log.Error().Err(err).Msg("Failed to check application move state")
+		ctx.Error("Failed to verify application state", fasthttp.StatusInternalServerError)
+	}
+	return false
 }
 
 // spaceIDPtr converts a space ID string to a pointer, returning nil for empty strings.
@@ -469,6 +501,10 @@ func (ie *InvitationEndpoints) ListInvites(ctx *fasthttp.RequestCtx) {
 		}
 		log.Error().Err(err).Msg("Failed to verify application role")
 		ctx.Error("Failed to verify application role", fasthttp.StatusInternalServerError)
+		return
+	}
+
+	if !ie.guardApp(ctx, appID, authenticatedUser.PublicKey, false) {
 		return
 	}
 

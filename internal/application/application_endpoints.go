@@ -63,6 +63,9 @@ func (ae *ApplicationEndpoints) RegisterApplication(ctx *fasthttp.RequestCtx) {
 
 	// Register the application
 	_, err := ae.appService.RegisterApplication(authenticatedUser.PublicKey, &app, authenticatedUser.Role == user.RoleOwner)
+	if WriteMoveError(ctx, err) {
+		return
+	}
 	if errors.Is(err, ErrAppLimitReached) {
 		log.Error().Err(err).Msg("Application limit reached")
 		body, _ := json.Marshal(map[string]string{"error": err.Error(), "code": "app_limit_reached"})
@@ -125,6 +128,9 @@ func (ae *ApplicationEndpoints) GetApplication(ctx *fasthttp.RequestCtx) {
 	// Get the application
 	app, err := ae.appService.GetApplication(appID, authenticatedUser)
 	if err != nil {
+		if WriteMoveError(ctx, err) {
+			return
+		}
 		if err.Error() == "unauthorized" {
 			ctx.Error("Forbidden", fasthttp.StatusForbidden)
 			return
@@ -160,6 +166,9 @@ func (ae *ApplicationEndpoints) GetApplicationState(ctx *fasthttp.RequestCtx) {
 	// Get the application state
 	state, err := ae.appService.GetApplicationState(appID, authenticatedUser)
 	if err != nil {
+		if WriteMoveError(ctx, err) {
+			return
+		}
 		if err.Error() == "unauthorized" {
 			ctx.Error("Forbidden", fasthttp.StatusForbidden)
 			return
@@ -195,6 +204,9 @@ func (ae *ApplicationEndpoints) DeleteApplication(ctx *fasthttp.RequestCtx) {
 	// Delete the application
 	err := ae.appService.DeleteApplication(appID, authenticatedUser)
 	if err != nil {
+		if WriteMoveError(ctx, err) {
+			return
+		}
 		if err.Error() == "unauthorized" {
 			ctx.Error("Forbidden", fasthttp.StatusForbidden)
 			return
@@ -236,6 +248,9 @@ func (ae *ApplicationEndpoints) LeaveApplication(ctx *fasthttp.RequestCtx) {
 
 	// Leave the application
 	err := ae.appService.LeaveApplication(appID, authenticatedUser)
+	if WriteMoveError(ctx, err) {
+		return
+	}
 	if err != nil {
 		if err.Error() == "not a member of this application" {
 			ctx.Error("Not a member of this application", fasthttp.StatusForbidden)

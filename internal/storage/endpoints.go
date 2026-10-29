@@ -41,6 +41,7 @@ type storageService interface {
 // appMemberChecker is the narrow interface Endpoints needs from *application.Repository.
 type appMemberChecker interface {
 	IsMember(appID, publicKey string) (bool, error)
+	MoveGuard(appID, publicKey string, write bool) error
 	GetApplicationsByMemberPublicKey(publicKey string) ([]*application.Application, error)
 }
 
@@ -387,6 +388,10 @@ func (e *Endpoints) UploadChunk(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
+	if !e.guardAppWrite(ctx, stored.ApplicationID, publicKey) {
+		return
+	}
+
 	body := ctx.PostBody()
 	if err := e.service.UploadChunk(ctx, storageID, chunkIndex, bytes.NewReader(body)); err != nil {
 		ctx.Error(err.Error(), fasthttp.StatusBadRequest)
@@ -418,6 +423,10 @@ func (e *Endpoints) CompleteChunkedUpload(ctx *fasthttp.RequestCtx) {
 
 	if stored.UploaderPublicKey != publicKey {
 		ctx.Error("Not authorized", fasthttp.StatusForbidden)
+		return
+	}
+
+	if !e.guardAppWrite(ctx, stored.ApplicationID, publicKey) {
 		return
 	}
 
@@ -594,6 +603,10 @@ func (e *Endpoints) DeleteFile(ctx *fasthttp.RequestCtx) {
 	}
 	appID := stored.ApplicationID
 
+	if !e.guardAppWrite(ctx, appID, publicKey) {
+		return
+	}
+
 	if err := e.service.Delete(ctx, storageID, publicKey); err != nil {
 		errMsg := err.Error()
 		switch {
@@ -672,6 +685,10 @@ func (e *Endpoints) checkAuthorization(ctx *fasthttp.RequestCtx) (appID, publicK
 		return "", "", nil, false
 	}
 
+	if !e.guardAppWrite(ctx, &appID, publicKey) {
+		return "", "", nil, false
+	}
+
 	isMember, err := e.appRepo.IsMember(appID, publicKey)
 	if err != nil {
 		ctx.Error("Failed to verify membership", fasthttp.StatusInternalServerError)
@@ -683,6 +700,20 @@ func (e *Endpoints) checkAuthorization(ctx *fasthttp.RequestCtx) (appID, publicK
 	}
 
 	return appID, publicKey, spaceID, true
+}
+
+func (e *Endpoints) guardAppWrite(ctx *fasthttp.RequestCtx, appID *string, publicKey string) bool {
+	if appID == nil {
+		return true
+	}
+	if err := e.appRepo.MoveGuard(*appID, publicKey, true); err != nil {
+		if !application.WriteMoveError(ctx, err) {
+			log.Error().Err(err).Str("applicationId", *appID).Msg("[STORAGE] Failed to check application move state")
+			ctx.Error("Failed to verify application state", fasthttp.StatusInternalServerError)
+		}
+		return false
+	}
+	return true
 }
 
 func (e *Endpoints) getStorageAndCheckAccess(ctx *fasthttp.RequestCtx) (stored *Storage, publicKey string, ok bool) {

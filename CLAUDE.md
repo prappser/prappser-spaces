@@ -79,6 +79,8 @@ internal/
     repository.go          — Repository (exported concrete struct) implementing ApplicationRepository
     application_service.go — ApplicationService
     application_endpoints.go — ApplicationEndpoints
+    move.go                — MoveService (start/abort/complete app move), WriteMoveError, MovedError
+    move_endpoints.go      — MoveEndpoints: owner-only /applications/{id}/move routes
     application_test.go
     memory_repository.go   — in-memory implementation for tests
   invitation/

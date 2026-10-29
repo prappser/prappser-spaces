@@ -30,7 +30,10 @@ func (r *Repository) CreateApplication(app *Application) error {
 			    icon = EXCLUDED.icon,
 			    space_id = EXCLUDED.space_id,
 			    updated_at = EXCLUDED.updated_at,
-			    deleted_at = NULL`
+			    deleted_at = NULL,
+			    moved_to_url = NULL,
+			    move_invite_token = NULL,
+			    moved_at = NULL`
 
 	_, err := r.db.Exec(query, app.ID, app.Name, app.Icon, app.SpacePublicKey, app.SpaceID, app.CreatedAt, app.UpdatedAt)
 	return err
@@ -824,4 +827,72 @@ func (r *Repository) GetMemberCount(appID string) (int, error) {
 	}
 
 	return count, nil
+}
+
+func (r *Repository) MoveGuard(appID, publicKey string, write bool) error {
+	var movedTo, token sql.NullString
+	var movedAt sql.NullInt64
+	var isMember bool
+	err := r.db.QueryRow(`SELECT a.moved_to_url, a.move_invite_token, a.moved_at,
+			EXISTS(SELECT 1 FROM members m WHERE m.application_id = a.id AND m.public_key = $2 AND `+activeMemberPredicate+`)
+			FROM applications a WHERE a.id = $1`, appID, publicKey).Scan(&movedTo, &token, &movedAt, &isMember)
+	if err == sql.ErrNoRows {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("failed to check move state: %w", err)
+	}
+	if movedAt.Valid {
+		if isMember {
+			return &MovedError{TargetSpaceURL: movedTo.String, InviteToken: token.String}
+		}
+		return nil
+	}
+	if movedTo.Valid && write {
+		return ErrApplicationMoving
+	}
+	return nil
+}
+
+func (r *Repository) StartMove(appID, targetURL string) (int64, error) {
+	result, err := r.db.Exec(`UPDATE applications SET moved_to_url = $2 WHERE id = $1 AND deleted_at IS NULL AND moved_at IS NULL`, appID, targetURL)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+func (r *Repository) AbortMove(appID string) error {
+	_, err := r.db.Exec(`UPDATE applications SET moved_to_url = NULL WHERE id = $1 AND moved_at IS NULL`, appID)
+	return err
+}
+
+// deleted_at = moved_at so the existing purge job hard-deletes the tombstone after 30 days;
+// members stay so they still get the 410.
+func (r *Repository) CompleteMove(appID, targetURL, inviteToken string, now int64) error {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	result, err := tx.Exec(`UPDATE applications SET moved_to_url = $2, move_invite_token = $3, moved_at = $4, deleted_at = $4
+			WHERE id = $1 AND moved_to_url IS NOT NULL AND moved_at IS NULL AND deleted_at IS NULL`, appID, targetURL, inviteToken, now)
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return ErrApplicationNotMoving
+	}
+
+	for _, table := range []string{"events", "components", "component_groups", "invitations"} {
+		if _, err := tx.Exec(`DELETE FROM `+table+` WHERE application_id = $1`, appID); err != nil {
+			return fmt.Errorf("failed to clear %s: %w", table, err)
+		}
+	}
+	return tx.Commit()
 }

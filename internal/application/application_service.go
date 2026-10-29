@@ -77,6 +77,16 @@ func (s *ApplicationService) RegisterApplication(ownerPublicKey string, app *App
 		}
 	}
 
+	if err := s.appRepo.MoveGuard(app.ID, ownerPublicKey, true); err != nil {
+		var moved *MovedError
+		if errors.Is(err, ErrApplicationMoving) {
+			return nil, err
+		}
+		if !errors.As(err, &moved) {
+			return nil, fmt.Errorf("failed to check move state: %w", err)
+		}
+	}
+
 	// Set timestamps
 	now := time.Now().Unix()
 	app.CreatedAt = now
@@ -129,6 +139,9 @@ func (s *ApplicationService) RegisterApplication(ownerPublicKey string, app *App
 }
 
 func (s *ApplicationService) GetApplication(appID string, requestingUser *user.User) (*Application, error) {
+	if err := s.appRepo.MoveGuard(appID, requestingUser.PublicKey, false); err != nil {
+		return nil, err
+	}
 	app, err := s.appRepo.GetApplicationByID(appID)
 	if err != nil {
 		return nil, err
@@ -147,6 +160,9 @@ func (s *ApplicationService) GetApplication(appID string, requestingUser *user.U
 }
 
 func (s *ApplicationService) GetApplicationState(appID string, requestingUser *user.User) (*ApplicationState, error) {
+	if err := s.appRepo.MoveGuard(appID, requestingUser.PublicKey, false); err != nil {
+		return nil, err
+	}
 	state, err := s.appRepo.GetApplicationState(appID)
 	if err != nil {
 		return nil, err
@@ -169,6 +185,9 @@ func (s *ApplicationService) ListApplications(memberPublicKey string) ([]*Applic
 }
 
 func (s *ApplicationService) DeleteApplication(appID string, requestingUser *user.User) error {
+	if err := s.appRepo.MoveGuard(appID, requestingUser.PublicKey, true); err != nil {
+		return err
+	}
 	// First verify the application exists and the user owns it
 	app, err := s.appRepo.GetApplicationByID(appID)
 	if err != nil {
@@ -199,6 +218,10 @@ func (s *ApplicationService) DeleteApplication(appID string, requestingUser *use
 // Clients should submit member_removed or application_deleted events via POST /events.
 // This method is kept for backward compatibility but just performs validation.
 func (s *ApplicationService) LeaveApplication(appID string, requestingUser *user.User) error {
+	if err := s.appRepo.MoveGuard(appID, requestingUser.PublicKey, false); err != nil {
+		return err
+	}
+
 	// Verify user is a member of the application
 	_, err := s.appRepo.GetMemberByPublicKey(appID, requestingUser.PublicKey)
 	if err != nil {
