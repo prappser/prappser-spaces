@@ -22,7 +22,8 @@ type Invitation struct {
 	// MembershipDurationHours is the per-joiner membership lifetime (#117):
 	// when set, Join computes an absolute membership_expires_at from it at
 	// join time rather than storing the duration on the member itself.
-	MembershipDurationHours *int `json:"membershipDurationHours,omitempty"`
+	MembershipDurationHours *int     `json:"membershipDurationHours,omitempty"`
+	MemberPublicKeys        []string `json:"memberPublicKeys,omitempty"`
 }
 
 // InvitationUse tracks when a user joins via an invitation

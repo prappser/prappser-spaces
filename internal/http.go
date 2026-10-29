@@ -92,7 +92,7 @@ func enrollUsernameKey(ctx *fasthttp.RequestCtx) string {
 	return strings.ToLower(username)
 }
 
-func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, statusEndpoints *status.StatusEndpoints, healthEndpoints *health.HealthEndpoints, userService *user.UserService, appEndpoints *application.ApplicationEndpoints, invitationEndpoints *invitation.InvitationEndpoints, eventEndpoints *event.EventEndpoints, setupEndpoints *setup.SetupEndpoints, storageEndpoints *storage.Endpoints, wsHandler *websocket.Handler, spaceEndpoints *space.SpaceEndpoints, pushEndpoints *push.PushEndpoints, profileEndpoints *profile.ProfileEndpoints, deviceEndpoints *user.DeviceEndpoints, passwordEndpoints *user.PasswordEndpoints, assertionEndpoints *user.AssertionEndpoints, ownerClaimEndpoints *user.OwnerClaimEndpoints, keyEndpoints *keys.KeyEndpoints, accountEndpoints *profile.AccountEndpoints, adminEndpoints *admin.AdminEndpoints, registerEndpoints *user.RegisterEndpoints, spaceProfileEndpoints *spaceprofile.SpaceProfileEndpoints) fasthttp.RequestHandler {
+func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, statusEndpoints *status.StatusEndpoints, healthEndpoints *health.HealthEndpoints, userService *user.UserService, appEndpoints *application.ApplicationEndpoints, invitationEndpoints *invitation.InvitationEndpoints, eventEndpoints *event.EventEndpoints, setupEndpoints *setup.SetupEndpoints, storageEndpoints *storage.Endpoints, wsHandler *websocket.Handler, spaceEndpoints *space.SpaceEndpoints, pushEndpoints *push.PushEndpoints, profileEndpoints *profile.ProfileEndpoints, deviceEndpoints *user.DeviceEndpoints, passwordEndpoints *user.PasswordEndpoints, assertionEndpoints *user.AssertionEndpoints, ownerClaimEndpoints *user.OwnerClaimEndpoints, keyEndpoints *keys.KeyEndpoints, accountEndpoints *profile.AccountEndpoints, adminEndpoints *admin.AdminEndpoints, registerEndpoints *user.RegisterEndpoints, spaceProfileEndpoints *spaceprofile.SpaceProfileEndpoints, moveEndpoints *application.MoveEndpoints) fasthttp.RequestHandler {
 	authMiddleware := middleware.NewAuthMiddleware(userService)
 	corsMiddleware := middleware.NewCORSMiddleware(config.AllowedOrigins)
 	ipRateLimiter := middleware.NewRateLimiter(ipRateLimitPerMinute, time.Minute, config.TrustProxyHeaders)
@@ -325,6 +325,29 @@ func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, status
 					ctx.Error("Method Not Allowed", fasthttp.StatusMethodNotAllowed)
 				}
 			} else {
+				ctx.Error("Not Found", fasthttp.StatusNotFound)
+			}
+		case strings.HasPrefix(path, "/applications/") && (strings.HasSuffix(path, "/move") || strings.HasSuffix(path, "/move/complete")):
+			parts := strings.Split(path, "/")
+			switch {
+			case len(parts) == 4 && parts[3] == "move":
+				ctx.SetUserValue("appID", parts[2])
+				switch string(ctx.Method()) {
+				case "POST":
+					authMiddleware.RequireAuth(moveEndpoints.StartMove)(ctx)
+				case "DELETE":
+					authMiddleware.RequireAuth(moveEndpoints.AbortMove)(ctx)
+				default:
+					ctx.Error("Method Not Allowed", fasthttp.StatusMethodNotAllowed)
+				}
+			case len(parts) == 5 && parts[3] == "move" && parts[4] == "complete":
+				ctx.SetUserValue("appID", parts[2])
+				if string(ctx.Method()) == "POST" {
+					authMiddleware.RequireAuth(moveEndpoints.CompleteMove)(ctx)
+				} else {
+					ctx.Error("Method Not Allowed", fasthttp.StatusMethodNotAllowed)
+				}
+			default:
 				ctx.Error("Not Found", fasthttp.StatusNotFound)
 			}
 		case strings.HasPrefix(path, "/applications/"):

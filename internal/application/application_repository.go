@@ -43,4 +43,5 @@ type ApplicationRepository interface {
 	UpdateApplicationMetadata(id, name string, icon *string) error
 	// UpdateLastSequence stores the last processed sequence number for drift detection.
 	UpdateLastSequence(appID string, sequence int64) error
+	MoveGuard(appID, publicKey string, write bool) error
 }

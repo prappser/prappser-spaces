@@ -450,3 +450,7 @@ func (r *MemoryRepository) GetMemberCount(appID string) (int, error) {
 	}
 	return count, nil
 }
+
+func (r *MemoryRepository) MoveGuard(appID, publicKey string, write bool) error {
+	return nil
+}

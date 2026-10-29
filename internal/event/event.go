@@ -13,6 +13,7 @@ const (
 	EventTypeMemberRoleChanged               EventType = "member_role_changed"
 	EventTypeApplicationDataChanged          EventType = "application_data_changed"
 	EventTypeApplicationDeleted              EventType = "application_deleted"
+	EventTypeApplicationMoved                EventType = "application_moved"
 	EventTypeInviteRevoked                   EventType = "invite_revoked"
 	EventTypeComponentDataChanged            EventType = "component_data_changed"
 	EventTypeApplicationAfterEditModeChanged EventType = "application_after_edit_mode_changed"
@@ -97,6 +98,15 @@ type ApplicationDeletedData struct {
 	Version       int    `json:"version"`
 	ApplicationID string `json:"applicationId"`
 	DeletedAt     int64  `json:"deletedAt"`
+}
+
+// ApplicationMovedData represents the data for an application_moved event,
+// produced by the space once a move to another space completed.
+type ApplicationMovedData struct {
+	Version        int    `json:"version"`
+	ApplicationID  string `json:"applicationId"`
+	TargetSpaceURL string `json:"targetSpaceUrl"`
+	InviteToken    string `json:"inviteToken"`
 }
 
 // InviteRevokedData represents the data for an invite_revoked event

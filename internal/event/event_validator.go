@@ -38,6 +38,8 @@ func ValidateEvent(event *Event) error {
 		return validateApplicationDataChangedData(event.Data)
 	case EventTypeApplicationDeleted:
 		return validateApplicationDeletedData(event.Data)
+	case EventTypeApplicationMoved:
+		return validateApplicationMovedData(event.Data)
 	case EventTypeInviteRevoked:
 		return validateInviteRevokedData(event.Data)
 	case EventTypeComponentDataChanged:
@@ -125,6 +127,15 @@ func validateApplicationDataChangedData(data map[string]interface{}) error {
 func validateApplicationDeletedData(data map[string]interface{}) error {
 	if _, ok := data["applicationId"].(string); !ok || data["applicationId"] == "" {
 		return fmt.Errorf("%w: applicationId is required", ErrValidation)
+	}
+	return nil
+}
+
+func validateApplicationMovedData(data map[string]interface{}) error {
+	for _, key := range []string{"applicationId", "targetSpaceUrl", "inviteToken"} {
+		if v, ok := data[key].(string); !ok || v == "" {
+			return fmt.Errorf("%w: %s is required", ErrValidation, key)
+		}
 	}
 	return nil
 }

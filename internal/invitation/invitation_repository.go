@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"fmt"
 	"time"
+
+	"github.com/lib/pq"
 )
 
 // InvitationRepository defines the interface for invitation data access
@@ -28,12 +30,16 @@ func NewInvitationRepository(db *sql.DB) *invitationRepository {
 }
 
 func (r *invitationRepository) Create(invite *Invitation) error {
+	var memberKeys any
+	if len(invite.MemberPublicKeys) > 0 {
+		memberKeys = pq.Array(invite.MemberPublicKeys)
+	}
 	query := `
 		INSERT INTO invitations (
 			id, application_id, created_by_public_key,
 			role, max_uses, used_count, created_at, space_id,
-			grants_membership, grants_identity, membership_duration_hours, grants_space_use, expires_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+			grants_membership, grants_identity, membership_duration_hours, grants_space_use, expires_at, member_public_keys
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 	`
 
 	_, err := r.db.Exec(query,
@@ -50,6 +56,7 @@ func (r *invitationRepository) Create(invite *Invitation) error {
 		invite.MembershipDurationHours,
 		invite.GrantsSpaceUse,
 		invite.ExpiresAt,
+		memberKeys,
 	)
 
 	return err
@@ -59,7 +66,7 @@ func (r *invitationRepository) GetByID(id string) (*Invitation, error) {
 	query := `
 		SELECT id, application_id, created_by_public_key,
 		       role, max_uses, used_count, created_at, space_id,
-		       grants_membership, grants_identity, membership_duration_hours, grants_space_use, expires_at
+		       grants_membership, grants_identity, membership_duration_hours, grants_space_use, expires_at, member_public_keys
 		FROM invitations
 		WHERE id = $1
 	`
@@ -79,6 +86,7 @@ func (r *invitationRepository) GetByID(id string) (*Invitation, error) {
 		&invite.MembershipDurationHours,
 		&invite.GrantsSpaceUse,
 		&invite.ExpiresAt,
+		pq.Array(&invite.MemberPublicKeys),
 	)
 
 	if err == sql.ErrNoRows {
@@ -165,7 +173,7 @@ func (r *invitationRepository) GetByApplicationID(appID string) ([]*Invitation, 
 	query := `
 		SELECT id, application_id, created_by_public_key,
 		       role, max_uses, used_count, created_at, space_id,
-		       grants_membership, grants_identity, membership_duration_hours, grants_space_use, expires_at
+		       grants_membership, grants_identity, membership_duration_hours, grants_space_use, expires_at, member_public_keys
 		FROM invitations
 		WHERE application_id = $1
 		ORDER BY created_at DESC
@@ -194,6 +202,7 @@ func (r *invitationRepository) GetByApplicationID(appID string) ([]*Invitation, 
 			&invite.MembershipDurationHours,
 			&invite.GrantsSpaceUse,
 			&invite.ExpiresAt,
+			pq.Array(&invite.MemberPublicKeys),
 		)
 		if err != nil {
 			return nil, err

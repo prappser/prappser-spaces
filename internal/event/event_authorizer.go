@@ -23,6 +23,7 @@ var (
 //   - invite_revoked: Only owners can revoke invitations
 //   - reminder_changed: Any member can create/edit/cancel a reminder rule
 //   - reminder_fired: Space-produced only; unreachable through AcceptEvent
+//   - application_moved: Space-produced only; unreachable through AcceptEvent
 //
 // Returns ErrUnauthorized if:
 //   - Submitter is nil
@@ -103,6 +104,8 @@ func AuthorizeEvent(event *Event, submitter *user.User, app *application.Applica
 
 	case EventTypeSpaceProfileChanged:
 		return fmt.Errorf("%w: space_profile_changed is space-produced and cannot be submitted by clients", ErrUnauthorized)
+	case EventTypeApplicationMoved:
+		return fmt.Errorf("%w: application_moved is space-produced and cannot be submitted by clients", ErrUnauthorized)
 
 	default:
 		return fmt.Errorf("%w: unknown event type: %s", ErrUnauthorized, event.Type)

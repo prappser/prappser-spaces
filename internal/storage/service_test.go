@@ -155,7 +155,8 @@ type mockAppRepo struct {
 	isMember bool
 }
 
-func (m *mockAppRepo) IsMember(_, _ string) (bool, error) { return m.isMember, nil }
+func (m *mockAppRepo) IsMember(_, _ string) (bool, error)  { return m.isMember, nil }
+func (m *mockAppRepo) MoveGuard(_, _ string, _ bool) error { return nil }
 func (m *mockAppRepo) GetApplicationsByMemberPublicKey(_ string) ([]*application.Application, error) {
 	return nil, nil
 }

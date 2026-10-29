@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/goccy/go-json"
+	"github.com/prappser/prappser-spaces/internal/application"
 	"github.com/prappser/prappser-spaces/internal/user"
 	"github.com/rs/zerolog/log"
 	"github.com/valyala/fasthttp"
@@ -103,6 +104,9 @@ func (ee *EventEndpoints) SubmitEvent(ctx *fasthttp.RequestCtx) {
 
 	acceptedEvent, err := ee.eventService.AcceptEvent(ctx, req.Event, authenticatedUser)
 	if err != nil {
+		if application.WriteMoveError(ctx, err) {
+			return
+		}
 		log.Error().Err(err).Msg("Failed to accept event")
 
 		var statusCode int

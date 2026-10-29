@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -20,6 +21,8 @@ import (
 
 const (
 	MaxExpirationHours = 48
+
+	MaxMemberBoundExpirationHours = 720
 
 	// MaxMembershipDurationHours caps how long a per-joiner membership grant
 	// (#117) can last - one year, matching the space's own general trust
@@ -64,7 +67,8 @@ var (
 	// ErrNotAppAuthorized is returned by AuthorizeAppRole when the caller is
 	// not a member of the application, or holds a role outside the allowed
 	// set (#125) - invitation_endpoints.go maps it to 403.
-	ErrNotAppAuthorized = errors.New("not authorized for this application")
+	ErrNotAppAuthorized   = errors.New("not authorized for this application")
+	ErrInviteNotForMember = errors.New("invitation is not for this account")
 )
 
 // memberNotFoundMsg is the exact error string both application.Repository
@@ -125,6 +129,7 @@ type CreateInvitationOptions struct {
 	// MembershipDurationHours is the per-joiner membership lifetime (#117);
 	// nil means no expiry, matching today's behavior.
 	MembershipDurationHours *int
+	MemberPublicKeys        []string
 }
 
 // CreateInvitation creates a new invitation and generates a JWT token
@@ -141,9 +146,15 @@ func (s *InvitationService) CreateInvitation(opts CreateInvitationOptions) (*Inv
 	}
 
 	// Validate expiration
+	maxExpiry := MaxExpirationHours
+	if len(opts.MemberPublicKeys) > 0 {
+		maxExpiry = MaxMemberBoundExpirationHours
+		n := len(opts.MemberPublicKeys)
+		opts.MaxUses = &n
+	}
 	if opts.ExpiresInHours != nil {
-		if *opts.ExpiresInHours < 0 || *opts.ExpiresInHours > MaxExpirationHours {
-			return nil, fmt.Errorf("expiration hours must be between 0 and %d", MaxExpirationHours)
+		if *opts.ExpiresInHours < 0 || *opts.ExpiresInHours > maxExpiry {
+			return nil, fmt.Errorf("expiration hours must be between 0 and %d", maxExpiry)
 		}
 	}
 
@@ -206,6 +217,7 @@ func (s *InvitationService) CreateInvitation(opts CreateInvitationOptions) (*Inv
 		GrantsIdentity:          grantsIdentity,
 		GrantsSpaceUse:          grantsSpaceUse,
 		MembershipDurationHours: opts.MembershipDurationHours,
+		MemberPublicKeys:        opts.MemberPublicKeys,
 	}
 
 	// Save to database
@@ -728,6 +740,14 @@ func (s *InvitationService) Join(tokenString, proof, assertion, deviceName strin
 		return nil, fmt.Errorf("invitation has reached maximum uses")
 	}
 
+	if err := s.appRepo.MoveGuard(invite.ApplicationID, userPublicKey, true); err != nil {
+		return nil, err
+	}
+	if len(invite.MemberPublicKeys) > 0 && !slices.Contains(invite.MemberPublicKeys, userPublicKey) {
+		log.Debug().Str("inviteId", invite.ID).Msg("[JOIN] Join failed: key not on the invitation member list")
+		return nil, ErrInviteNotForMember
+	}
+
 	// [D7] A preview-only invite never mints membership - reject before any
 	// write. Defence in depth: no real membership-free preview exists yet,
 	// this is what actually enforces the flag today.
@@ -1093,7 +1113,8 @@ func (s *InvitationService) Join(tokenString, proof, assertion, deviceName strin
 // ponytail: soft cap, count-then-insert, so parallel joins can overshoot; take an
 // advisory lock inside a tx if it must be exact.
 func (s *InvitationService) signupBlocked(invite *Invitation) error {
-	if s.SingleUseSignup && (invite.MaxUses == nil || *invite.MaxUses != 1) {
+	// Member-bound invites already limit who may join, so a multi-member move must not hit the single-use gate.
+	if s.SingleUseSignup && len(invite.MemberPublicKeys) == 0 && (invite.MaxUses == nil || *invite.MaxUses != 1) {
 		return ErrSingleUseInviteRequired
 	}
 	if s.MaxAccounts > 0 {

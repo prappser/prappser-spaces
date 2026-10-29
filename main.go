@@ -223,6 +223,7 @@ func main() {
 
 	storageService := storage.NewService(storageRepo, storageBackend, config.Storage.MaxFileSize, config.Storage.AccountQuota)
 	invitationEndpoints := invitation.NewInvitationEndpoints(invitationService, storageService, config.ExternalURL)
+	moveEndpoints := application.NewMoveEndpoints(application.NewMoveService(appRepository, eventService, storageService))
 	storageEndpoints := storage.NewEndpoints(storageService, appRepository, eventService, userRepository, config.ExternalURL)
 	log.Info().Str("storageType", config.Storage.StorageType).Str("localPath", config.Storage.LocalPath).Msg("Storage service initialized")
 
@@ -254,7 +255,7 @@ func main() {
 
 	adminEndpoints := admin.NewAdminEndpoints(admin.NewRepository(db), admin.Limits{AccountQuotaBytes: config.Storage.AccountQuota, MaxAppsPerAccount: config.MaxAppsPerAccount})
 
-	requestHandler := internal.NewRequestHandler(config, userEndpoints, statusEndpoints, healthEndpoints, userService, appEndpoints, invitationEndpoints, eventEndpoints, setupEndpoints, storageEndpoints, wsHandler, spaceEndpoints, pushEndpoints, profileEndpoints, deviceEndpoints, passwordEndpoints, assertionEndpoints, ownerClaimEndpoints, keyEndpoints, accountEndpoints, adminEndpoints, registerEndpoints, spaceprofile.NewSpaceProfileEndpoints(spaceProfileRepository, storageRepo, eventService))
+	requestHandler := internal.NewRequestHandler(config, userEndpoints, statusEndpoints, healthEndpoints, userService, appEndpoints, invitationEndpoints, eventEndpoints, setupEndpoints, storageEndpoints, wsHandler, spaceEndpoints, pushEndpoints, profileEndpoints, deviceEndpoints, passwordEndpoints, assertionEndpoints, ownerClaimEndpoints, keyEndpoints, accountEndpoints, adminEndpoints, registerEndpoints, spaceprofile.NewSpaceProfileEndpoints(spaceProfileRepository, storageRepo, eventService), moveEndpoints)
 
 	serverAddr := fmt.Sprintf(":%s", config.Port)
 	log.Info().Str("addr", serverAddr).Msg("Starting HTTP server")
