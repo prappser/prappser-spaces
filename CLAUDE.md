@@ -112,6 +112,9 @@ internal/
     admin.go               — Overview, Limits, AccountOverview (metadata-only account view)
     admin_repository.go    — Repository: one SQL aggregate over users, storage, members, devices
     admin_endpoints.go     — AdminEndpoints: owner-only GET /space/accounts
+  spaceprofile/
+    spaceprofile.go        — Profile: the owner's name and image for this space, served in GET /status
+    spaceprofile_endpoints.go — owner-only PUT /space/profile; fans out space_profile_changed to every app
   health/
     health.go              — HealthEndpoints
   status/

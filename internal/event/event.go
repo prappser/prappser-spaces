@@ -29,6 +29,10 @@ const (
 	// EventTypeTemplateChanged carries the current state of one account-owned
 	// template row (tombstones included) between an account's own devices.
 	EventTypeTemplateChanged EventType = "template_changed"
+	// EventTypeSpaceProfileChanged is space-produced only, fanned out to every
+	// app when the owner changes the space's name or image. It carries no
+	// profile: clients re-read it from GET /status.
+	EventTypeSpaceProfileChanged EventType = "space_profile_changed"
 )
 
 // IsUserScoped returns true for event types that are user-scoped (no applicationId)

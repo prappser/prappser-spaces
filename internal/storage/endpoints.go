@@ -534,6 +534,10 @@ var avatarContentTypes = map[string]bool{
 	"image/webp": true,
 }
 
+func IsAvatarContentType(contentType string) bool {
+	return avatarContentTypes[contentType]
+}
+
 // sanitizeFilenameForHeader strips characters that would let a stored
 // filename break out of the quoted Content-Disposition header value.
 // Filenames are user-controlled and are spliced into the header unescaped.

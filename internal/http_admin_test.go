@@ -24,7 +24,7 @@ func newRoleTestRequestHandler(t *testing.T, dbUser, jwtUser *user.User, adminEn
 	token, _, err := userService.GenerateJWT(jwtUser, dbUser.PublicKey)
 	assert.NoError(t, err)
 
-	handler := NewRequestHandler(&Config{TrustProxyHeaders: true}, nil, nil, nil, userService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, adminEndpoints, nil)
+	handler := NewRequestHandler(&Config{TrustProxyHeaders: true}, nil, nil, nil, userService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, adminEndpoints, nil, nil)
 	return handler, token
 }
 

@@ -572,6 +572,9 @@ func (s *EventService) executeEvent(ctx context.Context, event *Event) error {
 	case "user_settings_changed":
 		log.Debug().Str("eventId", event.ID).Msg("[EVENT] Handler: user_settings_changed")
 		return s.executeUserSettingsChanged(event)
+	case EventTypeSpaceProfileChanged:
+		log.Debug().Str("eventId", event.ID).Msg("[EVENT] Handler: space_profile_changed (no-op)")
+		return nil
 	case "member_details_changed":
 		// Future: update member record
 		log.Debug().Str("eventId", event.ID).Msg("[EVENT] Handler: member_details_changed (no-op)")

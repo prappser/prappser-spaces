@@ -4,6 +4,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/prappser/prappser-spaces/internal/application"
 	"github.com/prappser/prappser-spaces/internal/user"
 )
 
@@ -53,5 +54,20 @@ func TestAuthorizeUserScopedEvent_TemplateChanged_ForgedCreatorPublicKey(t *test
 	err := AuthorizeUserScopedEvent(evt, submitter)
 	if !errors.Is(err, ErrUnauthorized) {
 		t.Fatalf("Expected ErrUnauthorized for forged creatorPublicKey, got: %v", err)
+	}
+}
+
+func TestAuthorizeEvent_SpaceProfileChanged_ShouldRejectClientSubmission(t *testing.T) {
+	// given
+	submitter := &user.User{PublicKey: "pk-1"}
+	app := &application.Application{ID: "app-1", Members: []application.Member{{PublicKey: "pk-1", Role: application.MemberRoleOwner}}}
+	evt := &Event{Type: EventTypeSpaceProfileChanged, Data: map[string]interface{}{"applicationId": "app-1"}}
+
+	// when
+	err := AuthorizeEvent(evt, submitter, app)
+
+	// then
+	if !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("Expected ErrUnauthorized for a client-submitted space_profile_changed, got: %v", err)
 	}
 }
