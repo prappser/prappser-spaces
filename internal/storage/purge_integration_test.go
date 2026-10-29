@@ -149,6 +149,8 @@ func TestPurgeUnreferenced_ShouldDeleteOnlyOldUnreferencedBlobs_Integration(t *t
 	const appID, userKey = "unref-app", "unref-pk"
 	_, err = db.Exec(`UPDATE users SET avatar_storage_id = NULL WHERE public_key = $1`, userKey)
 	require.NoError(t, err)
+	_, err = db.Exec(`DELETE FROM space_profile`)
+	require.NoError(t, err)
 	_, err = db.Exec(`DELETE FROM storage WHERE id LIKE 'unref-%'`)
 	require.NoError(t, err)
 	_, err = db.Exec(`DELETE FROM events WHERE application_id = $1`, appID)
@@ -174,7 +176,7 @@ func TestPurgeUnreferenced_ShouldDeleteOnlyOldUnreferencedBlobs_Integration(t *t
 		require.NoError(t, err)
 	}
 
-	survivors := []string{"unref-files", "unref-quill", "unref-event", "unref-icon", "unref-avatar", "unref-recent", "unref-pending", "unref-thumb", "unref-new"}
+	survivors := []string{"unref-files", "unref-quill", "unref-event", "unref-icon", "unref-avatar", "unref-space-image", "unref-recent", "unref-pending", "unref-thumb", "unref-new"}
 	for _, id := range survivors {
 		status := "ready"
 		if id == "unref-pending" {
@@ -203,6 +205,8 @@ func TestPurgeUnreferenced_ShouldDeleteOnlyOldUnreferencedBlobs_Integration(t *t
 	_, err = db.Exec(`UPDATE applications SET icon = 'storage:unref-icon' WHERE id = $1`, appID)
 	require.NoError(t, err)
 	_, err = db.Exec(`UPDATE users SET avatar_storage_id = 'unref-avatar' WHERE public_key = $1`, userKey)
+	require.NoError(t, err)
+	_, err = db.Exec(`INSERT INTO space_profile (id, name, avatar_storage_id) VALUES (1, 'Family', 'unref-space-image')`)
 	require.NoError(t, err)
 
 	// when

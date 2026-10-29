@@ -58,6 +58,11 @@ func ValidateEvent(event *Event) error {
 		return validateReminderChangedData(event.Data)
 	case EventTypeReminderFired:
 		return validateReminderFiredData(event.Data)
+	case EventTypeSpaceProfileChanged:
+		if appID, ok := event.Data["applicationId"].(string); !ok || appID == "" {
+			return fmt.Errorf("%w: applicationId is required", ErrValidation)
+		}
+		return nil
 	case EventTypeTemplateChanged:
 		return validateTemplateChangedData(event.Data)
 	default:

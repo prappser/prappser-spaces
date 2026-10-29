@@ -6,6 +6,7 @@ import (
 
 	"github.com/goccy/go-json"
 	"github.com/prappser/prappser-spaces/internal/keys"
+	"github.com/prappser/prappser-spaces/internal/spaceprofile"
 	"github.com/rs/zerolog/log"
 	"github.com/valyala/fasthttp"
 )
@@ -16,6 +17,10 @@ type StorageUsageGetter interface {
 	GetTotalUsedBytes() (int64, error)
 }
 
+type ProfileGetter interface {
+	Get() (spaceprofile.Profile, error)
+}
+
 type StatusEndpoints struct {
 	version          string
 	maxFileSizeBytes int64
@@ -23,12 +28,13 @@ type StatusEndpoints struct {
 	storageRepo      StorageUsageGetter
 	externalURL      string
 	keyService       *keys.KeyService
+	profile          ProfileGetter
 }
 
 // NewEndpoints creates a new StatusEndpoints. keyService is nil-safe (see
 // Status) so callers that don't need identityPublicKey/lastSeenAt (e.g.
-// tests) can pass nil.
-func NewEndpoints(version string, maxFileSizeBytes, chunkSizeBytes int64, storageRepo StorageUsageGetter, externalURL string, keyService *keys.KeyService) *StatusEndpoints {
+// tests) can pass nil. profile is nil-safe the same way.
+func NewEndpoints(version string, maxFileSizeBytes, chunkSizeBytes int64, storageRepo StorageUsageGetter, externalURL string, keyService *keys.KeyService, profile ProfileGetter) *StatusEndpoints {
 	return &StatusEndpoints{
 		version:          version,
 		maxFileSizeBytes: maxFileSizeBytes,
@@ -36,6 +42,7 @@ func NewEndpoints(version string, maxFileSizeBytes, chunkSizeBytes int64, storag
 		storageRepo:      storageRepo,
 		externalURL:      externalURL,
 		keyService:       keyService,
+		profile:          profile,
 	}
 }
 
@@ -55,6 +62,9 @@ type StatusResponse struct {
 	IdentityPublicKey string `json:"identityPublicKey"`
 	LastSeenAt        int64  `json:"lastSeenAt"`
 	UptimeSeconds     int    `json:"uptimeSeconds"`
+	// The owner's name and image for this space (#309). Name is "" until set.
+	Name            string  `json:"name"`
+	AvatarStorageID *string `json:"avatarStorageId"`
 }
 
 func (se *StatusEndpoints) Status(ctx *fasthttp.RequestCtx) {
@@ -79,6 +89,15 @@ func (se *StatusEndpoints) Status(ctx *fasthttp.RequestCtx) {
 	if se.keyService != nil {
 		response.IdentityPublicKey = se.keyService.PublicKeyBase64()
 		response.LastSeenAt = se.keyService.LastSeenAt()
+	}
+	if se.profile != nil {
+		profile, err := se.profile.Get()
+		if err != nil {
+			log.Error().Err(err).Msg("Failed to get space profile")
+		} else {
+			response.Name = profile.Name
+			response.AvatarStorageID = profile.AvatarStorageID
+		}
 	}
 
 	ctx.SetContentType("application/json")

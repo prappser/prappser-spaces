@@ -305,7 +305,8 @@ func (r *Repository) DeleteStalePending(olderThanSeconds int64) (int, error) {
 const referencedPredicate = `(EXISTS (SELECT 1 FROM components c WHERE strpos(c.data, s.id) > 0)
 	OR EXISTS (SELECT 1 FROM events e WHERE strpos(e.data, s.id) > 0)
 	OR EXISTS (SELECT 1 FROM applications a WHERE strpos(a.icon, s.id) > 0)
-	OR EXISTS (SELECT 1 FROM users u WHERE u.avatar_storage_id = s.id))`
+	OR EXISTS (SELECT 1 FROM users u WHERE u.avatar_storage_id = s.id)
+	OR EXISTS (SELECT 1 FROM space_profile p WHERE p.avatar_storage_id = s.id))`
 
 func (r *Repository) MarkReferenced(ctx context.Context, now int64) error {
 	_, err := r.db.ExecContext(ctx, `UPDATE storage s SET last_referenced_at = $1

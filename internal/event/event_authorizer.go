@@ -101,6 +101,9 @@ func AuthorizeEvent(event *Event, submitter *user.User, app *application.Applica
 	case EventTypeReminderFired:
 		return fmt.Errorf("%w: reminder_fired is space-produced and cannot be submitted by clients", ErrUnauthorized)
 
+	case EventTypeSpaceProfileChanged:
+		return fmt.Errorf("%w: space_profile_changed is space-produced and cannot be submitted by clients", ErrUnauthorized)
+
 	default:
 		return fmt.Errorf("%w: unknown event type: %s", ErrUnauthorized, event.Type)
 	}
