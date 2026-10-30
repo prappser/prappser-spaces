@@ -421,6 +421,7 @@ type deviceResponse struct {
 	CreatedAt       int64   `json:"createdAt"`
 	LastSeenAt      *int64  `json:"lastSeenAt,omitempty"`
 	IsCurrent       bool    `json:"isCurrent"`
+	Kind            string  `json:"kind"`
 }
 
 // ListDevices handles GET /users/devices. Requires auth; returns the
@@ -442,7 +443,12 @@ func (de *DeviceEndpoints) ListDevices(ctx *fasthttp.RequestCtx) {
 
 	resp := make([]deviceResponse, 0, len(devices))
 	for _, d := range devices {
+		kind := d.Kind
+		if kind == "" {
+			kind = DeviceKindHuman
+		}
 		resp = append(resp, deviceResponse{
+			Kind:            kind,
 			DevicePublicKey: d.DevicePublicKey,
 			DeviceName:      d.DeviceName,
 			CreatedAt:       d.CreatedAt,

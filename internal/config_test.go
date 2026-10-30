@@ -127,3 +127,54 @@ func TestLoadConfig_StoragePathSet_ShouldMarkExplicit(t *testing.T) {
 	assert.True(t, config.Storage.LocalPathExplicit)
 	assert.Equal(t, "/data", config.Storage.LocalPath)
 }
+
+func TestLoadConfig_MCPEnabledUnset_ShouldDefaultToOff(t *testing.T) {
+	// given
+	t.Setenv("MCP_ENABLED", "")
+
+	// when
+	config, err := LoadConfig()
+
+	// then
+	require.NoError(t, err)
+	assert.False(t, config.MCPEnabled)
+}
+
+func TestLoadConfig_MCPEnabledTrue_ShouldEnable(t *testing.T) {
+	// given
+	t.Setenv("MCP_ENABLED", "true")
+	t.Setenv("EXTERNAL_URL", "https://space.example.com")
+
+	// when
+	config, err := LoadConfig()
+
+	// then
+	require.NoError(t, err)
+	assert.True(t, config.MCPEnabled)
+}
+
+func TestLoadConfig_MCPEnabledInvalid_ShouldStayOff(t *testing.T) {
+	// given
+	t.Setenv("MCP_ENABLED", "maybe")
+	t.Setenv("EXTERNAL_URL", "https://space.example.com")
+
+	// when
+	config, err := LoadConfig()
+
+	// then
+	require.NoError(t, err)
+	assert.False(t, config.MCPEnabled)
+}
+
+func TestLoadConfig_MCPEnabledWithoutExternalURL_ShouldStayOff(t *testing.T) {
+	// given
+	t.Setenv("MCP_ENABLED", "true")
+	t.Setenv("EXTERNAL_URL", "")
+
+	// when
+	config, err := LoadConfig()
+
+	// then
+	require.NoError(t, err)
+	assert.False(t, config.MCPEnabled)
+}

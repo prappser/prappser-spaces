@@ -77,7 +77,15 @@ type Device struct {
 	CreatedAt       int64   `json:"createdAt"`
 	LastSeenAt      *int64  `json:"lastSeenAt,omitempty"`
 	RevokedAt       *int64  `json:"revokedAt,omitempty"`
+	Kind            string  `json:"kind"`
 }
+
+const (
+	DeviceKindHuman = "human"
+	DeviceKindAgent = "agent"
+
+	accessTokenTyp = "at+jwt"
+)
 
 type UserRepository interface {
 	CreateUser(user *User) error

@@ -102,6 +102,10 @@ func (us *UserService) ValidateJWT(tokenString string) (*User, error) {
 		return nil, err
 	}
 
+	if typ, _ := token.Header["typ"].(string); strings.EqualFold(typ, accessTokenTyp) {
+		return nil, fmt.Errorf("access token cannot authenticate")
+	}
+
 	if claims, ok := token.Claims.(*JWTClaims); ok && token.Valid {
 		user, err := us.userRepository.GetUserByPublicKey(claims.UserPublicKey)
 		if err != nil {
@@ -124,7 +128,7 @@ func (us *UserService) ValidateJWT(tokenString string) (*User, error) {
 		if err != nil {
 			return nil, err
 		}
-		if device == nil || device.RevokedAt != nil {
+		if device == nil || device.RevokedAt != nil || device.Kind == DeviceKindAgent {
 			return nil, fmt.Errorf("device not found or revoked")
 		}
 
