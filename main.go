@@ -250,7 +250,7 @@ func main() {
 	passwordEndpoints := user.NewPasswordEndpoints(userRepository, saltSecret, verifierKey)
 	ownerClaimEndpoints := user.NewOwnerClaimEndpoints(userRepository, verifierKey, time.Now(), &spaceCreatorAdapter{service: spaceService})
 	registerEndpoints := user.NewRegisterEndpoints(userRepository, verifierKey, config.OpenRegistration, config.MaxAccounts)
-	healthEndpoints := health.NewEndpoints("1.0.0", registerEndpoints.RegistrationOpen)
+	healthEndpoints := health.NewEndpoints("1.0.0", registerEndpoints.RegistrationOpen, config.MCPEnabled)
 	assertionEndpoints := user.NewAssertionEndpoints(userRepository, privateKey, spacePublicKeyString)
 
 	adminEndpoints := admin.NewAdminEndpoints(admin.NewRepository(db), admin.Limits{AccountQuotaBytes: config.Storage.AccountQuota, MaxAppsPerAccount: config.MaxAppsPerAccount})

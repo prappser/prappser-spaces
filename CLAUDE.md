@@ -26,7 +26,7 @@ docker compose up -d && go test -tags=integration ./internal/... .  # Integratio
 | `DATABASE_URL` | Yes | — | PostgreSQL connection string |
 | `MASTER_PASSWORD` | No | — | Legacy. Only used once to migrate an existing space's encrypted `space_keys` row into the key file, and to allow rollback to an older image |
 | `PORT` | No | `4545` | HTTP listen port |
-| `EXTERNAL_URL` | No | `http://localhost:{PORT}` | Public URL for invite links |
+| `EXTERNAL_URL` | No | — | Public URL for invite links |
 | `ALLOWED_ORIGINS` | No | prappser.app + localhost:* | Comma-separated CORS origins |
 | `LOG_LEVEL` | No | `info` | debug/info/warn/error |
 | `STORAGE_TYPE` | No | `local` | `local` or `s3` |
@@ -36,6 +36,7 @@ docker compose up -d && go test -tags=integration ./internal/... .  # Integratio
 | `SIGNUP_SINGLE_USE_INVITES` | No | `false` | `true` = a new account can only join through a single-use invite (hosted-space friends beta) |
 | `OPEN_REGISTRATION` | No | `false` | `true` = anyone can create a `user` account with username + password via `POST /users/register`; capped by `MAX_ACCOUNTS`, 5 attempts/hour per IP |
 | `MAX_ACCOUNTS` | No | `0` | Max accounts on the space, owner included; `0` = off. Full space refuses new accounts |
+| `MCP_ENABLED` | No | `false` | `true` = agents can connect over MCP; requires `EXTERNAL_URL`; reported on `/health` as `mcpEnabled` |
 | `SPACE_IDENTITY_IMPORT` | No | — | Import-only; `PRAPSPACE1...` blob from `POST /space/identity/export`, set during a hosting move (see `docs/hosting/selfhost.md`) |
 | `SPACE_IDENTITY_IMPORT_PASSPHRASE` | No | — | Passphrase that decrypts `SPACE_IDENTITY_IMPORT` |
 
@@ -63,6 +64,8 @@ internal/
     user.go                — User struct, UserRepository interface, UserEndpoints struct, Config
     user_repository.go     — userRepository (unexported) implementing UserRepository
     user_service.go        — UserService: JWT generation/validation
+    agent_repository.go    — agentRepository (unexported): agent devices and agent_refresh_tokens SQL
+    agent_service.go       — AgentService: agent tokens (IssueTokens, Refresh, ValidateAccessToken)
     user_test.go
     owner/                 — JWE/JWS decryption for owner registration
   event/

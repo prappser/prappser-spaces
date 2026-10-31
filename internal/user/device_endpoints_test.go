@@ -986,3 +986,27 @@ func TestRenameDevice_ShouldReturn401WhenUnauthenticated(t *testing.T) {
 	// then
 	assert.Equal(t, fasthttp.StatusUnauthorized, ctx.Response.StatusCode())
 }
+
+func TestListDevices_ShouldIncludeKind(t *testing.T) {
+	// given: the human device has no Kind set, as mock-built devices do
+	repo := newDeviceTestRepo()
+	repo.devices["device-human"] = &Device{DevicePublicKey: "device-human", UserPublicKey: "account-1"}
+	repo.devices["device-agent"] = &Device{DevicePublicKey: "device-agent", UserPublicKey: "account-1", Kind: DeviceKindAgent}
+	de := NewDeviceEndpoints(repo, nil, "space-key")
+	ctx := &fasthttp.RequestCtx{}
+	ctx.SetUserValue("user", &User{PublicKey: "account-1", DevicePublicKey: "device-human"})
+
+	// when
+	de.ListDevices(ctx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusOK, ctx.Response.StatusCode())
+	var resp []deviceResponse
+	assert.NoError(t, json.Unmarshal(ctx.Response.Body(), &resp))
+	kinds := map[string]string{}
+	for _, d := range resp {
+		kinds[d.DevicePublicKey] = d.Kind
+	}
+	assert.Equal(t, DeviceKindHuman, kinds["device-human"])
+	assert.Equal(t, DeviceKindAgent, kinds["device-agent"])
+}

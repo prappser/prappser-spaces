@@ -68,3 +68,59 @@ func TestValidateJWT_ShouldAcceptLegacyTokenWithEmptyDevicePublicKeyClaim(t *tes
 	assert.NotNil(t, user)
 	assert.Equal(t, "account-1", user.DevicePublicKey)
 }
+
+func TestValidateJWT_ShouldRejectAccessTokenTyp(t *testing.T) {
+	// given
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	assert.NoError(t, err)
+
+	repo := newDeviceTestRepo()
+	repo.accounts["account-1"] = &User{PublicKey: "account-1", Username: "alice", Role: RoleUser}
+	repo.devices["device-1"] = &Device{DevicePublicKey: "device-1", UserPublicKey: "account-1", Kind: DeviceKindHuman}
+
+	claims := JWTClaims{
+		UserPublicKey:   "account-1",
+		DevicePublicKey: "device-1",
+		Username:        "alice",
+		Role:            RoleUser,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			NotBefore: jwt.NewNumericDate(time.Now()),
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
+	token.Header["typ"] = accessTokenTyp
+	signed, err := token.SignedString(priv)
+	assert.NoError(t, err)
+
+	svc := NewUserService(repo, nil, Config{JWTExpirationHours: 24}, priv, pub)
+
+	// when
+	user, err := svc.ValidateJWT(signed)
+
+	// then
+	assert.Error(t, err)
+	assert.Nil(t, user)
+}
+
+func TestValidateJWT_ShouldRejectAgentDevice(t *testing.T) {
+	// given
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	assert.NoError(t, err)
+
+	repo := newDeviceTestRepo()
+	repo.accounts["account-1"] = &User{PublicKey: "account-1", Username: "alice", Role: RoleUser}
+	repo.devices["device-1"] = &Device{DevicePublicKey: "device-1", UserPublicKey: "account-1", Kind: DeviceKindAgent}
+
+	svc := NewUserService(repo, nil, Config{JWTExpirationHours: 24}, priv, pub)
+	token, _, err := svc.GenerateJWT(repo.accounts["account-1"], "device-1")
+	assert.NoError(t, err)
+
+	// when
+	user, err := svc.ValidateJWT(token)
+
+	// then
+	assert.Error(t, err)
+	assert.Nil(t, user)
+}

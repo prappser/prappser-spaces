@@ -190,3 +190,69 @@ func TestVerifyDelegation_AccountKeySelfDelegation_Integration(t *testing.T) {
 	_, err = de.verifyDelegation(buildJWS("test-devrepo-selfdeleg-jti-2"), "test-devrepo-selfdeleg-enrolling-device")
 	assert.Error(t, err)
 }
+
+func TestUserRepository_ListDevices_ShouldReturnKind_Integration(t *testing.T) {
+	// given: one human device and one agent device for the same account
+	db := getTestDB(t)
+	defer db.Close()
+	repo := NewUserRepository(db)
+	if _, err := db.Exec(
+		"INSERT INTO users (public_key, username, role, created_at, issuer) VALUES ($1,$2,$3,$4,$1) ON CONFLICT DO NOTHING",
+		"test-devrepo-kind-user", "alice", "user", time.Now().Unix(),
+	); err != nil {
+		t.Fatalf("Failed to insert test user: %v", err)
+	}
+	assert.NoError(t, repo.EnsureDevice("test-devrepo-kind-human", "test-devrepo-kind-user", nil, time.Now().Unix()))
+	if _, err := db.Exec(
+		`INSERT INTO user_devices (device_public_key, user_public_key, created_at, kind) VALUES ($1,$2,$3,'agent') ON CONFLICT DO NOTHING`,
+		"test-devrepo-kind-agent", "test-devrepo-kind-user", time.Now().Unix(),
+	); err != nil {
+		t.Fatalf("Failed to insert agent device: %v", err)
+	}
+
+	// when
+	devices, err := repo.ListDevices("test-devrepo-kind-user")
+
+	// then
+	assert.NoError(t, err)
+	kinds := map[string]string{}
+	for _, d := range devices {
+		kinds[d.DevicePublicKey] = d.Kind
+	}
+	assert.Equal(t, DeviceKindHuman, kinds["test-devrepo-kind-human"])
+	assert.Equal(t, DeviceKindAgent, kinds["test-devrepo-kind-agent"])
+}
+
+func TestUserRepository_RevokeDevice_ShouldDeleteAgentRefreshToken_Integration(t *testing.T) {
+	// given: an agent device holding a refresh token
+	db := getTestDB(t)
+	defer db.Close()
+	repo := NewUserRepository(db)
+	if _, err := db.Exec(
+		"INSERT INTO users (public_key, username, role, created_at, issuer) VALUES ($1,$2,$3,$4,$1) ON CONFLICT DO NOTHING",
+		"test-devrepo-kind-rt-user", "alice", "user", time.Now().Unix(),
+	); err != nil {
+		t.Fatalf("Failed to insert test user: %v", err)
+	}
+	if _, err := db.Exec(
+		`INSERT INTO user_devices (device_public_key, user_public_key, created_at, kind) VALUES ($1,$2,$3,'agent') ON CONFLICT DO NOTHING`,
+		"test-devrepo-kind-rt-agent", "test-devrepo-kind-rt-user", time.Now().Unix(),
+	); err != nil {
+		t.Fatalf("Failed to insert agent device: %v", err)
+	}
+	if _, err := db.Exec(
+		`INSERT INTO agent_refresh_tokens (device_public_key, token_hash, expires_at) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`,
+		"test-devrepo-kind-rt-agent", "test-devrepo-kind-rt-hash", time.Now().Unix()+3600,
+	); err != nil {
+		t.Fatalf("Failed to insert refresh token: %v", err)
+	}
+
+	// when
+	err := repo.RevokeDevice("test-devrepo-kind-rt-agent", time.Now().Unix())
+
+	// then
+	assert.NoError(t, err)
+	var n int
+	assert.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM agent_refresh_tokens WHERE device_public_key = $1`, "test-devrepo-kind-rt-agent").Scan(&n))
+	assert.Equal(t, 0, n)
+}

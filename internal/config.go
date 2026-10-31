@@ -31,6 +31,7 @@ type Config struct {
 	OpenRegistration bool
 	// MaxAccounts caps accounts on the space, owner included; 0 means unlimited.
 	MaxAccounts int
+	MCPEnabled bool
 }
 
 type StorageConfig struct {
@@ -222,6 +223,18 @@ func LoadConfig() (*Config, error) {
 		} else {
 			log.Warn().Str("var", "OPEN_REGISTRATION").Str("value", v).Msg("invalid value, registration disabled")
 		}
+	}
+
+	if v := os.Getenv("MCP_ENABLED"); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			config.MCPEnabled = b
+		} else {
+			log.Warn().Str("var", "MCP_ENABLED").Str("value", v).Msg("invalid value, MCP disabled")
+		}
+	}
+	if config.MCPEnabled && config.ExternalURL == "" {
+		log.Warn().Msg("MCP_ENABLED requires EXTERNAL_URL, MCP disabled")
+		config.MCPEnabled = false
 	}
 
 	if maxAccountsStr := os.Getenv("MAX_ACCOUNTS"); maxAccountsStr != "" {

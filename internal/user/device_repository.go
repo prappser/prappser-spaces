@@ -29,10 +29,10 @@ func (r *userRepository) GetDevice(devicePublicKey string) (*Device, error) {
 	var revokedAt sql.NullInt64
 
 	err := r.db.QueryRow(
-		`SELECT device_public_key, user_public_key, device_name, created_at, last_seen_at, revoked_at
+		`SELECT device_public_key, user_public_key, device_name, created_at, last_seen_at, revoked_at, kind
 		 FROM user_devices WHERE device_public_key = $1`,
 		devicePublicKey,
-	).Scan(&d.DevicePublicKey, &d.UserPublicKey, &deviceName, &d.CreatedAt, &lastSeenAt, &revokedAt)
+	).Scan(&d.DevicePublicKey, &d.UserPublicKey, &deviceName, &d.CreatedAt, &lastSeenAt, &revokedAt, &d.Kind)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
@@ -55,7 +55,7 @@ func (r *userRepository) GetDevice(devicePublicKey string) (*Device, error) {
 // ListDevices returns the non-revoked devices for an account.
 func (r *userRepository) ListDevices(userPublicKey string) ([]*Device, error) {
 	rows, err := r.db.Query(
-		`SELECT device_public_key, user_public_key, device_name, created_at, last_seen_at, revoked_at
+		`SELECT device_public_key, user_public_key, device_name, created_at, last_seen_at, revoked_at, kind
 		 FROM user_devices WHERE user_public_key = $1 AND revoked_at IS NULL`,
 		userPublicKey,
 	)
@@ -71,7 +71,7 @@ func (r *userRepository) ListDevices(userPublicKey string) ([]*Device, error) {
 		var lastSeenAt sql.NullInt64
 		var revokedAt sql.NullInt64
 
-		if err := rows.Scan(&d.DevicePublicKey, &d.UserPublicKey, &deviceName, &d.CreatedAt, &lastSeenAt, &revokedAt); err != nil {
+		if err := rows.Scan(&d.DevicePublicKey, &d.UserPublicKey, &deviceName, &d.CreatedAt, &lastSeenAt, &revokedAt, &d.Kind); err != nil {
 			return nil, fmt.Errorf("failed to scan device: %w", err)
 		}
 		if deviceName.Valid {
@@ -117,6 +117,13 @@ func (r *userRepository) RevokeDevice(devicePublicKey string, ts int64) error {
 		devicePublicKey,
 	); err != nil {
 		return fmt.Errorf("failed to delete device push subscriptions: %w", err)
+	}
+
+	if _, err := tx.Exec(
+		`DELETE FROM agent_refresh_tokens WHERE device_public_key = $1`,
+		devicePublicKey,
+	); err != nil {
+		return fmt.Errorf("failed to delete device agent refresh token: %w", err)
 	}
 
 	if err := tx.Commit(); err != nil {
