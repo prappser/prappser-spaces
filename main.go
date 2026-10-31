@@ -182,10 +182,10 @@ func main() {
 	reminderRepository := reminder.NewRepository(db)
 	eventService.SetReminderStore(reminderRepository)
 
-	appService := application.NewApplicationService(appRepository, config.MaxAppsPerAccount)
 	spacePublicKeyString := base64.StdEncoding.EncodeToString(publicKey)
+	appService := application.NewApplicationService(appRepository, config.MaxAppsPerAccount, spacePublicKeyString)
 
-	appEndpoints := application.NewApplicationEndpoints(appService, spacePublicKeyString)
+	appEndpoints := application.NewApplicationEndpoints(appService)
 
 	cleanupScheduler := event.NewCleanupScheduler(eventService, 7)
 	cleanupScheduler.Start()
@@ -199,6 +199,7 @@ func main() {
 	invitationService := invitation.NewInvitationService(invitationRepository, privateKey, publicKey, appRepository, db, userRepository, eventService, spacePublicKeyString)
 	invitationService.SingleUseSignup = config.SignupSingleUseInvites
 	invitationService.MaxAccounts = config.MaxAccounts
+	invitationService.ExternalURL = config.ExternalURL
 
 	setupEndpoints := setup.NewSetupEndpoints(db)
 
@@ -222,7 +223,7 @@ func main() {
 	}
 
 	storageService := storage.NewService(storageRepo, storageBackend, config.Storage.MaxFileSize, config.Storage.AccountQuota)
-	invitationEndpoints := invitation.NewInvitationEndpoints(invitationService, storageService, config.ExternalURL)
+	invitationEndpoints := invitation.NewInvitationEndpoints(invitationService, storageService)
 	moveEndpoints := application.NewMoveEndpoints(application.NewMoveService(appRepository, eventService, storageService))
 	storageEndpoints := storage.NewEndpoints(storageService, appRepository, eventService, userRepository, config.ExternalURL)
 	log.Info().Str("storageType", config.Storage.StorageType).Str("localPath", config.Storage.LocalPath).Msg("Storage service initialized")

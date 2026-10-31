@@ -1,7 +1,8 @@
 package application
 
 type ApplicationRepository interface {
-	CreateApplication(app *Application) error
+	RegisterApplication(app *Application) error
+	HasOtherOwner(appID, publicKey string) (bool, error)
 	GetApplicationByID(id string) (*Application, error)
 	GetApplicationState(id string) (*ApplicationState, error)
 	UpdateApplicationTimestamp(id string) error

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"time"
 
 	"github.com/goccy/go-json"
@@ -15,6 +16,7 @@ var (
 	ErrApplicationMoving    = errors.New("application is moving")
 	ErrApplicationNotMoving = errors.New("application is not moving")
 	ErrNotApplicationOwner  = errors.New("not the application owner")
+	ErrInvalidMoveRequest   = errors.New("invalid move request")
 )
 
 type MovedError struct {
@@ -91,7 +93,15 @@ func (ms *MoveService) authorizeOwner(appID, callerPK string) error {
 	return nil
 }
 
+func validTargetURL(raw string) bool {
+	u, err := url.Parse(raw)
+	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != ""
+}
+
 func (ms *MoveService) StartMove(appID, callerPK, targetURL string) error {
+	if !validTargetURL(targetURL) {
+		return ErrInvalidMoveRequest
+	}
 	if err := ms.authorizeOwner(appID, callerPK); err != nil {
 		return err
 	}
@@ -116,6 +126,9 @@ func (ms *MoveService) AbortMove(appID, callerPK string) error {
 }
 
 func (ms *MoveService) CompleteMove(ctx context.Context, appID, callerPK, targetURL, inviteToken string) error {
+	if !validTargetURL(targetURL) || inviteToken == "" {
+		return ErrInvalidMoveRequest
+	}
 	if err := ms.authorizeOwner(appID, callerPK); err != nil {
 		return err
 	}

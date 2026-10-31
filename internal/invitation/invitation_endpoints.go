@@ -26,18 +26,16 @@ type iconStorageReader interface {
 }
 
 type InvitationEndpoints struct {
-	invitationService   *InvitationService
-	iconResolver        inviteIconResolver
-	iconReader          iconStorageReader
-	externalURLOverride string
+	invitationService *InvitationService
+	iconResolver      inviteIconResolver
+	iconReader        iconStorageReader
 }
 
-func NewInvitationEndpoints(invitationService *InvitationService, storageService iconStorageReader, externalURLOverride string) *InvitationEndpoints {
+func NewInvitationEndpoints(invitationService *InvitationService, storageService iconStorageReader) *InvitationEndpoints {
 	return &InvitationEndpoints{
-		invitationService:   invitationService,
-		iconResolver:        invitationService,
-		iconReader:          storageService,
-		externalURLOverride: externalURLOverride,
+		invitationService: invitationService,
+		iconResolver:      invitationService,
+		iconReader:        storageService,
 	}
 }
 
@@ -86,36 +84,12 @@ func (ie *InvitationEndpoints) CreateInvite(ctx *fasthttp.RequestCtx) {
 		req.Role = "member"
 	}
 
-	// #125: only the application owner may create invites.
-	if err := ie.invitationService.AuthorizeAppRole(appID, authenticatedUser.PublicKey, application.MemberRoleOwner); err != nil {
-		if errors.Is(err, ErrNotAppAuthorized) {
-			ctx.Error("forbidden", fasthttp.StatusForbidden)
-			return
-		}
-		log.Error().Err(err).Msg("Failed to verify application ownership")
-		ctx.Error("Failed to verify application ownership", fasthttp.StatusInternalServerError)
-		return
-	}
-
-	if !ie.guardApp(ctx, appID, authenticatedUser.PublicKey, true) {
-		return
-	}
-
-	if req.GrantsSpaceUse != nil && *req.GrantsSpaceUse && authenticatedUser.Role != user.RoleOwner {
-		log.Error().Str("publicKey", authenticatedUser.PublicKey).Msg("Non-owner tried to grant space use")
-		ctx.Error("only the space owner can grant space use", fasthttp.StatusForbidden)
-		return
-	}
-
-	// Create invitation
 	opts := CreateInvitationOptions{
 		ApplicationID:           appID,
-		CreatedByPublicKey:      authenticatedUser.PublicKey,
 		Role:                    req.Role,
 		MaxUses:                 req.MaxUses,
 		ExpiresInHours:          req.ExpiresInHours,
-		SpaceID:                 spaceIDPtr(authenticatedUser.SpaceID),
-		SpaceURL:                httputil.PublicURL(ctx, ie.externalURLOverride),
+		SpaceURL:                httputil.PublicURL(ctx, ""),
 		GrantsMembership:        req.GrantsMembership,
 		GrantsIdentity:          req.GrantsIdentity,
 		GrantsSpaceUse:          req.GrantsSpaceUse,
@@ -123,10 +97,18 @@ func (ie *InvitationEndpoints) CreateInvite(ctx *fasthttp.RequestCtx) {
 		MemberPublicKeys:        req.MemberPublicKeys,
 	}
 
-	response, err := ie.invitationService.CreateInvitation(opts)
+	response, err := ie.invitationService.CreateInvitation(authenticatedUser, opts)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to create invitation")
-		ctx.Error("Failed to create invitation", fasthttp.StatusInternalServerError)
+		switch {
+		case errors.Is(err, ErrNotAppAuthorized):
+			ctx.Error("forbidden", fasthttp.StatusForbidden)
+		case application.WriteMoveError(ctx, err):
+		case errors.Is(err, ErrSpaceUseNotAllowed):
+			ctx.Error("only the space owner can grant space use", fasthttp.StatusForbidden)
+		default:
+			ctx.Error("Failed to create invitation", fasthttp.StatusInternalServerError)
+		}
 		return
 	}
 
@@ -415,65 +397,24 @@ func (ie *InvitationEndpoints) RevokeInvite(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	// #125: only the application owner may revoke invites.
-	if err := ie.invitationService.AuthorizeAppRole(appID, authenticatedUser.PublicKey, application.MemberRoleOwner); err != nil {
-		if errors.Is(err, ErrNotAppAuthorized) {
-			ctx.Error("forbidden", fasthttp.StatusForbidden)
-			return
-		}
-		log.Error().Err(err).Msg("Failed to verify application ownership")
-		ctx.Error("Failed to verify application ownership", fasthttp.StatusInternalServerError)
-		return
-	}
-
-	if !ie.guardApp(ctx, appID, authenticatedUser.PublicKey, true) {
-		return
-	}
-
-	// Get invitation to verify it exists
-	invite, err := ie.invitationService.repo.GetByID(inviteID)
-	if err != nil {
-		log.Error().Err(err).Msg("Invitation not found")
-		ctx.Error("Invitation not found", fasthttp.StatusNotFound)
-		return
-	}
-
-	// Verify invite belongs to the application
-	if invite.ApplicationID != appID {
-		ctx.Error("Invitation does not belong to this application", fasthttp.StatusBadRequest)
-		return
-	}
-
-	// Revoke invitation (hard delete) and produce the invite_revoked event (#125).
-	// invite was already fetched above, so this doesn't look it up again.
-	if err := ie.invitationService.RevokeInvitation(invite, authenticatedUser.PublicKey); err != nil {
+	if err := ie.invitationService.RevokeInvitation(authenticatedUser, appID, inviteID); err != nil {
 		log.Error().Err(err).Msg("Failed to revoke invitation")
-		ctx.Error("Failed to revoke invitation", fasthttp.StatusInternalServerError)
+		switch {
+		case errors.Is(err, ErrNotAppAuthorized):
+			ctx.Error("forbidden", fasthttp.StatusForbidden)
+		case application.WriteMoveError(ctx, err):
+		case errors.Is(err, ErrInvitationNotFound):
+			ctx.Error("Invitation not found", fasthttp.StatusNotFound)
+		case errors.Is(err, ErrInviteAppMismatch):
+			ctx.Error("Invitation does not belong to this application", fasthttp.StatusBadRequest)
+		default:
+			ctx.Error("Failed to revoke invitation", fasthttp.StatusInternalServerError)
+		}
 		return
 	}
 
 	// Return success (204 No Content)
 	ctx.SetStatusCode(fasthttp.StatusNoContent)
-}
-
-func (ie *InvitationEndpoints) guardApp(ctx *fasthttp.RequestCtx, appID, publicKey string, write bool) bool {
-	err := ie.invitationService.appRepo.MoveGuard(appID, publicKey, write)
-	if err == nil {
-		return true
-	}
-	if !application.WriteMoveError(ctx, err) {
-		log.Error().Err(err).Msg("Failed to check application move state")
-		ctx.Error("Failed to verify application state", fasthttp.StatusInternalServerError)
-	}
-	return false
-}
-
-// spaceIDPtr converts a space ID string to a pointer, returning nil for empty strings.
-func spaceIDPtr(s string) *string {
-	if s == "" {
-		return nil
-	}
-	return &s
 }
 
 // ListInvites handles GET /applications/{appID}/invites
@@ -493,26 +434,16 @@ func (ie *InvitationEndpoints) ListInvites(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	// #125: only the application owner or an admin may list invites.
-	if err := ie.invitationService.AuthorizeAppRole(appID, authenticatedUser.PublicKey, application.MemberRoleOwner, application.MemberRoleAdmin); err != nil {
-		if errors.Is(err, ErrNotAppAuthorized) {
-			ctx.Error("forbidden", fasthttp.StatusForbidden)
-			return
-		}
-		log.Error().Err(err).Msg("Failed to verify application role")
-		ctx.Error("Failed to verify application role", fasthttp.StatusInternalServerError)
-		return
-	}
-
-	if !ie.guardApp(ctx, appID, authenticatedUser.PublicKey, false) {
-		return
-	}
-
-	// Get invites for application
-	invites, err := ie.invitationService.GetInvitesForApp(appID)
+	invites, err := ie.invitationService.GetInvitesForApp(authenticatedUser, appID)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to get invites")
-		ctx.Error("Failed to get invites", fasthttp.StatusInternalServerError)
+		switch {
+		case errors.Is(err, ErrNotAppAuthorized):
+			ctx.Error("forbidden", fasthttp.StatusForbidden)
+		case application.WriteMoveError(ctx, err):
+		default:
+			ctx.Error("Failed to get invites", fasthttp.StatusInternalServerError)
+		}
 		return
 	}
 

@@ -18,11 +18,15 @@ type Repository struct {
 	db *sql.DB
 }
 
+type execer interface {
+	Exec(query string, args ...any) (sql.Result, error)
+}
+
 func NewRepository(db *sql.DB) *Repository {
 	return &Repository{db: db}
 }
 
-func (r *Repository) CreateApplication(app *Application) error {
+func upsertApplication(e execer, app *Application) error {
 	query := `INSERT INTO applications (id, name, icon, space_public_key, space_id, created_at, updated_at)
 			  VALUES ($1, $2, $3, $4, $5, $6, $7)
 			  ON CONFLICT (id) DO UPDATE SET
@@ -35,7 +39,7 @@ func (r *Repository) CreateApplication(app *Application) error {
 			    move_invite_token = NULL,
 			    moved_at = NULL`
 
-	_, err := r.db.Exec(query, app.ID, app.Name, app.Icon, app.SpacePublicKey, app.SpaceID, app.CreatedAt, app.UpdatedAt)
+	_, err := e.Exec(query, app.ID, app.Name, app.Icon, app.SpacePublicKey, app.SpaceID, app.CreatedAt, app.UpdatedAt)
 	return err
 }
 
@@ -209,13 +213,17 @@ func (r *Repository) PurgeApplication(id string, cutoff int64) error {
 }
 
 func (r *Repository) CreateComponentGroup(group *ComponentGroup) error {
+	return upsertComponentGroup(r.db, group)
+}
+
+func upsertComponentGroup(e execer, group *ComponentGroup) error {
 	query := `INSERT INTO component_groups (id, application_id, name, index_order)
 			  VALUES ($1, $2, $3, $4)
 			  ON CONFLICT (id) DO UPDATE SET
 			    name = EXCLUDED.name,
 			    index_order = EXCLUDED.index_order`
 
-	_, err := r.db.Exec(query, group.ID, group.ApplicationID, group.Name, group.Index)
+	_, err := e.Exec(query, group.ID, group.ApplicationID, group.Name, group.Index)
 	return err
 }
 
@@ -243,6 +251,10 @@ func (r *Repository) GetComponentGroupsByApplicationID(appID string) ([]*Compone
 }
 
 func (r *Repository) CreateComponent(component *Component) error {
+	return upsertComponent(r.db, component)
+}
+
+func upsertComponent(e execer, component *Component) error {
 	query := `INSERT INTO components (id, component_group_id, application_id, name, data, index_order)
 			  VALUES ($1, $2, $3, $4, $5, $6)
 			  ON CONFLICT (id) DO UPDATE SET
@@ -259,7 +271,7 @@ func (r *Repository) CreateComponent(component *Component) error {
 		dataJSON = string(dataBytes)
 	}
 
-	_, err := r.db.Exec(query,
+	_, err := e.Exec(query,
 		component.ID,
 		component.ComponentGroupID,
 		component.ApplicationID,
@@ -526,6 +538,10 @@ func (r *Repository) DeleteComponentGroup(groupID string) error {
 }
 
 func (r *Repository) CreateMember(member *Member) error {
+	return upsertMember(r.db, member)
+}
+
+func upsertMember(e execer, member *Member) error {
 	// Conflict target is (application_id, public_key), not id: a re-join
 	// (new event, new member.ID) must update the SAME row for that
 	// application+key pair rather than insert a duplicate - that's what
@@ -535,7 +551,7 @@ func (r *Repository) CreateMember(member *Member) error {
 			  ON CONFLICT (application_id, public_key) DO UPDATE SET
 			    role = EXCLUDED.role, membership_expires_at = EXCLUDED.membership_expires_at`
 
-	_, err := r.db.Exec(query, member.ID, member.ApplicationID, string(member.Role), member.PublicKey, member.MembershipExpiresAt)
+	_, err := e.Exec(query, member.ID, member.ApplicationID, string(member.Role), member.PublicKey, member.MembershipExpiresAt)
 	return err
 }
 
@@ -699,6 +715,44 @@ func (r *Repository) CountOwnedApplications(publicKey string) (int, error) {
 		return 0, err
 	}
 	return count, nil
+}
+
+func (r *Repository) HasOtherOwner(appID, publicKey string) (bool, error) {
+	var other bool
+	err := r.db.QueryRow(`SELECT EXISTS (SELECT 1 FROM members WHERE application_id = $1 AND role = 'owner' AND public_key <> $2)`, appID, publicKey).Scan(&other)
+	return other, err
+}
+
+func (r *Repository) RegisterApplication(app *Application) error {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if err := upsertApplication(tx, app); err != nil {
+		return fmt.Errorf("failed to create application: %w", err)
+	}
+	for _, member := range app.Members {
+		member.ApplicationID = app.ID
+		if err := upsertMember(tx, &member); err != nil {
+			return fmt.Errorf("failed to create member: %w", err)
+		}
+	}
+	for _, group := range app.ComponentGroups {
+		group.ApplicationID = app.ID
+		if err := upsertComponentGroup(tx, &group); err != nil {
+			return fmt.Errorf("failed to create component group: %w", err)
+		}
+		for _, component := range group.Components {
+			component.ComponentGroupID = group.ID
+			component.ApplicationID = app.ID
+			if err := upsertComponent(tx, &component); err != nil {
+				return fmt.Errorf("failed to create component: %w", err)
+			}
+		}
+	}
+	return tx.Commit()
 }
 
 func (r *Repository) IsApplicationLive(id string) (bool, error) {

@@ -47,20 +47,20 @@ func newBoundFixture(t *testing.T) *boundFixture {
 	testdb.InsertTestUser(t, db, boundOwnerPK)
 	appRepo := application.NewRepository(db)
 	now := time.Now().Unix()
-	require.NoError(t, appRepo.CreateApplication(&application.Application{ID: boundAppID, Name: "bound", CreatedAt: now, UpdatedAt: now}))
+	require.NoError(t, appRepo.RegisterApplication(&application.Application{ID: boundAppID, Name: "bound", CreatedAt: now, UpdatedAt: now}))
 	require.NoError(t, appRepo.CreateMember(&application.Member{ID: "m-owner", ApplicationID: boundAppID, Role: application.MemberRoleOwner, PublicKey: boundOwnerPK}))
 
 	userRepo := user.NewUserRepository(db)
 	repo := NewInvitationRepository(db)
 	eventService := event.NewEventService(event.NewEventRepository(db), appRepo, nil, nil)
 	svc := NewInvitationService(repo, priv, pub, appRepo, db, userRepo, eventService, spacePK)
-	return &boundFixture{t: t, db: db, svc: svc, repo: repo, appRepo: appRepo, users: userRepo, ep: NewInvitationEndpoints(svc, nil, "")}
+	return &boundFixture{t: t, db: db, svc: svc, repo: repo, appRepo: appRepo, users: userRepo, ep: NewInvitationEndpoints(svc, nil)}
 }
 
 func (f *boundFixture) invite(opts CreateInvitationOptions) (*InvitationResponse, error) {
 	opts.ApplicationID = boundAppID
-	opts.CreatedByPublicKey = boundOwnerPK
-	return f.svc.CreateInvitation(opts)
+	opts.SpaceURL = "http://space.example"
+	return f.svc.CreateInvitation(&user.User{PublicKey: boundOwnerPK, Role: user.RoleOwner}, opts)
 }
 
 func (f *boundFixture) join(token string, priv ed25519.PrivateKey, keyB64, inviteID string) *fasthttp.RequestCtx {

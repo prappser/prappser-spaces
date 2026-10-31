@@ -25,7 +25,7 @@ func newEndpointTestService(t *testing.T, appID, memberPublicKey string, role ap
 	assert.NoError(t, err)
 
 	appRepo := application.NewMemoryRepository()
-	assert.NoError(t, appRepo.CreateApplication(&application.Application{ID: appID, Name: "Test App"}))
+	assert.NoError(t, appRepo.RegisterApplication(&application.Application{ID: appID, Name: "Test App"}))
 	if role != "" {
 		assert.NoError(t, appRepo.CreateMember(&application.Member{ID: "member-" + memberPublicKey, ApplicationID: appID, PublicKey: memberPublicKey, Role: role}))
 	}
@@ -203,7 +203,7 @@ func TestCreateInvite_ShouldStoreGrantsSpaceUseWhenSpaceOwner(t *testing.T) {
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	assert.NoError(t, err)
 	appRepo := application.NewMemoryRepository()
-	assert.NoError(t, appRepo.CreateApplication(&application.Application{ID: "app-1", Name: "Test App"}))
+	assert.NoError(t, appRepo.RegisterApplication(&application.Application{ID: "app-1", Name: "Test App"}))
 	assert.NoError(t, appRepo.CreateMember(&application.Member{ID: "m1", ApplicationID: "app-1", PublicKey: "owner-pk", Role: application.MemberRoleOwner}))
 	repo := &fakeInvitationRepo{}
 	svc := NewInvitationService(repo, priv, pub, appRepo, nil, &fakeUserRepo{}, fakeEventService{}, "space-key")
