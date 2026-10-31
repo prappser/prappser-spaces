@@ -13,11 +13,13 @@ func newAgentRepository(db *sql.DB) *agentRepository {
 	return &agentRepository{db: db}
 }
 
-func (r *agentRepository) countLiveAgents(userPublicKey string) (int, error) {
+func (r *agentRepository) countLiveAgents(userPublicKey string, now int64) (int, error) {
 	var n int
 	err := r.db.QueryRow(
-		`SELECT COUNT(*) FROM user_devices WHERE user_public_key = $1 AND kind = 'agent' AND revoked_at IS NULL`,
-		userPublicKey,
+		`SELECT COUNT(*) FROM user_devices d
+		 JOIN agent_refresh_tokens t ON t.device_public_key = d.device_public_key
+		 WHERE d.user_public_key = $1 AND d.kind = 'agent' AND d.revoked_at IS NULL AND t.expires_at > $2`,
+		userPublicKey, now,
 	).Scan(&n)
 	if err != nil {
 		return 0, fmt.Errorf("failed to count agents: %w", err)

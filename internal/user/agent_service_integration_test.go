@@ -84,6 +84,28 @@ func TestAgentService_IssueTokens_ShouldEnforceLimitOfFive_Integration(t *testin
 	assert.NoError(t, errAfter)
 }
 
+func TestAgentService_IssueTokens_ExpiredAgentsShouldNotCountTowardLimit_Integration(t *testing.T) {
+	// given
+	db := getTestDB(t)
+	defer db.Close()
+	svc, _ := newAgentTestService(t, db, "test-agent-expcap-user")
+	for i := 0; i < maxLiveAgentsPerAccount; i++ {
+		_, err := svc.IssueTokens("test-agent-expcap-user", "")
+		assert.NoError(t, err)
+	}
+	_, err := db.Exec(
+		"UPDATE agent_refresh_tokens SET expires_at = $1 WHERE device_public_key IN (SELECT device_public_key FROM user_devices WHERE user_public_key = $2)",
+		time.Now().Unix()-10, "test-agent-expcap-user",
+	)
+	assert.NoError(t, err)
+
+	// when
+	_, err = svc.IssueTokens("test-agent-expcap-user", "")
+
+	// then
+	assert.NoError(t, err)
+}
+
 func TestAgentService_Refresh_ShouldRotateToken_Integration(t *testing.T) {
 	// given
 	db := getTestDB(t)

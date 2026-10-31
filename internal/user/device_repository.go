@@ -97,8 +97,7 @@ func (r *userRepository) ListDevices(userPublicKey string) ([]*Device, error) {
 // FROM user_devices, which this intentionally doesn't do (revocation keeps
 // history). The user package can't import push (push already imports user,
 // so the reverse would cycle), so this raw DELETE against push_subscriptions
-// is how that coupling gets named instead of silently assumed. The same goes
-// for agent_refresh_tokens, so a revoked agent can't refresh.
+// is how that coupling gets named instead of silently assumed.
 func (r *userRepository) RevokeDevice(devicePublicKey string, ts int64) error {
 	tx, err := r.db.Begin()
 	if err != nil {

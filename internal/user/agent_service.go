@@ -70,7 +70,8 @@ func hashRefreshToken(token string) string {
 }
 
 func (as *AgentService) IssueTokens(userPublicKey, name string) (*AgentTokens, error) {
-	n, err := as.repo.countLiveAgents(userPublicKey)
+	now := time.Now()
+	n, err := as.repo.countLiveAgents(userPublicKey, now.Unix())
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +90,6 @@ func (as *AgentService) IssueTokens(userPublicKey, name string) (*AgentTokens, e
 	if err != nil {
 		return nil, err
 	}
-	now := time.Now()
 	access, exp, err := as.mintAccessToken(deviceKey)
 	if err != nil {
 		return nil, err

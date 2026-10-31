@@ -31,7 +31,6 @@ type Config struct {
 	OpenRegistration bool
 	// MaxAccounts caps accounts on the space, owner included; 0 means unlimited.
 	MaxAccounts int
-	// MCPEnabled turns on the /mcp agent endpoint.
 	MCPEnabled bool
 }
 
