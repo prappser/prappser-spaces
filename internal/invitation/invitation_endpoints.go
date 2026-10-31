@@ -106,6 +106,8 @@ func (ie *InvitationEndpoints) CreateInvite(ctx *fasthttp.RequestCtx) {
 		case application.WriteMoveError(ctx, err):
 		case errors.Is(err, ErrSpaceUseNotAllowed):
 			ctx.Error("only the space owner can grant space use", fasthttp.StatusForbidden)
+		case errors.Is(err, ErrInvalidInviteRole):
+			ctx.Error("role must be admin, member or viewer", fasthttp.StatusBadRequest)
 		default:
 			ctx.Error("Failed to create invitation", fasthttp.StatusInternalServerError)
 		}
@@ -340,6 +342,9 @@ func (ie *InvitationEndpoints) JoinApplication(ctx *fasthttp.RequestCtx) {
 			return
 		case errors.Is(err, ErrMembershipNotGranted):
 			ctx.Error("membership not granted", fasthttp.StatusForbidden)
+			return
+		case errors.Is(err, ErrInvalidInviteRole):
+			ctx.Error("invitation role not allowed", fasthttp.StatusForbidden)
 			return
 		case errors.Is(err, ErrAccountKeyNotProven):
 			ctx.Error("account key not proven", fasthttp.StatusForbidden)

@@ -72,6 +72,7 @@ var (
 	ErrSpaceUseNotAllowed = errors.New("only the space owner can grant space use")
 	ErrInvitationNotFound = errors.New("invitation not found")
 	ErrInviteAppMismatch  = errors.New("invitation does not belong to this application")
+	ErrInvalidInviteRole  = errors.New("invalid invite role")
 )
 
 // memberNotFoundMsg is the exact error string both application.Repository
@@ -141,7 +142,7 @@ func (s *InvitationService) CreateInvitation(caller *user.User, opts CreateInvit
 	if caller == nil || caller.PublicKey == "" {
 		return nil, fmt.Errorf("creator public key is required")
 	}
-	if err := s.AuthorizeAppRole(opts.ApplicationID, caller.PublicKey, application.MemberRoleOwner); err != nil {
+	if err := s.AuthorizeAppRole(opts.ApplicationID, caller.PublicKey, application.MemberRoleOwner, application.MemberRoleAdmin); err != nil {
 		return nil, err
 	}
 	if err := s.appRepo.MoveGuard(opts.ApplicationID, caller.PublicKey, true); err != nil {
@@ -159,6 +160,9 @@ func (s *InvitationService) CreateInvitation(caller *user.User, opts CreateInvit
 	}
 	if opts.Role == "" {
 		opts.Role = "member" // default
+	}
+	if r := application.MemberRole(opts.Role); !r.IsGrantable() {
+		return nil, ErrInvalidInviteRole
 	}
 
 	// Validate expiration
@@ -618,7 +622,7 @@ func (s *InvitationService) RevokeInvitation(caller *user.User, appID, inviteID 
 	if caller == nil || caller.PublicKey == "" {
 		return fmt.Errorf("caller public key is required")
 	}
-	if err := s.AuthorizeAppRole(appID, caller.PublicKey, application.MemberRoleOwner); err != nil {
+	if err := s.AuthorizeAppRole(appID, caller.PublicKey, application.MemberRoleOwner, application.MemberRoleAdmin); err != nil {
 		return err
 	}
 	if err := s.appRepo.MoveGuard(appID, caller.PublicKey, true); err != nil {
@@ -792,6 +796,11 @@ func (s *InvitationService) Join(tokenString, proof, assertion, deviceName strin
 	if !invite.GrantsMembership {
 		log.Debug().Str("inviteId", invite.ID).Msg("[JOIN] Join failed: invitation does not grant membership")
 		return nil, ErrMembershipNotGranted
+	}
+
+	if !application.MemberRole(invite.Role).IsGrantable() {
+		log.Debug().Str("inviteId", invite.ID).Msg("[JOIN] Join failed: invitation role not grantable")
+		return nil, ErrInvalidInviteRole
 	}
 
 	// #111: verify the assertion (if any) up front - it is never touched

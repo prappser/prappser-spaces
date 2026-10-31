@@ -51,6 +51,11 @@ const (
 	MemberRoleViewer MemberRole = "viewer"
 )
 
+// IsGrantable reports whether an invite or role change may hand out this role.
+func (r MemberRole) IsGrantable() bool {
+	return r == MemberRoleAdmin || r == MemberRoleMember || r == MemberRoleViewer
+}
+
 type Member struct {
 	ID                  string     `json:"id,omitempty"`
 	ApplicationID       string     `json:"applicationId"`
