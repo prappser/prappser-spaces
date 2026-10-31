@@ -16,11 +16,11 @@ var (
 //
 // Authorization Rules by Event Type:
 //   - application_deleted: Only the application owner can delete the entire application
-//   - member_removed: Members can remove themselves; owners can remove any member
-//   - member_added: Any member can add others (authorization handled by invitation system)
-//   - member_role_changed: Only owners can change member roles
+//   - member_removed: Members can remove themselves except the owner; owners and admins can remove any non-owner member
+//   - member_added: Space-produced only; unreachable through AcceptEvent
+//   - member_role_changed: Owners and admins can change the role of another non-owner member
 //   - application_data_changed: Any member can update application data
-//   - invite_revoked: Only owners can revoke invitations
+//   - invite_revoked: Owners and admins can revoke invitations
 //   - reminder_changed: Any member can create/edit/cancel a reminder rule
 //   - reminder_fired: Space-produced only; unreachable through AcceptEvent
 //   - application_moved: Space-produced only; unreachable through AcceptEvent
@@ -44,11 +44,11 @@ func AuthorizeEvent(event *Event, submitter *user.User, app *application.Applica
 		return fmt.Errorf("%w: user is not a member of this application", ErrUnauthorized)
 	}
 
-	isOwner := member.Role == application.MemberRoleOwner
+	canManage := member.Role == application.MemberRoleOwner || member.Role == application.MemberRoleAdmin
 
 	switch event.Type {
 	case EventTypeApplicationDeleted:
-		if !isOwner {
+		if member.Role != application.MemberRoleOwner {
 			return fmt.Errorf("%w: only owner can delete application", ErrUnauthorized)
 		}
 
@@ -58,25 +58,39 @@ func AuthorizeEvent(event *Event, submitter *user.User, app *application.Applica
 			return fmt.Errorf("%w: memberPublicKey not found in event data", ErrUnauthorized)
 		}
 
-		if memberKey != submitter.PublicKey && !isOwner {
-			return fmt.Errorf("%w: can only remove self unless owner", ErrUnauthorized)
+		target := findMember(app, memberKey)
+		if target == nil {
+			return fmt.Errorf("%w: target is not a member of this application", ErrUnauthorized)
+		}
+		if target.Role == application.MemberRoleOwner {
+			return fmt.Errorf("%w: owner cannot be removed, delete the application instead", ErrUnauthorized)
+		}
+		if memberKey != submitter.PublicKey && !canManage {
+			return fmt.Errorf("%w: only owner or admin can remove other members", ErrUnauthorized)
 		}
 
 	case EventTypeMemberAdded:
-		// Any member can add other members (via invite)
-		// Authorization is implicitly granted by the invite system
+		return fmt.Errorf("%w: member_added is space-produced and cannot be submitted by clients", ErrUnauthorized)
 
 	case EventTypeMemberRoleChanged:
-		if !isOwner {
-			return fmt.Errorf("%w: only owner can change member roles", ErrUnauthorized)
+		if !canManage {
+			return fmt.Errorf("%w: only owner or admin can change member roles", ErrUnauthorized)
+		}
+		memberKey, _ := event.Data["memberPublicKey"].(string)
+		if memberKey == submitter.PublicKey {
+			return fmt.Errorf("%w: cannot change own role", ErrUnauthorized)
+		}
+		target := findMember(app, memberKey)
+		if target == nil || target.Role == application.MemberRoleOwner {
+			return fmt.Errorf("%w: target must be a non-owner member of this application", ErrUnauthorized)
 		}
 
 	case EventTypeApplicationDataChanged:
 		// Any member can update application data
 
 	case EventTypeInviteRevoked:
-		if !isOwner {
-			return fmt.Errorf("%w: only owner can revoke invites", ErrUnauthorized)
+		if !canManage {
+			return fmt.Errorf("%w: only owner or admin can revoke invites", ErrUnauthorized)
 		}
 
 	case EventTypeComponentDataChanged:

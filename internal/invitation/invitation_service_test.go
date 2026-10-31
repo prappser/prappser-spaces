@@ -723,6 +723,23 @@ func TestJoin_ShouldRejectWhenMembershipNotGranted(t *testing.T) {
 	assert.Empty(t, userRepo.ensureDeviceCalls)
 }
 
+func TestJoin_ShouldRejectInviteWithOwnerRole(t *testing.T) {
+	// given: a legacy invite that stores the owner role
+	invite := &Invitation{ID: "invite-owner-1", ApplicationID: "app-1", Role: "owner", CreatedAt: time.Now().Unix(), GrantsMembership: true}
+	userRepo := &fakeUserRepo{}
+	svc, token, _ := newJoinTestService(t, invite, userRepo, "legacy-pk")
+
+	_, devicePriv, deviceB64 := generateDeviceKey(t)
+	proof := buildJoinProof(t, devicePriv, "legacy-pk", deviceB64, "legacy", invite.ID, time.Now().Unix())
+
+	// when
+	_, err := svc.Join(token, proof, "", "")
+
+	// then: rejected before any user/device write
+	assert.ErrorIs(t, err, ErrInvalidInviteRole)
+	assert.Empty(t, userRepo.ensureDeviceCalls)
+}
+
 // ---- #110: grants_membership / grants_identity gates on CreateInvitation ----
 
 func TestCreateInvitation_ShouldDefaultToSingleUseWhenGrantsIdentity(t *testing.T) {

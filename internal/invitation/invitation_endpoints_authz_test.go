@@ -92,6 +92,58 @@ func TestCreateInvite_ShouldReturn201WhenCallerIsOwner(t *testing.T) {
 	assert.Equal(t, fasthttp.StatusCreated, ctx.Response.StatusCode())
 }
 
+func TestCreateInvite_ShouldReturn201WhenCallerIsAdmin(t *testing.T) {
+	// given
+	svc := newEndpointTestService(t, "app-1", "admin-pk", application.MemberRoleAdmin, nil)
+	ep := &InvitationEndpoints{invitationService: svc}
+	ctx := newAuthzTestCtx("POST", "admin-pk", "app-1", "", []byte("{}"))
+
+	// when
+	ep.CreateInvite(ctx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusCreated, ctx.Response.StatusCode())
+}
+
+func TestCreateInvite_ShouldReturn400WhenRoleIsOwner(t *testing.T) {
+	// given
+	svc := newEndpointTestService(t, "app-1", "owner-pk", application.MemberRoleOwner, nil)
+	ep := &InvitationEndpoints{invitationService: svc}
+	ctx := newAuthzTestCtx("POST", "owner-pk", "app-1", "", []byte(`{"role":"owner"}`))
+
+	// when
+	ep.CreateInvite(ctx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusBadRequest, ctx.Response.StatusCode())
+}
+
+func TestCreateInvite_ShouldReturn400WhenRoleIsUnknown(t *testing.T) {
+	// given
+	svc := newEndpointTestService(t, "app-1", "owner-pk", application.MemberRoleOwner, nil)
+	ep := &InvitationEndpoints{invitationService: svc}
+	ctx := newAuthzTestCtx("POST", "owner-pk", "app-1", "", []byte(`{"role":"superuser"}`))
+
+	// when
+	ep.CreateInvite(ctx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusBadRequest, ctx.Response.StatusCode())
+}
+
+func TestCreateInvite_ShouldReturn403WhenCallerIsPlainMember(t *testing.T) {
+	// given
+	svc := newEndpointTestService(t, "app-1", "member-pk", application.MemberRoleMember, nil)
+	ep := &InvitationEndpoints{invitationService: svc}
+	ctx := newAuthzTestCtx("POST", "member-pk", "app-1", "", []byte("{}"))
+
+	// when
+	ep.CreateInvite(ctx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusForbidden, ctx.Response.StatusCode())
+}
+
 func TestCreateInvite_ShouldReturn500WhenAuthorizationLookupFails(t *testing.T) {
 	// given: the membership lookup itself fails with a real (non-not-found) error
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
@@ -138,6 +190,34 @@ func TestRevokeInvite_ShouldReturn204WhenCallerIsOwner(t *testing.T) {
 	assert.Equal(t, fasthttp.StatusNoContent, ctx.Response.StatusCode())
 }
 
+func TestRevokeInvite_ShouldReturn204WhenCallerIsAdmin(t *testing.T) {
+	// given
+	invite := &Invitation{ID: "invite-1", ApplicationID: "app-1", Role: "member", CreatedAt: time.Now().Unix()}
+	svc := newEndpointTestService(t, "app-1", "admin-pk", application.MemberRoleAdmin, invite)
+	ep := &InvitationEndpoints{invitationService: svc}
+	ctx := newAuthzTestCtx("DELETE", "admin-pk", "app-1", "invite-1", nil)
+
+	// when
+	ep.RevokeInvite(ctx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusNoContent, ctx.Response.StatusCode())
+}
+
+func TestRevokeInvite_ShouldReturn403WhenCallerIsPlainMember(t *testing.T) {
+	// given
+	invite := &Invitation{ID: "invite-1", ApplicationID: "app-1", Role: "member", CreatedAt: time.Now().Unix()}
+	svc := newEndpointTestService(t, "app-1", "member-pk", application.MemberRoleMember, invite)
+	ep := &InvitationEndpoints{invitationService: svc}
+	ctx := newAuthzTestCtx("DELETE", "member-pk", "app-1", "invite-1", nil)
+
+	// when
+	ep.RevokeInvite(ctx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusForbidden, ctx.Response.StatusCode())
+}
+
 // ---- ListInvites ----
 
 func TestListInvites_ShouldReturn403WhenCallerNotAuthorized(t *testing.T) {
@@ -167,7 +247,7 @@ func TestListInvites_ShouldReturn200WhenCallerIsOwner(t *testing.T) {
 }
 
 func TestListInvites_ShouldReturn200WhenCallerIsAdmin(t *testing.T) {
-	// given: admin is also allowed, unlike owner-only CreateInvite/RevokeInvite
+	// given: admin is allowed alongside owner
 	svc := newEndpointTestService(t, "app-1", "admin-pk", application.MemberRoleAdmin, nil)
 	ep := &InvitationEndpoints{invitationService: svc}
 	ctx := newAuthzTestCtx("GET", "admin-pk", "app-1", "", nil)

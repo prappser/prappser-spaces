@@ -407,3 +407,23 @@ func TestBroadcastEvent_ForgedRecipientsOnNonAllowlistedType_IsIgnored(t *testin
 		t.Fatalf("Expected the forged recipients key to be ignored and push to fall back to [member-2], got %v", pusher.recipients)
 	}
 }
+
+func TestExecuteMemberRemoved_ShouldNotPanicOnShortPublicKey(t *testing.T) {
+	// given
+	appRepo := application.NewMemoryRepository()
+	if err := appRepo.RegisterApplication(&application.Application{ID: "app-1", Name: "Test App"}); err != nil {
+		t.Fatalf("Failed to create application: %v", err)
+	}
+	svc := NewEventService(nil, appRepo, nil, nil)
+	evt := &Event{ID: "evt-1", Type: EventTypeMemberRemoved, Data: map[string]interface{}{
+		"applicationId": "app-1", "memberPublicKey": "short",
+	}}
+
+	// when
+	err := svc.executeMemberRemoved(context.Background(), evt)
+
+	// then
+	if err == nil {
+		t.Fatal("Expected an error for an unknown member")
+	}
+}

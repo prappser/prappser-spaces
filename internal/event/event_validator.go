@@ -7,6 +7,8 @@ import (
 	"math"
 	"regexp"
 	"time"
+
+	"github.com/prappser/prappser-spaces/internal/application"
 )
 
 var (
@@ -82,8 +84,12 @@ func validateMemberAddedData(data map[string]interface{}) error {
 	if _, ok := data["userDisplayName"].(string); !ok || data["userDisplayName"] == "" {
 		return fmt.Errorf("%w: userDisplayName is required", ErrValidation)
 	}
-	if _, ok := data["role"].(string); !ok || data["role"] == "" {
+	role, _ := data["role"].(string)
+	if role == "" {
 		return fmt.Errorf("%w: role is required", ErrValidation)
+	}
+	if !application.MemberRole(role).IsGrantable() {
+		return fmt.Errorf("%w: role must be admin, member or viewer", ErrValidation)
 	}
 	return nil
 }
@@ -108,8 +114,12 @@ func validateMemberRoleChangedData(data map[string]interface{}) error {
 	if _, ok := data["oldRole"].(string); !ok || data["oldRole"] == "" {
 		return fmt.Errorf("%w: oldRole is required", ErrValidation)
 	}
-	if _, ok := data["newRole"].(string); !ok || data["newRole"] == "" {
+	newRole, _ := data["newRole"].(string)
+	if newRole == "" {
 		return fmt.Errorf("%w: newRole is required", ErrValidation)
+	}
+	if !application.MemberRole(newRole).IsGrantable() {
+		return fmt.Errorf("%w: newRole must be admin, member or viewer", ErrValidation)
 	}
 	return nil
 }

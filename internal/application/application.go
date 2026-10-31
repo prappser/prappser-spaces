@@ -51,6 +51,15 @@ const (
 	MemberRoleViewer MemberRole = "viewer"
 )
 
+func (r MemberRole) IsValid() bool {
+	return r == MemberRoleOwner || r == MemberRoleAdmin || r == MemberRoleMember || r == MemberRoleViewer
+}
+
+// IsGrantable reports whether an invite or role change may hand out this role.
+func (r MemberRole) IsGrantable() bool {
+	return r.IsValid() && r != MemberRoleOwner
+}
+
 type Member struct {
 	ID                  string     `json:"id,omitempty"`
 	ApplicationID       string     `json:"applicationId"`

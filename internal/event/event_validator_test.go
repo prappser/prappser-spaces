@@ -2,6 +2,7 @@ package event
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -316,5 +317,63 @@ func TestIsValidOffsetSpec(t *testing.T) {
 		if isValidOffsetSpec(spec) {
 			t.Errorf("Expected %q to be invalid", spec)
 		}
+	}
+}
+
+func memberRoleChangedData(newRole string) map[string]interface{} {
+	return map[string]interface{}{"applicationId": "app-1", "memberPublicKey": "pk-1", "oldRole": "member", "newRole": newRole}
+}
+
+func TestValidateEvent_MemberRoleChanged_ShouldRejectOwnerNewRole(t *testing.T) {
+	// given
+	evt := &Event{ID: "e1", Type: EventTypeMemberRoleChanged, CreatorPublicKey: "pk-2", Data: memberRoleChangedData("owner")}
+
+	// when
+	err := ValidateEvent(evt)
+
+	// then
+	if !errors.Is(err, ErrValidation) {
+		t.Fatalf("Expected ErrValidation for newRole owner, got: %v", err)
+	}
+}
+
+func TestValidateEvent_MemberRoleChanged_ShouldRejectUnknownNewRole(t *testing.T) {
+	// given
+	evt := &Event{ID: "e1", Type: EventTypeMemberRoleChanged, CreatorPublicKey: "pk-2", Data: memberRoleChangedData("superuser")}
+
+	// when
+	err := ValidateEvent(evt)
+
+	// then
+	if !errors.Is(err, ErrValidation) {
+		t.Fatalf("Expected ErrValidation for an unknown newRole, got: %v", err)
+	}
+}
+
+func TestValidateEvent_MemberRoleChanged_ShouldAcceptAdminNewRole(t *testing.T) {
+	// given
+	evt := &Event{ID: "e1", Type: EventTypeMemberRoleChanged, CreatorPublicKey: "pk-2", Data: memberRoleChangedData("admin")}
+
+	// when
+	err := ValidateEvent(evt)
+
+	// then
+	if err != nil {
+		t.Fatalf("Expected newRole admin to pass, got: %v", err)
+	}
+}
+
+func TestValidateEvent_MemberAdded_ShouldRejectOwnerRole(t *testing.T) {
+	// given
+	evt := &Event{ID: "e1", Type: EventTypeMemberAdded, CreatorPublicKey: "pk-2", Data: map[string]interface{}{
+		"applicationId": "app-1", "memberPublicKey": "pk-1", "userDisplayName": "Name", "role": "owner",
+	}}
+
+	// when
+	err := ValidateEvent(evt)
+
+	// then
+	if !errors.Is(err, ErrValidation) {
+		t.Fatalf("Expected ErrValidation for member_added role owner, got: %v", err)
 	}
 }

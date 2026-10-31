@@ -674,10 +674,11 @@ func (s *EventService) executeMemberRemoved(ctx context.Context, event *Event) e
 	if !ok || memberPublicKey == "" {
 		return fmt.Errorf("missing memberPublicKey in member_removed event")
 	}
+	short := memberPublicKey[:min(20, len(memberPublicKey))] + "..."
 
 	log.Debug().
 		Str("applicationId", appID).
-		Str("memberPublicKey", memberPublicKey[:20]+"...").
+		Str("memberPublicKey", short).
 		Msg("[MEMBER_REMOVED] Executing member_removed event - looking up member")
 
 	// Get member by publicKey to get the member ID
@@ -685,7 +686,7 @@ func (s *EventService) executeMemberRemoved(ctx context.Context, event *Event) e
 	if err != nil {
 		log.Error().
 			Str("applicationId", appID).
-			Str("memberPublicKey", memberPublicKey[:20]+"...").
+			Str("memberPublicKey", short).
 			Err(err).
 			Msg("[MEMBER_REMOVED] Failed to find member for deletion")
 		return fmt.Errorf("member not found: %w", err)
@@ -694,7 +695,7 @@ func (s *EventService) executeMemberRemoved(ctx context.Context, event *Event) e
 	log.Debug().
 		Str("applicationId", appID).
 		Str("memberId", member.ID).
-		Str("memberPublicKey", memberPublicKey[:20]+"...").
+		Str("memberPublicKey", short).
 		Msg("[MEMBER_REMOVED] Found member, deleting from database")
 
 	// Delete member by ID
@@ -710,7 +711,7 @@ func (s *EventService) executeMemberRemoved(ctx context.Context, event *Event) e
 	log.Info().
 		Str("applicationId", appID).
 		Str("memberId", member.ID).
-		Str("memberPublicKey", memberPublicKey[:20]+"...").
+		Str("memberPublicKey", short).
 		Msg("[MEMBER_REMOVED] Successfully deleted member from database")
 
 	return nil
