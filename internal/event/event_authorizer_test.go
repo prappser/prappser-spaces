@@ -82,8 +82,16 @@ func roleTestApp() *application.Application {
 }
 
 func authorizeRoleChange(submitterPK, targetPK string) error {
+	oldRole := "member"
+	if target := findMember(roleTestApp(), targetPK); target != nil {
+		oldRole = string(target.Role)
+	}
+	return authorizeRoleChangeFrom(submitterPK, targetPK, oldRole)
+}
+
+func authorizeRoleChangeFrom(submitterPK, targetPK, oldRole string) error {
 	evt := &Event{Type: EventTypeMemberRoleChanged, Data: map[string]interface{}{
-		"applicationId": "app-1", "memberPublicKey": targetPK, "oldRole": "member", "newRole": "admin",
+		"applicationId": "app-1", "memberPublicKey": targetPK, "oldRole": oldRole, "newRole": "admin",
 	}}
 	return AuthorizeEvent(evt, &user.User{PublicKey: submitterPK}, roleTestApp())
 }
@@ -152,6 +160,42 @@ func TestAuthorizeEvent_MemberRoleChanged_ShouldRejectNonMemberTarget(t *testing
 	// then
 	if !errors.Is(err, ErrUnauthorized) {
 		t.Fatalf("Expected ErrUnauthorized for a non-member target, got: %v", err)
+	}
+}
+
+func TestAuthorizeEvent_MemberRoleChanged_ShouldRejectStaleOldRole(t *testing.T) {
+	// when
+	err := authorizeRoleChangeFrom("admin-pk", "member-pk", "viewer")
+
+	// then
+	if !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("Expected ErrUnauthorized for an oldRole that is not the target's current role, got: %v", err)
+	}
+}
+
+func TestAuthorizeEvent_MemberRemoved_ShouldRejectMissingMemberPublicKey(t *testing.T) {
+	// given
+	evt := &Event{Type: EventTypeMemberRemoved, Data: map[string]interface{}{"applicationId": "app-1"}}
+
+	// when
+	err := AuthorizeEvent(evt, &user.User{PublicKey: "admin-pk"}, roleTestApp())
+
+	// then
+	if !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("Expected ErrUnauthorized for a missing memberPublicKey, got: %v", err)
+	}
+}
+
+func TestAuthorizeEvent_MemberRemoved_ShouldRejectNonStringMemberPublicKey(t *testing.T) {
+	// given
+	evt := &Event{Type: EventTypeMemberRemoved, Data: map[string]interface{}{"applicationId": "app-1", "memberPublicKey": 42}}
+
+	// when
+	err := AuthorizeEvent(evt, &user.User{PublicKey: "admin-pk"}, roleTestApp())
+
+	// then
+	if !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("Expected ErrUnauthorized for a non-string memberPublicKey, got: %v", err)
 	}
 }
 

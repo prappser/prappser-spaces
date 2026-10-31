@@ -15,10 +15,10 @@ var (
 // AuthorizeEvent checks if the submitter has permission to submit the given event for the application.
 //
 // Authorization Rules by Event Type:
-//   - application_deleted: Only the application owner can delete the entire application
-//   - member_removed: Members can remove themselves except the owner; owners and admins can remove any non-owner member
+//   - application_deleted: Owner only; admins are excluded on purpose
+//   - member_removed: Target must be a current member and not the owner; members can remove themselves, owners and admins can remove others
 //   - member_added: Space-produced only; unreachable through AcceptEvent
-//   - member_role_changed: Owners and admins can change the role of another non-owner member
+//   - member_role_changed: Owners and admins can change the role of another non-owner member; oldRole must match its current role
 //   - application_data_changed: Any member can update application data
 //   - invite_revoked: Owners and admins can revoke invitations
 //   - reminder_changed: Any member can create/edit/cancel a reminder rule
@@ -83,6 +83,10 @@ func AuthorizeEvent(event *Event, submitter *user.User, app *application.Applica
 		target := findMember(app, memberKey)
 		if target == nil || target.Role == application.MemberRoleOwner {
 			return fmt.Errorf("%w: target must be a non-owner member of this application", ErrUnauthorized)
+		}
+		oldRole, _ := event.Data["oldRole"].(string)
+		if application.MemberRole(oldRole) != target.Role {
+			return fmt.Errorf("%w: oldRole does not match the member's current role", ErrUnauthorized)
 		}
 
 	case EventTypeApplicationDataChanged:

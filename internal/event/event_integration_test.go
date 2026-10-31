@@ -204,3 +204,44 @@ func TestAcceptEvent_DemotedAdminInFlightEvent_RejectedAndNotPersisted(t *testin
 		t.Fatalf("expected rejected event not to be persisted, got %d rows", events)
 	}
 }
+
+func TestAcceptEvent_ExpiredAdmin_RejectedAndNotPersisted(t *testing.T) {
+	db := testdb.Connect(t, "event")
+	defer db.Close()
+	prefix := "test-admin91-expired-"
+	appRepo := seedRoleApp(t, db, prefix)
+	service := NewEventService(NewEventRepository(db), appRepo, nil, nil)
+	if _, err := db.Exec("UPDATE members SET membership_expires_at = $1 WHERE application_id = $2 AND public_key = $3", time.Now().Add(-time.Hour).Unix(), prefix+"app", prefix+"admin"); err != nil {
+		t.Fatalf("failed to expire admin: %v", err)
+	}
+	evt := &Event{
+		ID:               prefix + "evt",
+		Type:             EventTypeMemberRoleChanged,
+		CreatorPublicKey: prefix + "admin",
+		Version:          1,
+		CreatedAt:        time.Now().Unix(),
+		Data: map[string]interface{}{
+			"applicationId": prefix + "app", "memberPublicKey": prefix + "member", "oldRole": "member", "newRole": "admin",
+		},
+	}
+
+	_, err := service.AcceptEvent(context.Background(), evt, &user.User{PublicKey: prefix + "admin"})
+
+	if !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("expected ErrUnauthorized for the expired admin's event, got: %v", err)
+	}
+	var role string
+	if err := db.QueryRow("SELECT role FROM members WHERE application_id = $1 AND public_key = $2", prefix+"app", prefix+"member").Scan(&role); err != nil {
+		t.Fatalf("failed to read role: %v", err)
+	}
+	if role != "member" {
+		t.Fatalf("expected target role to stay member, got %q", role)
+	}
+	var events int
+	if err := db.QueryRow("SELECT COUNT(*) FROM events WHERE id = $1", evt.ID).Scan(&events); err != nil {
+		t.Fatalf("failed to count events: %v", err)
+	}
+	if events != 0 {
+		t.Fatalf("expected rejected event not to be persisted, got %d rows", events)
+	}
+}

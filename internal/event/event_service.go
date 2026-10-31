@@ -647,10 +647,7 @@ func (s *EventService) executeMemberAdded(ctx context.Context, event *Event) err
 		return fmt.Errorf("missing memberPublicKey in member_added event")
 	}
 
-	roleStr, ok := event.Data["role"].(string)
-	if !ok || roleStr == "" {
-		roleStr = "member" // Default role
-	}
+	roleStr, _ := event.Data["role"].(string)
 
 	member := &application.Member{
 		ID:                  uuid.New().String(),
