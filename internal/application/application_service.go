@@ -84,7 +84,6 @@ func (s *ApplicationService) RegisterApplication(caller *user.User, app *Applica
 		return nil, ErrOwnerNotCaller
 	}
 
-	// ponytail: checked outside the register tx, so two first-time registers of one new ID can race; lock the app row in the tx if that matters.
 	other, err := s.appRepo.HasOtherOwner(app.ID, caller.PublicKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check application owner: %w", err)
@@ -94,7 +93,6 @@ func (s *ApplicationService) RegisterApplication(caller *user.User, app *Applica
 	}
 
 	app.SpacePublicKey = &s.spacePublicKey
-	app.SpaceID = nil
 	if caller.SpaceID != "" {
 		app.SpaceID = &caller.SpaceID
 	}
@@ -233,4 +231,3 @@ func (s *ApplicationService) LeaveApplication(appID string, requestingUser *user
 
 	return nil
 }
-

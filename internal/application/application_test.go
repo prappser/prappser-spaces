@@ -741,3 +741,21 @@ func TestApplicationService_RegisterApplication_NilCaller_ShouldReturnError(t *t
 	// then
 	assert.Error(t, err)
 }
+
+func TestApplicationService_RegisterApplication_ShouldKeepClientSpaceIDWhenCallerHasNone(t *testing.T) {
+	// given
+	testUser := createTestUser()
+	appService := NewApplicationService(NewMemoryRepository(), 0, "space-key")
+	clientSpaceID := "client-space-id"
+	app := createBasicApplication(testUser, "App", "keep-space-id-app")
+	app.SpaceID = &clientSpaceID
+
+	// when
+	registered, err := appService.RegisterApplication(testUser, app)
+
+	// then
+	assert.NoError(t, err)
+	if assert.NotNil(t, registered.SpaceID) {
+		assert.Equal(t, "client-space-id", *registered.SpaceID)
+	}
+}

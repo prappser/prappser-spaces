@@ -100,7 +100,6 @@ type InvitationService struct {
 	SingleUseSignup bool
 	// MaxAccounts caps total accounts for new signups; 0 means off.
 	MaxAccounts int
-	// ExternalURL (EXTERNAL_URL) wins over the request-derived CreateInvitationOptions.SpaceURL.
 	ExternalURL string
 }
 
@@ -123,8 +122,7 @@ type CreateInvitationOptions struct {
 	Role           string
 	MaxUses        *int
 	ExpiresInHours *int
-	// SpaceURL is the request-derived fallback, used only when EXTERNAL_URL is unset.
-	SpaceURL string
+	SpaceURL       string
 	// GrantsMembership and GrantsIdentity are nil-means-true (wire spec):
 	// nil defaults to true, matching the DB column defaults.
 	GrantsMembership *bool
@@ -616,10 +614,6 @@ func (s *InvitationService) AuthorizeAppRole(appID, callerPublicKey string, allo
 
 // RevokeInvitation deletes an invitation (hard delete) and produces an
 // invite_revoked event (#125) so other members' clients pick up the change.
-// RevokeInvitation authorizes caller as application owner, applies the move
-// guard, checks the invite belongs to appID, then hard-deletes it and produces
-// an invite_revoked event (#125). Event failure is only logged; the delete
-// already happened.
 func (s *InvitationService) RevokeInvitation(caller *user.User, appID, inviteID string) error {
 	if caller == nil || caller.PublicKey == "" {
 		return fmt.Errorf("caller public key is required")

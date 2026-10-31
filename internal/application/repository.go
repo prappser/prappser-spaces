@@ -717,7 +717,6 @@ func (r *Repository) CountOwnedApplications(publicKey string) (int, error) {
 	return count, nil
 }
 
-// HasOtherOwner has no deleted_at or expiry filter: soft-deleted and moved apps keep their members.
 func (r *Repository) HasOtherOwner(appID, publicKey string) (bool, error) {
 	var other bool
 	err := r.db.QueryRow(`SELECT EXISTS (SELECT 1 FROM members WHERE application_id = $1 AND role = 'owner' AND public_key <> $2)`, appID, publicKey).Scan(&other)
