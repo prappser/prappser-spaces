@@ -88,9 +88,11 @@ func newMoveFixture(t *testing.T) *moveFixture {
 
 	invitationService := invitation.NewInvitationService(invitation.NewInvitationRepository(db), priv, pub, appRepo, db, userRepo, eventService, spacePK)
 
+	invitationService.ExternalURL = "http://a.example"
+
 	handler := NewRequestHandler(&Config{TrustProxyHeaders: true}, nil, nil, nil, userService,
-		application.NewApplicationEndpoints(application.NewApplicationService(appRepo, 0), spacePK),
-		invitation.NewInvitationEndpoints(invitationService, storageService, "http://a.example"),
+		application.NewApplicationEndpoints(application.NewApplicationService(appRepo, 0, spacePK)),
+		invitation.NewInvitationEndpoints(invitationService, storageService),
 		event.NewEventEndpoints(eventService), nil,
 		storage.NewEndpoints(storageService, appRepo, eventService, userRepo, "http://a.example"),
 		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,

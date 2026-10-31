@@ -28,7 +28,7 @@ func TestRepository_CountOwnedApplications_CountsOnlyLiveOwnedApps_Integration(t
 		{"test-count-deleted", MemberRoleOwner},
 		{"test-count-admin", MemberRoleAdmin},
 	} {
-		if err := repo.CreateApplication(&Application{ID: a.id, Name: a.id, CreatedAt: now, UpdatedAt: now}); err != nil {
+		if err := repo.RegisterApplication(&Application{ID: a.id, Name: a.id, CreatedAt: now, UpdatedAt: now}); err != nil {
 			t.Fatalf("Failed to create application: %v", err)
 		}
 		if err := repo.CreateMember(&Member{ID: a.id + "-m", ApplicationID: a.id, Role: a.role, PublicKey: pk}); err != nil {
@@ -58,7 +58,7 @@ func TestRepository_IsApplicationLive_ShouldReportLiveOnly_Integration(t *testin
 	repo := NewRepository(db)
 	now := time.Now().Unix()
 	for _, id := range []string{"test-live-app", "test-live-deleted"} {
-		if err := repo.CreateApplication(&Application{ID: id, Name: id, CreatedAt: now, UpdatedAt: now}); err != nil {
+		if err := repo.RegisterApplication(&Application{ID: id, Name: id, CreatedAt: now, UpdatedAt: now}); err != nil {
 			t.Fatalf("Failed to create application: %v", err)
 		}
 	}

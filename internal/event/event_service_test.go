@@ -48,7 +48,7 @@ func TestGetInt64Ptr_AbsentKey(t *testing.T) {
 func TestExecuteMemberAdded_ProducePath_SetsMembershipExpiresAt(t *testing.T) {
 	// given
 	appRepo := application.NewMemoryRepository()
-	if err := appRepo.CreateApplication(&application.Application{ID: "app-1", Name: "Test App"}); err != nil {
+	if err := appRepo.RegisterApplication(&application.Application{ID: "app-1", Name: "Test App"}); err != nil {
 		t.Fatalf("Failed to create application: %v", err)
 	}
 	svc := NewEventService(nil, appRepo, nil, nil)
@@ -88,7 +88,7 @@ func TestExecuteMemberAdded_ReplayPath_SetsMembershipExpiresAt(t *testing.T) {
 	// given: JSON-decoded event data yields float64 for numbers, not int64 -
 	// distinct from the produce-path test above.
 	appRepo := application.NewMemoryRepository()
-	if err := appRepo.CreateApplication(&application.Application{ID: "app-2", Name: "Test App"}); err != nil {
+	if err := appRepo.RegisterApplication(&application.Application{ID: "app-2", Name: "Test App"}); err != nil {
 		t.Fatalf("Failed to create application: %v", err)
 	}
 	svc := NewEventService(nil, appRepo, nil, nil)
@@ -125,7 +125,7 @@ func TestExecuteMemberAdded_NoExpiry_LeavesMembershipExpiresAtNil(t *testing.T) 
 	// given: a member_added event with no membershipExpiresAt key at all -
 	// matches an invite with no membership duration.
 	appRepo := application.NewMemoryRepository()
-	if err := appRepo.CreateApplication(&application.Application{ID: "app-3", Name: "Test App"}); err != nil {
+	if err := appRepo.RegisterApplication(&application.Application{ID: "app-3", Name: "Test App"}); err != nil {
 		t.Fatalf("Failed to create application: %v", err)
 	}
 	svc := NewEventService(nil, appRepo, nil, nil)
@@ -300,7 +300,7 @@ func TestBroadcastEvent_ExplicitRecipients_OverridesAllMembers(t *testing.T) {
 	// and the creator (the space) isn't a member at all, so the default
 	// "all members except creator" path would notify all three.
 	appRepo := application.NewMemoryRepository()
-	if err := appRepo.CreateApplication(&application.Application{ID: "app-4", Name: "Test App"}); err != nil {
+	if err := appRepo.RegisterApplication(&application.Application{ID: "app-4", Name: "Test App"}); err != nil {
 		t.Fatalf("Failed to create application: %v", err)
 	}
 	for _, pk := range []string{"member-1", "member-2", "member-3"} {
@@ -336,7 +336,7 @@ func TestBroadcastEvent_NoExplicitRecipients_FallsBackToAllMembersExceptCreator(
 	// given: no recipients key in data (e.g. component_data_changed) -
 	// existing behavior must be unchanged.
 	appRepo := application.NewMemoryRepository()
-	if err := appRepo.CreateApplication(&application.Application{ID: "app-5", Name: "Test App"}); err != nil {
+	if err := appRepo.RegisterApplication(&application.Application{ID: "app-5", Name: "Test App"}); err != nil {
 		t.Fatalf("Failed to create application: %v", err)
 	}
 	for _, pk := range []string{"member-1", "member-2"} {
@@ -375,7 +375,7 @@ func TestBroadcastEvent_ForgedRecipientsOnNonAllowlistedType_IsIgnored(t *testin
 	// key that isn't even a member of the app (GetSubscriptionsForUsers
 	// doesn't check membership).
 	appRepo := application.NewMemoryRepository()
-	if err := appRepo.CreateApplication(&application.Application{ID: "app-6", Name: "Test App"}); err != nil {
+	if err := appRepo.RegisterApplication(&application.Application{ID: "app-6", Name: "Test App"}); err != nil {
 		t.Fatalf("Failed to create application: %v", err)
 	}
 	for _, pk := range []string{"member-1", "member-2"} {

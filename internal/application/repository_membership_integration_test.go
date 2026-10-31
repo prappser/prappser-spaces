@@ -25,7 +25,7 @@ func TestRepository_ExpiredMembership_InvisibleToAllFilteredQueries_Integration(
 	appID := "test-expiry-app-1"
 	publicKey := "test-expiry-pk-1"
 	testdb.InsertTestUser(t, db, publicKey)
-	if err := repo.CreateApplication(&Application{ID: appID, Name: "Expiry Integration App", CreatedAt: time.Now().Unix(), UpdatedAt: time.Now().Unix()}); err != nil {
+	if err := repo.RegisterApplication(&Application{ID: appID, Name: "Expiry Integration App", CreatedAt: time.Now().Unix(), UpdatedAt: time.Now().Unix()}); err != nil {
 		t.Fatalf("Failed to create application: %v", err)
 	}
 
@@ -103,7 +103,7 @@ func TestRepository_ReJoin_UpsertsSameRow_NoDuplicate_Integration(t *testing.T) 
 	appID := "test-expiry-app-2"
 	publicKey := "test-expiry-pk-2"
 	testdb.InsertTestUser(t, db, publicKey)
-	if err := repo.CreateApplication(&Application{ID: appID, Name: "Rejoin Integration App", CreatedAt: time.Now().Unix(), UpdatedAt: time.Now().Unix()}); err != nil {
+	if err := repo.RegisterApplication(&Application{ID: appID, Name: "Rejoin Integration App", CreatedAt: time.Now().Unix(), UpdatedAt: time.Now().Unix()}); err != nil {
 		t.Fatalf("Failed to create application: %v", err)
 	}
 
