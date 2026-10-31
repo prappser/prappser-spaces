@@ -69,6 +69,9 @@ var (
 	// set (#125) - invitation_endpoints.go maps it to 403.
 	ErrNotAppAuthorized   = errors.New("not authorized for this application")
 	ErrInviteNotForMember = errors.New("invitation is not for this account")
+	ErrSpaceUseNotAllowed = errors.New("only the space owner can grant space use")
+	ErrInvitationNotFound = errors.New("invitation not found")
+	ErrInviteAppMismatch  = errors.New("invitation does not belong to this application")
 )
 
 // memberNotFoundMsg is the exact error string both application.Repository
@@ -97,6 +100,8 @@ type InvitationService struct {
 	SingleUseSignup bool
 	// MaxAccounts caps total accounts for new signups; 0 means off.
 	MaxAccounts int
+	// ExternalURL (EXTERNAL_URL) wins over the request-derived CreateInvitationOptions.SpaceURL.
+	ExternalURL string
 }
 
 func NewInvitationService(repo InvitationRepository, privateKey ed25519.PrivateKey, publicKey ed25519.PublicKey, appRepo application.ApplicationRepository, db *sql.DB, userRepository user.UserRepository, eventService EventService, spacePublicKey string) *InvitationService {
@@ -114,13 +119,12 @@ func NewInvitationService(repo InvitationRepository, privateKey ed25519.PrivateK
 
 // CreateInvitationOptions contains options for creating an invitation
 type CreateInvitationOptions struct {
-	ApplicationID      string
-	CreatedByPublicKey string
-	Role               string
-	MaxUses            *int
-	ExpiresInHours     *int
-	SpaceID            *string
-	SpaceURL           string
+	ApplicationID  string
+	Role           string
+	MaxUses        *int
+	ExpiresInHours *int
+	// SpaceURL is the request-derived fallback, used only when EXTERNAL_URL is unset.
+	SpaceURL string
 	// GrantsMembership and GrantsIdentity are nil-means-true (wire spec):
 	// nil defaults to true, matching the DB column defaults.
 	GrantsMembership *bool
@@ -132,14 +136,28 @@ type CreateInvitationOptions struct {
 	MemberPublicKeys        []string
 }
 
-// CreateInvitation creates a new invitation and generates a JWT token
-func (s *InvitationService) CreateInvitation(opts CreateInvitationOptions) (*InvitationResponse, error) {
-	// Validate inputs
+func (s *InvitationService) CreateInvitation(caller *user.User, opts CreateInvitationOptions) (*InvitationResponse, error) {
 	if opts.ApplicationID == "" {
 		return nil, fmt.Errorf("application ID is required")
 	}
-	if opts.CreatedByPublicKey == "" {
+	if caller == nil || caller.PublicKey == "" {
 		return nil, fmt.Errorf("creator public key is required")
+	}
+	if err := s.AuthorizeAppRole(opts.ApplicationID, caller.PublicKey, application.MemberRoleOwner); err != nil {
+		return nil, err
+	}
+	if err := s.appRepo.MoveGuard(opts.ApplicationID, caller.PublicKey, true); err != nil {
+		return nil, err
+	}
+	if opts.GrantsSpaceUse != nil && *opts.GrantsSpaceUse && caller.Role != user.RoleOwner {
+		return nil, ErrSpaceUseNotAllowed
+	}
+	spaceURL := s.ExternalURL
+	if spaceURL == "" {
+		spaceURL = opts.SpaceURL
+	}
+	if spaceURL == "" {
+		return nil, fmt.Errorf("space URL is required")
 	}
 	if opts.Role == "" {
 		opts.Role = "member" // default
@@ -206,13 +224,13 @@ func (s *InvitationService) CreateInvitation(opts CreateInvitationOptions) (*Inv
 	invite := &Invitation{
 		ID:                      uuid.New().String(), // TODO: Use UUID v7
 		ApplicationID:           opts.ApplicationID,
-		CreatedByPublicKey:      opts.CreatedByPublicKey,
+		CreatedByPublicKey:      caller.PublicKey,
 		Role:                    opts.Role,
 		MaxUses:                 maxUses,
 		ExpiresAt:               expiresAt,
 		UsedCount:               0,
 		CreatedAt:               now,
-		SpaceID:                 opts.SpaceID,
+		SpaceID:                 spaceIDPtr(caller.SpaceID),
 		GrantsMembership:        grantsMembership,
 		GrantsIdentity:          grantsIdentity,
 		GrantsSpaceUse:          grantsSpaceUse,
@@ -226,7 +244,7 @@ func (s *InvitationService) CreateInvitation(opts CreateInvitationOptions) (*Inv
 	}
 
 	// Generate JWT token
-	token, err := s.GenerateToken(invite.ID, opts.SpaceURL, expiresAt)
+	token, err := s.GenerateToken(invite.ID, spaceURL, expiresAt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate token: %w", err)
 	}
@@ -598,16 +616,27 @@ func (s *InvitationService) AuthorizeAppRole(appID, callerPublicKey string, allo
 
 // RevokeInvitation deletes an invitation (hard delete) and produces an
 // invite_revoked event (#125) so other members' clients pick up the change.
-// invite is the already-fetched row (the caller, invitation_endpoints.go,
-// already loaded it to check invite.ApplicationID == the path appID) - this
-// takes it directly instead of re-fetching by ID, keeping one lookup total.
-// revokedByPublicKey becomes the event's CreatorPublicKey - the caller was
-// already verified as the application owner via AuthorizeAppRole before this
-// runs. Event production uses ProduceEvent (skips authorization, like Join's
-// member_added) since the endpoint already did that check; if it fails, only
-// a warning is logged - the delete already happened, and RevokeInvite's own
-// response to the client already reflects success.
-func (s *InvitationService) RevokeInvitation(invite *Invitation, revokedByPublicKey string) error {
+// RevokeInvitation authorizes caller as application owner, applies the move
+// guard, checks the invite belongs to appID, then hard-deletes it and produces
+// an invite_revoked event (#125). Event failure is only logged; the delete
+// already happened.
+func (s *InvitationService) RevokeInvitation(caller *user.User, appID, inviteID string) error {
+	if caller == nil || caller.PublicKey == "" {
+		return fmt.Errorf("caller public key is required")
+	}
+	if err := s.AuthorizeAppRole(appID, caller.PublicKey, application.MemberRoleOwner); err != nil {
+		return err
+	}
+	if err := s.appRepo.MoveGuard(appID, caller.PublicKey, true); err != nil {
+		return err
+	}
+	invite, err := s.repo.GetByID(inviteID)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrInvitationNotFound, err)
+	}
+	if invite.ApplicationID != appID {
+		return ErrInviteAppMismatch
+	}
 	if err := s.repo.Delete(invite.ID); err != nil {
 		return err
 	}
@@ -615,7 +644,7 @@ func (s *InvitationService) RevokeInvitation(invite *Invitation, revokedByPublic
 	evt := &event.Event{
 		ID:               uuid.New().String(),
 		Type:             event.EventTypeInviteRevoked,
-		CreatorPublicKey: revokedByPublicKey,
+		CreatorPublicKey: caller.PublicKey,
 		Data: map[string]interface{}{
 			"version":       1,
 			"applicationId": invite.ApplicationID,
@@ -635,9 +664,24 @@ func (s *InvitationService) RevokeInvitation(invite *Invitation, revokedByPublic
 	return nil
 }
 
-// GetInvitesForApp returns all active invitations for an application
-func (s *InvitationService) GetInvitesForApp(appID string) ([]*Invitation, error) {
+func (s *InvitationService) GetInvitesForApp(caller *user.User, appID string) ([]*Invitation, error) {
+	if caller == nil || caller.PublicKey == "" {
+		return nil, fmt.Errorf("caller public key is required")
+	}
+	if err := s.AuthorizeAppRole(appID, caller.PublicKey, application.MemberRoleOwner, application.MemberRoleAdmin); err != nil {
+		return nil, err
+	}
+	if err := s.appRepo.MoveGuard(appID, caller.PublicKey, false); err != nil {
+		return nil, err
+	}
 	return s.repo.GetByApplicationID(appID)
+}
+
+func spaceIDPtr(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }
 
 // isUniqueViolation reports whether err is a Postgres unique constraint

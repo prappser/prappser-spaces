@@ -53,7 +53,7 @@ func TestDeleteAccount_ShouldLeaveSharedAppsDeleteSoleOwnedAndEraseRows_Integrat
 	testdb.InsertTestUser(t, db, pk)
 	testdb.InsertTestUser(t, db, other)
 	for _, id := range []string{"acct-a", "acct-b", "acct-c", "acct-d"} {
-		require.NoError(t, repo.CreateApplication(&application.Application{ID: id, Name: id, CreatedAt: now, UpdatedAt: now}))
+		require.NoError(t, repo.RegisterApplication(&application.Application{ID: id, Name: id, CreatedAt: now, UpdatedAt: now}))
 	}
 	member := func(id, appID, role, key string, expires interface{}) {
 		exec(`INSERT INTO members (id, application_id, role, public_key, membership_expires_at) VALUES ($1,$2,$3,$4,$5)`, id, appID, role, key, expires)
@@ -143,7 +143,7 @@ func TestDeleteAccount_ShouldReturn500AndKeepUserWhenProduceEventFails_Integrati
 	testdb.InsertTestUser(t, db, pk)
 	testdb.InsertTestUser(t, db, other)
 	now := time.Now().Unix()
-	require.NoError(t, repo.CreateApplication(&application.Application{ID: "fail-a", Name: "fail-a", CreatedAt: now, UpdatedAt: now}))
+	require.NoError(t, repo.RegisterApplication(&application.Application{ID: "fail-a", Name: "fail-a", CreatedAt: now, UpdatedAt: now}))
 	require.NoError(t, repo.CreateMember(&application.Member{ID: "fail-m1", ApplicationID: "fail-a", Role: application.MemberRoleMember, PublicKey: pk}))
 	ep := NewAccountEndpoints(db, repo, &mockEventService{err: errors.New("boom")}, &mockBlobDeleter{})
 	ctx := &fasthttp.RequestCtx{}

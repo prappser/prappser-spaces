@@ -21,7 +21,7 @@ func TestUpdateLastSequence_LowerValue_NeverLowersStoredMax(t *testing.T) {
 	repo := NewRepository(db)
 
 	appID := "test-lastseq-app-1"
-	if err := repo.CreateApplication(&Application{ID: appID, Name: "LastSeq App", CreatedAt: time.Now().Unix(), UpdatedAt: time.Now().Unix()}); err != nil {
+	if err := repo.RegisterApplication(&Application{ID: appID, Name: "LastSeq App", CreatedAt: time.Now().Unix(), UpdatedAt: time.Now().Unix()}); err != nil {
 		t.Fatalf("Failed to create application: %v", err)
 	}
 

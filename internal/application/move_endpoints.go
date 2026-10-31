@@ -2,7 +2,6 @@ package application
 
 import (
 	"errors"
-	"net/url"
 
 	"github.com/goccy/go-json"
 	"github.com/prappser/prappser-spaces/internal/user"
@@ -29,12 +28,17 @@ func (me *MoveEndpoints) StartMove(ctx *fasthttp.RequestCtx) {
 		return
 	}
 	var req moveRequest
-	if err := json.Unmarshal(ctx.PostBody(), &req); err != nil || !validTargetURL(req.TargetSpaceURL) {
+	if err := json.Unmarshal(ctx.PostBody(), &req); err != nil {
 		log.Error().Err(err).Msg("Invalid start move request body")
 		ctx.Error("targetSpaceUrl is required", fasthttp.StatusBadRequest)
 		return
 	}
 	if err := me.moveService.StartMove(appID, authenticatedUser.PublicKey, req.TargetSpaceURL); err != nil {
+		if errors.Is(err, ErrInvalidMoveRequest) {
+			log.Error().Err(err).Msg("Invalid start move request body")
+			ctx.Error("targetSpaceUrl is required", fasthttp.StatusBadRequest)
+			return
+		}
 		me.writeError(ctx, err, "Failed to start move")
 		return
 	}
@@ -59,21 +63,21 @@ func (me *MoveEndpoints) CompleteMove(ctx *fasthttp.RequestCtx) {
 		return
 	}
 	var req moveRequest
-	if err := json.Unmarshal(ctx.PostBody(), &req); err != nil || !validTargetURL(req.TargetSpaceURL) || req.InviteToken == "" {
+	if err := json.Unmarshal(ctx.PostBody(), &req); err != nil {
 		log.Error().Err(err).Msg("Invalid complete move request body")
 		ctx.Error("targetSpaceUrl and inviteToken are required", fasthttp.StatusBadRequest)
 		return
 	}
 	if err := me.moveService.CompleteMove(ctx, appID, authenticatedUser.PublicKey, req.TargetSpaceURL, req.InviteToken); err != nil {
+		if errors.Is(err, ErrInvalidMoveRequest) {
+			log.Error().Err(err).Msg("Invalid complete move request body")
+			ctx.Error("targetSpaceUrl and inviteToken are required", fasthttp.StatusBadRequest)
+			return
+		}
 		me.writeError(ctx, err, "Failed to complete move")
 		return
 	}
 	ctx.SetStatusCode(fasthttp.StatusOK)
-}
-
-func validTargetURL(raw string) bool {
-	u, err := url.Parse(raw)
-	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != ""
 }
 
 func (me *MoveEndpoints) caller(ctx *fasthttp.RequestCtx) (*user.User, string, bool) {

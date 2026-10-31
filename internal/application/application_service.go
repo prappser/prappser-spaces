@@ -22,22 +22,29 @@ type Event struct {
 // EventProducer interface removed - events are now client-produced via POST /events
 // Server only validates, sequences, and applies events
 
-var ErrAppLimitReached = errors.New("app limit reached")
+var (
+	ErrAppLimitReached = errors.New("app limit reached")
+	ErrOwnerNotCaller  = errors.New("application owner must be the caller")
+)
 
 type ApplicationService struct {
 	appRepo           ApplicationRepository
 	maxAppsPerAccount int
+	spacePublicKey    string
 }
 
-func NewApplicationService(appRepo ApplicationRepository, maxAppsPerAccount int) *ApplicationService {
+func NewApplicationService(appRepo ApplicationRepository, maxAppsPerAccount int, spacePublicKey string) *ApplicationService {
 	return &ApplicationService{
 		appRepo:           appRepo,
 		maxAppsPerAccount: maxAppsPerAccount,
+		spacePublicKey:    spacePublicKey,
 	}
 }
 
-func (s *ApplicationService) RegisterApplication(ownerPublicKey string, app *Application, limitExempt bool) (*Application, error) {
-	// Validate application
+func (s *ApplicationService) RegisterApplication(caller *user.User, app *Application) (*Application, error) {
+	if caller == nil || caller.PublicKey == "" {
+		return nil, fmt.Errorf("caller public key is required")
+	}
 	if app.ID == "" {
 		return nil, fmt.Errorf("application ID cannot be empty")
 	}
@@ -45,11 +52,15 @@ func (s *ApplicationService) RegisterApplication(ownerPublicKey string, app *App
 		return nil, fmt.Errorf("application name cannot be empty")
 	}
 
-	// Validate that there is exactly one owner in members
+	var owner *Member
 	ownerCount := 0
-	for _, member := range app.Members {
+	for i, member := range app.Members {
+		if member.ID == "" {
+			return nil, fmt.Errorf("member ID cannot be empty")
+		}
 		if member.Role == MemberRoleOwner {
 			ownerCount++
+			owner = &app.Members[i]
 		}
 	}
 	if ownerCount == 0 {
@@ -58,16 +69,43 @@ func (s *ApplicationService) RegisterApplication(ownerPublicKey string, app *App
 	if ownerCount > 1 {
 		return nil, fmt.Errorf("application must have exactly one owner member")
 	}
+	for _, group := range app.ComponentGroups {
+		if group.ID == "" {
+			return nil, fmt.Errorf("component group ID cannot be empty")
+		}
+		for _, component := range group.Components {
+			if component.ID == "" {
+				return nil, fmt.Errorf("component ID cannot be empty")
+			}
+		}
+	}
 
-	// ponytail: counts apps where the caller is the owner member, so registering with someone
-	// else as owner bypasses it; fix by requiring owner key == caller.
-	if s.maxAppsPerAccount > 0 && !limitExempt {
+	if owner.PublicKey != caller.PublicKey {
+		return nil, ErrOwnerNotCaller
+	}
+
+	// ponytail: checked outside the register tx, so two first-time registers of one new ID can race; lock the app row in the tx if that matters.
+	other, err := s.appRepo.HasOtherOwner(app.ID, caller.PublicKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check application owner: %w", err)
+	}
+	if other {
+		return nil, ErrNotApplicationOwner
+	}
+
+	app.SpacePublicKey = &s.spacePublicKey
+	app.SpaceID = nil
+	if caller.SpaceID != "" {
+		app.SpaceID = &caller.SpaceID
+	}
+
+	if s.maxAppsPerAccount > 0 && caller.Role != user.RoleOwner {
 		live, err := s.appRepo.IsApplicationLive(app.ID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to check application existence: %w", err)
 		}
 		if !live {
-			count, err := s.appRepo.CountOwnedApplications(ownerPublicKey)
+			count, err := s.appRepo.CountOwnedApplications(caller.PublicKey)
 			if err != nil {
 				return nil, fmt.Errorf("failed to count applications: %w", err)
 			}
@@ -77,7 +115,7 @@ func (s *ApplicationService) RegisterApplication(ownerPublicKey string, app *App
 		}
 	}
 
-	if err := s.appRepo.MoveGuard(app.ID, ownerPublicKey, true); err != nil {
+	if err := s.appRepo.MoveGuard(app.ID, caller.PublicKey, true); err != nil {
 		var moved *MovedError
 		if errors.Is(err, ErrApplicationMoving) {
 			return nil, err
@@ -87,54 +125,14 @@ func (s *ApplicationService) RegisterApplication(ownerPublicKey string, app *App
 		}
 	}
 
-	// Set timestamps
 	now := time.Now().Unix()
 	app.CreatedAt = now
 	app.UpdatedAt = now
 
-	// Create application
-	if err := s.appRepo.CreateApplication(app); err != nil {
-		return nil, fmt.Errorf("failed to create application: %w", err)
+	if err := s.appRepo.RegisterApplication(app); err != nil {
+		return nil, fmt.Errorf("failed to register application: %w", err)
 	}
 
-	// Create members
-	for _, member := range app.Members {
-		if member.ID == "" {
-			return nil, fmt.Errorf("member ID cannot be empty")
-		}
-		member.ApplicationID = app.ID
-
-		if err := s.appRepo.CreateMember(&member); err != nil {
-			return nil, fmt.Errorf("failed to create member: %w", err)
-		}
-	}
-
-	// Create component groups and components
-	for _, group := range app.ComponentGroups {
-		if group.ID == "" {
-			return nil, fmt.Errorf("component group ID cannot be empty")
-		}
-		group.ApplicationID = app.ID
-
-		if err := s.appRepo.CreateComponentGroup(&group); err != nil {
-			return nil, fmt.Errorf("failed to create component group: %w", err)
-		}
-
-		// Create components for this group
-		for _, component := range group.Components {
-			if component.ID == "" {
-				return nil, fmt.Errorf("component ID cannot be empty")
-			}
-			component.ComponentGroupID = group.ID
-			component.ApplicationID = app.ID
-
-			if err := s.appRepo.CreateComponent(&component); err != nil {
-				return nil, fmt.Errorf("failed to create component: %w", err)
-			}
-		}
-	}
-
-	// Return the complete application
 	return s.appRepo.GetApplicationByID(app.ID)
 }
 

@@ -22,9 +22,58 @@ func NewMemoryRepository() *MemoryRepository {
 	}
 }
 
-func (r *MemoryRepository) CreateApplication(app *Application) error {
-	r.applications[app.ID] = app
+func (r *MemoryRepository) RegisterApplication(app *Application) error {
+	stored := *app
+	stored.Members = nil
+	stored.ComponentGroups = nil
+
+	members := make([]*Member, 0, len(app.Members))
+	for _, m := range app.Members {
+		if m.ID == "" {
+			return fmt.Errorf("member ID cannot be empty")
+		}
+		m.ApplicationID = app.ID
+		members = append(members, &m)
+	}
+	var groups []*ComponentGroup
+	var components []*Component
+	for _, g := range app.ComponentGroups {
+		if g.ID == "" {
+			return fmt.Errorf("component group ID cannot be empty")
+		}
+		g.ApplicationID = app.ID
+		for _, c := range g.Components {
+			if c.ID == "" {
+				return fmt.Errorf("component ID cannot be empty")
+			}
+			c.ComponentGroupID = g.ID
+			c.ApplicationID = app.ID
+			components = append(components, &c)
+		}
+		g.Components = nil
+		groups = append(groups, &g)
+	}
+
+	r.applications[app.ID] = &stored
+	for _, m := range members {
+		_ = r.CreateMember(m)
+	}
+	for _, g := range groups {
+		_ = r.CreateComponentGroup(g)
+	}
+	for _, c := range components {
+		_ = r.CreateComponent(c)
+	}
 	return nil
+}
+
+func (r *MemoryRepository) HasOtherOwner(appID, publicKey string) (bool, error) {
+	for _, m := range r.members {
+		if m.ApplicationID == appID && m.Role == MemberRoleOwner && m.PublicKey != publicKey {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (r *MemoryRepository) GetApplicationByID(id string) (*Application, error) {

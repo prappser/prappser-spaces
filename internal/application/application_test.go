@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/prappser/prappser-spaces/internal/user"
+	"github.com/stretchr/testify/assert"
 )
 
 func createTestUser() *user.User {
@@ -14,6 +15,15 @@ func createTestUser() *user.User {
 		PublicKey: "test-public-key",
 		Username:  "testuser",
 		Role:      "owner",
+		CreatedAt: time.Now().Unix(),
+	}
+}
+
+func createRegularUser() *user.User {
+	return &user.User{
+		PublicKey: "regular-public-key",
+		Username:  "regularuser",
+		Role:      user.RoleUser,
 		CreatedAt: time.Now().Unix(),
 	}
 }
@@ -44,7 +54,7 @@ func TestApplicationService_RegisterApplication_ShouldCreateApplicationWithCompo
 	// given
 	testUser := createTestUser()
 	appRepo := NewMemoryRepository()
-	appService := NewApplicationService(appRepo, 0)
+	appService := NewApplicationService(appRepo, 0, "space-key")
 
 	app := &Application{
 		ID:   "test-app-complex-id",
@@ -86,7 +96,7 @@ func TestApplicationService_RegisterApplication_ShouldCreateApplicationWithCompo
 	}
 
 	// when
-	resultApp, err := appService.RegisterApplication(testUser.PublicKey, app, false)
+	resultApp, err := appService.RegisterApplication(testUser, app)
 
 	// then
 	if err != nil {
@@ -118,7 +128,7 @@ func TestApplicationService_GetApplication_ShouldReturnCompleteApplicationData(t
 	// given
 	testUser := createTestUser()
 	appRepo := NewMemoryRepository()
-	appService := NewApplicationService(appRepo, 0)
+	appService := NewApplicationService(appRepo, 0, "space-key")
 
 	app := createBasicApplication(testUser, "Test App", "test-app-get-id")
 	app.ComponentGroups[0].Name = "Data Components"
@@ -133,7 +143,7 @@ func TestApplicationService_GetApplication_ShouldReturnCompleteApplicationData(t
 		},
 	}
 
-	registeredApp, err := appService.RegisterApplication(testUser.PublicKey, app, false)
+	registeredApp, err := appService.RegisterApplication(testUser, app)
 	if err != nil {
 		t.Fatalf("Failed to register application: %v", err)
 	}
@@ -168,11 +178,11 @@ func TestApplicationService_GetApplication_ShouldReturnErrorForUnauthorizedUser(
 	}
 
 	appRepo := NewMemoryRepository()
-	appService := NewApplicationService(appRepo, 0)
+	appService := NewApplicationService(appRepo, 0, "space-key")
 
 	app := createBasicApplication(owner, "Owner App", "owner-app-id")
 
-	registeredApp, err := appService.RegisterApplication(owner.PublicKey, app, false)
+	registeredApp, err := appService.RegisterApplication(owner, app)
 	if err != nil {
 		t.Fatalf("Failed to register application: %v", err)
 	}
@@ -194,18 +204,18 @@ func TestApplicationService_ListApplications_ShouldReturnUserApplicationsOnly(t 
 	// given
 	testUser := createTestUser()
 	appRepo := NewMemoryRepository()
-	appService := NewApplicationService(appRepo, 0)
+	appService := NewApplicationService(appRepo, 0, "space-key")
 
 	app1 := createBasicApplication(testUser, "App 1", "test-app-id-1")
 
 	app2 := createBasicApplication(testUser, "App 2", "test-app-id-2")
 
-	_, err := appService.RegisterApplication(testUser.PublicKey, app1, false)
+	_, err := appService.RegisterApplication(testUser, app1)
 	if err != nil {
 		t.Fatalf("Failed to register first application: %v", err)
 	}
 
-	_, err = appService.RegisterApplication(testUser.PublicKey, app2, false)
+	_, err = appService.RegisterApplication(testUser, app2)
 	if err != nil {
 		t.Fatalf("Failed to register second application: %v", err)
 	}
@@ -227,11 +237,11 @@ func TestApplicationService_GetApplicationState_ShouldReturnStateWithCorrectTime
 	// given
 	testUser := createTestUser()
 	appRepo := NewMemoryRepository()
-	appService := NewApplicationService(appRepo, 0)
+	appService := NewApplicationService(appRepo, 0, "space-key")
 
 	app := createBasicApplication(testUser, "State Test App", "state-test-app-id")
 
-	registeredApp, err := appService.RegisterApplication(testUser.PublicKey, app, false)
+	registeredApp, err := appService.RegisterApplication(testUser, app)
 	if err != nil {
 		t.Fatalf("Failed to register application: %v", err)
 	}
@@ -261,13 +271,13 @@ func TestApplicationService_RegisterApplication_ShouldReturnErrorForEmptyName(t 
 	// given
 	testUser := createTestUser()
 	appRepo := NewMemoryRepository()
-	appService := NewApplicationService(appRepo, 0)
+	appService := NewApplicationService(appRepo, 0, "space-key")
 
 	app := createBasicApplication(testUser, "", "empty-name-test-id")
 	app.Name = "" // Explicitly set empty name to test validation
 
 	// when
-	_, err := appService.RegisterApplication(testUser.PublicKey, app, false)
+	_, err := appService.RegisterApplication(testUser, app)
 
 	// then
 	if err == nil {
@@ -279,7 +289,7 @@ func TestApplicationService_DeleteApplication_ShouldDeleteApplicationSuccessfull
 	// given
 	testUser := createTestUser()
 	appRepo := NewMemoryRepository()
-	appService := NewApplicationService(appRepo, 0)
+	appService := NewApplicationService(appRepo, 0, "space-key")
 
 	app := createBasicApplication(testUser, "App to Delete", "delete-test-app-id")
 	app.ComponentGroups[0].Components = []Component{
@@ -293,7 +303,7 @@ func TestApplicationService_DeleteApplication_ShouldDeleteApplicationSuccessfull
 		},
 	}
 
-	registeredApp, err := appService.RegisterApplication(testUser.PublicKey, app, false)
+	registeredApp, err := appService.RegisterApplication(testUser, app)
 	if err != nil {
 		t.Fatalf("Failed to register application: %v", err)
 	}
@@ -324,11 +334,11 @@ func TestApplicationService_DeleteApplication_ShouldReturnErrorForUnauthorizedUs
 	}
 
 	appRepo := NewMemoryRepository()
-	appService := NewApplicationService(appRepo, 0)
+	appService := NewApplicationService(appRepo, 0, "space-key")
 
 	app := createBasicApplication(owner, "Owner's App", "owner-delete-app-id")
 
-	registeredApp, err := appService.RegisterApplication(owner.PublicKey, app, false)
+	registeredApp, err := appService.RegisterApplication(owner, app)
 	if err != nil {
 		t.Fatalf("Failed to register application: %v", err)
 	}
@@ -350,7 +360,7 @@ func TestApplicationService_DeleteApplication_ShouldReturnErrorForNonExistentApp
 	// given
 	testUser := createTestUser()
 	appRepo := NewMemoryRepository()
-	appService := NewApplicationService(appRepo, 0)
+	appService := NewApplicationService(appRepo, 0, "space-key")
 
 	// when
 	err := appService.DeleteApplication("non-existent-id", testUser)
@@ -369,7 +379,7 @@ func TestApplicationService_RegisterApplication_ShouldRoundTripMember(t *testing
 	// given
 	testUser := createTestUser()
 	appRepo := NewMemoryRepository()
-	appService := NewApplicationService(appRepo, 0)
+	appService := NewApplicationService(appRepo, 0, "space-key")
 
 	app := &Application{
 		ID:   "member-roundtrip-test-id",
@@ -392,7 +402,7 @@ func TestApplicationService_RegisterApplication_ShouldRoundTripMember(t *testing
 	}
 
 	// when
-	registeredApp, err := appService.RegisterApplication(testUser.PublicKey, app, false)
+	registeredApp, err := appService.RegisterApplication(testUser, app)
 
 	// then
 	if err != nil {
@@ -423,7 +433,7 @@ func TestApplicationService_RegisterApplication_ShouldRoundTripMember(t *testing
 // filtering tests below.
 func seedExpiryTestMembers(t *testing.T, appRepo *MemoryRepository, appID string) {
 	t.Helper()
-	if err := appRepo.CreateApplication(&Application{ID: appID, Name: "Expiry Test App"}); err != nil {
+	if err := appRepo.RegisterApplication(&Application{ID: appID, Name: "Expiry Test App"}); err != nil {
 		t.Fatalf("Failed to create application: %v", err)
 	}
 
@@ -519,7 +529,7 @@ func registerN(t *testing.T, s *ApplicationService, u *user.User, n int) {
 	t.Helper()
 	for i := 0; i < n; i++ {
 		id := fmt.Sprintf("limit-app-%d", i)
-		if _, err := s.RegisterApplication(u.PublicKey, createBasicApplication(u, id, id), false); err != nil {
+		if _, err := s.RegisterApplication(u, createBasicApplication(u, id, id)); err != nil {
 			t.Fatalf("setup register %s: %v", id, err)
 		}
 	}
@@ -527,12 +537,12 @@ func registerN(t *testing.T, s *ApplicationService, u *user.User, n int) {
 
 func TestApplicationService_RegisterApplication_AtLimit_ShouldReturnErrAppLimitReached(t *testing.T) {
 	// given
-	testUser := createTestUser()
-	appService := NewApplicationService(NewMemoryRepository(), 2)
+	testUser := createRegularUser()
+	appService := NewApplicationService(NewMemoryRepository(), 2, "space-key")
 	registerN(t, appService, testUser, 2)
 
 	// when
-	_, err := appService.RegisterApplication(testUser.PublicKey, createBasicApplication(testUser, "over", "over"), false)
+	_, err := appService.RegisterApplication(testUser, createBasicApplication(testUser, "over", "over"))
 
 	// then
 	if !errors.Is(err, ErrAppLimitReached) {
@@ -542,12 +552,12 @@ func TestApplicationService_RegisterApplication_AtLimit_ShouldReturnErrAppLimitR
 
 func TestApplicationService_RegisterApplication_UnderLimit_ShouldSucceed(t *testing.T) {
 	// given
-	testUser := createTestUser()
-	appService := NewApplicationService(NewMemoryRepository(), 2)
+	testUser := createRegularUser()
+	appService := NewApplicationService(NewMemoryRepository(), 2, "space-key")
 	registerN(t, appService, testUser, 1)
 
 	// when
-	_, err := appService.RegisterApplication(testUser.PublicKey, createBasicApplication(testUser, "second", "second"), false)
+	_, err := appService.RegisterApplication(testUser, createBasicApplication(testUser, "second", "second"))
 
 	// then
 	if err != nil {
@@ -555,14 +565,14 @@ func TestApplicationService_RegisterApplication_UnderLimit_ShouldSucceed(t *test
 	}
 }
 
-func TestApplicationService_RegisterApplication_LimitExempt_ShouldSucceedAtLimit(t *testing.T) {
+func TestApplicationService_RegisterApplication_SpaceOwnerExempt_ShouldSucceedAtLimit(t *testing.T) {
 	// given
 	testUser := createTestUser()
-	appService := NewApplicationService(NewMemoryRepository(), 1)
+	appService := NewApplicationService(NewMemoryRepository(), 1, "space-key")
 	registerN(t, appService, testUser, 1)
 
 	// when
-	_, err := appService.RegisterApplication(testUser.PublicKey, createBasicApplication(testUser, "extra", "extra"), true)
+	_, err := appService.RegisterApplication(testUser, createBasicApplication(testUser, "extra", "extra"))
 
 	// then
 	if err != nil {
@@ -572,8 +582,8 @@ func TestApplicationService_RegisterApplication_LimitExempt_ShouldSucceedAtLimit
 
 func TestApplicationService_RegisterApplication_ZeroLimit_ShouldBeUnlimited(t *testing.T) {
 	// given
-	testUser := createTestUser()
-	appService := NewApplicationService(NewMemoryRepository(), 0)
+	testUser := createRegularUser()
+	appService := NewApplicationService(NewMemoryRepository(), 0, "space-key")
 
 	// when
 	registerN(t, appService, testUser, 5)
@@ -583,12 +593,12 @@ func TestApplicationService_RegisterApplication_ZeroLimit_ShouldBeUnlimited(t *t
 
 func TestApplicationService_RegisterApplication_ReRegisterLiveAppAtLimit_ShouldSucceed(t *testing.T) {
 	// given
-	testUser := createTestUser()
-	appService := NewApplicationService(NewMemoryRepository(), 1)
+	testUser := createRegularUser()
+	appService := NewApplicationService(NewMemoryRepository(), 1, "space-key")
 	registerN(t, appService, testUser, 1)
 
 	// when
-	_, err := appService.RegisterApplication(testUser.PublicKey, createBasicApplication(testUser, "renamed", "limit-app-0"), false)
+	_, err := appService.RegisterApplication(testUser, createBasicApplication(testUser, "renamed", "limit-app-0"))
 
 	// then
 	if err != nil {
@@ -598,15 +608,15 @@ func TestApplicationService_RegisterApplication_ReRegisterLiveAppAtLimit_ShouldS
 
 func TestApplicationService_RegisterApplication_SoftDeletedApp_ShouldNotCountTowardsLimit(t *testing.T) {
 	// given
-	testUser := createTestUser()
-	appService := NewApplicationService(NewMemoryRepository(), 1)
+	testUser := createRegularUser()
+	appService := NewApplicationService(NewMemoryRepository(), 1, "space-key")
 	registerN(t, appService, testUser, 1)
 	if err := appService.DeleteApplication("limit-app-0", testUser); err != nil {
 		t.Fatalf("setup delete: %v", err)
 	}
 
 	// when
-	_, err := appService.RegisterApplication(testUser.PublicKey, createBasicApplication(testUser, "fresh", "fresh"), false)
+	_, err := appService.RegisterApplication(testUser, createBasicApplication(testUser, "fresh", "fresh"))
 
 	// then
 	if err != nil {
@@ -616,21 +626,118 @@ func TestApplicationService_RegisterApplication_SoftDeletedApp_ShouldNotCountTow
 
 func TestApplicationService_RegisterApplication_ReviveSoftDeletedAppAtLimit_ShouldReturnErrAppLimitReached(t *testing.T) {
 	// given
-	testUser := createTestUser()
-	appService := NewApplicationService(NewMemoryRepository(), 1)
+	testUser := createRegularUser()
+	appService := NewApplicationService(NewMemoryRepository(), 1, "space-key")
 	registerN(t, appService, testUser, 1)
 	if err := appService.DeleteApplication("limit-app-0", testUser); err != nil {
 		t.Fatalf("setup delete: %v", err)
 	}
-	if _, err := appService.RegisterApplication(testUser.PublicKey, createBasicApplication(testUser, "other", "other"), false); err != nil {
+	if _, err := appService.RegisterApplication(testUser, createBasicApplication(testUser, "other", "other")); err != nil {
 		t.Fatalf("setup register: %v", err)
 	}
 
 	// when
-	_, err := appService.RegisterApplication(testUser.PublicKey, createBasicApplication(testUser, "revived", "limit-app-0"), false)
+	_, err := appService.RegisterApplication(testUser, createBasicApplication(testUser, "revived", "limit-app-0"))
 
 	// then
 	if !errors.Is(err, ErrAppLimitReached) {
 		t.Fatalf("Expected ErrAppLimitReached when reviving at limit, got: %v", err)
 	}
+}
+
+func TestApplicationService_RegisterApplication_ShouldRejectOwnerOtherThanCaller(t *testing.T) {
+	// given
+	caller := createRegularUser()
+	other := createTestUser()
+	appRepo := NewMemoryRepository()
+	appService := NewApplicationService(appRepo, 0, "space-key")
+
+	// when
+	_, err := appService.RegisterApplication(caller, createBasicApplication(other, "Spoofed", "spoofed-app"))
+
+	// then
+	assert.ErrorIs(t, err, ErrOwnerNotCaller)
+	live, _ := appRepo.IsApplicationLive("spoofed-app")
+	assert.False(t, live)
+}
+
+func TestApplicationService_RegisterApplication_ShouldRejectReRegisterOfAppOwnedByOther(t *testing.T) {
+	// given
+	owner := createTestUser()
+	attacker := createRegularUser()
+	appService := NewApplicationService(NewMemoryRepository(), 0, "space-key")
+	_, err := appService.RegisterApplication(owner, createBasicApplication(owner, "Original", "contested-app"))
+	assert.NoError(t, err)
+
+	// when
+	_, err = appService.RegisterApplication(attacker, createBasicApplication(attacker, "Hijacked", "contested-app"))
+
+	// then
+	assert.ErrorIs(t, err, ErrNotApplicationOwner)
+	got, err := appService.GetApplication("contested-app", owner)
+	assert.NoError(t, err)
+	assert.Equal(t, "Original", got.Name)
+}
+
+func TestApplicationService_RegisterApplication_ShouldAllowSameOwnerReRegister(t *testing.T) {
+	// given
+	owner := createRegularUser()
+	appService := NewApplicationService(NewMemoryRepository(), 0, "space-key")
+	_, err := appService.RegisterApplication(owner, createBasicApplication(owner, "First", "retry-app"))
+	assert.NoError(t, err)
+
+	// when
+	got, err := appService.RegisterApplication(owner, createBasicApplication(owner, "Second", "retry-app"))
+
+	// then
+	assert.NoError(t, err)
+	assert.Equal(t, "Second", got.Name)
+}
+
+func TestApplicationService_RegisterApplication_ShouldSetSpaceKeyAndSpaceIDFromServiceAndCaller(t *testing.T) {
+	// given
+	caller := createRegularUser()
+	caller.SpaceID = "caller-space"
+	appService := NewApplicationService(NewMemoryRepository(), 0, "service-space-key")
+	app := createBasicApplication(caller, "Spaced", "spaced-app")
+	clientKey, clientSpace := "client-key", "client-space"
+	app.SpacePublicKey = &clientKey
+	app.SpaceID = &clientSpace
+
+	// when
+	got, err := appService.RegisterApplication(caller, app)
+
+	// then
+	assert.NoError(t, err)
+	assert.Equal(t, "service-space-key", *got.SpacePublicKey)
+	assert.Equal(t, "caller-space", *got.SpaceID)
+}
+
+func TestApplicationService_RegisterApplication_ShouldRejectEmptyMemberIDBeforeWriting(t *testing.T) {
+	// given
+	caller := createRegularUser()
+	appRepo := NewMemoryRepository()
+	appService := NewApplicationService(appRepo, 0, "space-key")
+	app := createBasicApplication(caller, "Bad", "bad-member-app")
+	app.Members = append(app.Members, Member{ID: "", Role: MemberRoleMember, PublicKey: "someone"})
+
+	// when
+	_, err := appService.RegisterApplication(caller, app)
+
+	// then
+	assert.Error(t, err)
+	live, _ := appRepo.IsApplicationLive("bad-member-app")
+	assert.False(t, live)
+}
+
+func TestApplicationService_RegisterApplication_NilCaller_ShouldReturnError(t *testing.T) {
+	// given
+	testUser := createRegularUser()
+	appService := NewApplicationService(NewMemoryRepository(), 0, "space-key")
+
+	// when
+	_, err := appService.RegisterApplication(nil, createBasicApplication(testUser, "app", "app"))
+
+	// then
+	assert.Error(t, err)
 }

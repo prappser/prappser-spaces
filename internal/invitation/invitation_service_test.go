@@ -262,7 +262,7 @@ func newJoinTestService(t *testing.T, invite *Invitation, userRepo *fakeUserRepo
 	spacePublicKeyB64 = base64.StdEncoding.EncodeToString(pub)
 
 	appRepo := application.NewMemoryRepository()
-	assert.NoError(t, appRepo.CreateApplication(&application.Application{ID: invite.ApplicationID, Name: "Test App"}))
+	assert.NoError(t, appRepo.RegisterApplication(&application.Application{ID: invite.ApplicationID, Name: "Test App"}))
 	assert.NoError(t, appRepo.CreateMember(&application.Member{ID: "member-" + memberPublicKey, ApplicationID: invite.ApplicationID, PublicKey: memberPublicKey}))
 
 	invRepo := &fakeInvitationRepo{invite: invite}
@@ -730,15 +730,14 @@ func TestCreateInvitation_ShouldDefaultToSingleUseWhenGrantsIdentity(t *testing.
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	assert.NoError(t, err)
 	repo := &fakeInvitationRepo{}
-	svc := NewInvitationService(repo, priv, pub, application.NewMemoryRepository(), nil, &fakeUserRepo{}, fakeEventService{}, "space-key")
+	svc := NewInvitationService(repo, priv, pub, ownerAppRepo(t), nil, &fakeUserRepo{}, fakeEventService{}, "space-key")
 	grantsIdentity := true
 
 	// when
-	_, err = svc.CreateInvitation(CreateInvitationOptions{
-		ApplicationID:      "app-1",
-		CreatedByPublicKey: "creator-pk",
-		GrantsIdentity:     &grantsIdentity,
-		SpaceURL:           "https://space.example",
+	_, err = svc.CreateInvitation(creatorCaller, CreateInvitationOptions{
+		ApplicationID:  "app-1",
+		GrantsIdentity: &grantsIdentity,
+		SpaceURL:       "https://space.example",
 	})
 
 	// then: D9 - an identity-granting invite with no explicit maxUses
@@ -753,15 +752,14 @@ func TestCreateInvitation_ShouldNotDefaultMaxUsesWhenIdentityNotGranted(t *testi
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	assert.NoError(t, err)
 	repo := &fakeInvitationRepo{}
-	svc := NewInvitationService(repo, priv, pub, application.NewMemoryRepository(), nil, &fakeUserRepo{}, fakeEventService{}, "space-key")
+	svc := NewInvitationService(repo, priv, pub, ownerAppRepo(t), nil, &fakeUserRepo{}, fakeEventService{}, "space-key")
 	grantsIdentity := false
 
 	// when
-	_, err = svc.CreateInvitation(CreateInvitationOptions{
-		ApplicationID:      "app-1",
-		CreatedByPublicKey: "creator-pk",
-		GrantsIdentity:     &grantsIdentity,
-		SpaceURL:           "https://space.example",
+	_, err = svc.CreateInvitation(creatorCaller, CreateInvitationOptions{
+		ApplicationID:  "app-1",
+		GrantsIdentity: &grantsIdentity,
+		SpaceURL:       "https://space.example",
 	})
 
 	// then: the D9 single-use default only applies to identity-granting invites
@@ -774,15 +772,14 @@ func TestCreateInvitation_ShouldForceIdentityOffWhenMembershipOff(t *testing.T) 
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	assert.NoError(t, err)
 	repo := &fakeInvitationRepo{}
-	svc := NewInvitationService(repo, priv, pub, application.NewMemoryRepository(), nil, &fakeUserRepo{}, fakeEventService{}, "space-key")
+	svc := NewInvitationService(repo, priv, pub, ownerAppRepo(t), nil, &fakeUserRepo{}, fakeEventService{}, "space-key")
 	grantsMembership := false
 
 	// when
-	_, err = svc.CreateInvitation(CreateInvitationOptions{
-		ApplicationID:      "app-1",
-		CreatedByPublicKey: "creator-pk",
-		GrantsMembership:   &grantsMembership,
-		SpaceURL:           "https://space.example",
+	_, err = svc.CreateInvitation(creatorCaller, CreateInvitationOptions{
+		ApplicationID:    "app-1",
+		GrantsMembership: &grantsMembership,
+		SpaceURL:         "https://space.example",
 	})
 
 	// then: D8 - a preview-only invite can never mint identities, and
@@ -800,13 +797,12 @@ func TestCreateInvitation_ShouldPersistMembershipDurationHours(t *testing.T) {
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	assert.NoError(t, err)
 	repo := &fakeInvitationRepo{}
-	svc := NewInvitationService(repo, priv, pub, application.NewMemoryRepository(), nil, &fakeUserRepo{}, fakeEventService{}, "space-key")
+	svc := NewInvitationService(repo, priv, pub, ownerAppRepo(t), nil, &fakeUserRepo{}, fakeEventService{}, "space-key")
 	durationHours := 72
 
 	// when
-	_, err = svc.CreateInvitation(CreateInvitationOptions{
+	_, err = svc.CreateInvitation(creatorCaller, CreateInvitationOptions{
 		ApplicationID:           "app-1",
-		CreatedByPublicKey:      "creator-pk",
 		MembershipDurationHours: &durationHours,
 		SpaceURL:                "https://space.example",
 	})
@@ -823,13 +819,12 @@ func TestCreateInvitation_ShouldRejectMembershipDurationHoursBelowMinimum(t *tes
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	assert.NoError(t, err)
 	repo := &fakeInvitationRepo{}
-	svc := NewInvitationService(repo, priv, pub, application.NewMemoryRepository(), nil, &fakeUserRepo{}, fakeEventService{}, "space-key")
+	svc := NewInvitationService(repo, priv, pub, ownerAppRepo(t), nil, &fakeUserRepo{}, fakeEventService{}, "space-key")
 	zero := 0
 
 	// when
-	_, err = svc.CreateInvitation(CreateInvitationOptions{
+	_, err = svc.CreateInvitation(creatorCaller, CreateInvitationOptions{
 		ApplicationID:           "app-1",
-		CreatedByPublicKey:      "creator-pk",
 		MembershipDurationHours: &zero,
 		SpaceURL:                "https://space.example",
 	})
@@ -844,13 +839,12 @@ func TestCreateInvitation_ShouldRejectMembershipDurationHoursAboveMaximum(t *tes
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	assert.NoError(t, err)
 	repo := &fakeInvitationRepo{}
-	svc := NewInvitationService(repo, priv, pub, application.NewMemoryRepository(), nil, &fakeUserRepo{}, fakeEventService{}, "space-key")
+	svc := NewInvitationService(repo, priv, pub, ownerAppRepo(t), nil, &fakeUserRepo{}, fakeEventService{}, "space-key")
 	tooLong := MaxMembershipDurationHours + 1
 
 	// when
-	_, err = svc.CreateInvitation(CreateInvitationOptions{
+	_, err = svc.CreateInvitation(creatorCaller, CreateInvitationOptions{
 		ApplicationID:           "app-1",
-		CreatedByPublicKey:      "creator-pk",
 		MembershipDurationHours: &tooLong,
 		SpaceURL:                "https://space.example",
 	})
@@ -870,7 +864,7 @@ func newAuthzTestService(t *testing.T, appID, memberPublicKey string, role appli
 	assert.NoError(t, err)
 
 	appRepo := application.NewMemoryRepository()
-	assert.NoError(t, appRepo.CreateApplication(&application.Application{ID: appID, Name: "Test App"}))
+	assert.NoError(t, appRepo.RegisterApplication(&application.Application{ID: appID, Name: "Test App"}))
 	if role != "" {
 		assert.NoError(t, appRepo.CreateMember(&application.Member{ID: "member-" + memberPublicKey, ApplicationID: appID, PublicKey: memberPublicKey, Role: role}))
 	}
@@ -954,10 +948,13 @@ func TestRevokeInvitation_ProducesInviteRevokedEvent(t *testing.T) {
 	invite := &Invitation{ID: "invite-1", ApplicationID: "app-1", Role: "member", CreatedAt: time.Now().Unix()}
 	repo := &fakeInvitationRepo{invite: invite}
 	events := &capturingEventService{}
-	svc := NewInvitationService(repo, priv, pub, application.NewMemoryRepository(), nil, &fakeUserRepo{}, events, "space-key")
+	appRepo := application.NewMemoryRepository()
+	assert.NoError(t, appRepo.RegisterApplication(&application.Application{ID: "app-1", Name: "Test App"}))
+	assert.NoError(t, appRepo.CreateMember(&application.Member{ID: "m-owner", ApplicationID: "app-1", PublicKey: "owner-pk", Role: application.MemberRoleOwner}))
+	svc := NewInvitationService(repo, priv, pub, appRepo, nil, &fakeUserRepo{}, events, "space-key")
 
 	// when
-	err = svc.RevokeInvitation(invite, "owner-pk")
+	err = svc.RevokeInvitation(&user.User{PublicKey: "owner-pk"}, "app-1", "invite-1")
 
 	// then: the invite_revoked event carries the revoking caller as creator
 	// and the invite's applicationId/inviteId (#125)
@@ -980,7 +977,7 @@ func newFreshJoinTestService(t *testing.T, invite *Invitation) (svc *InvitationS
 	assert.NoError(t, err)
 
 	appRepo := application.NewMemoryRepository()
-	assert.NoError(t, appRepo.CreateApplication(&application.Application{ID: invite.ApplicationID, Name: "Test App"}))
+	assert.NoError(t, appRepo.RegisterApplication(&application.Application{ID: invite.ApplicationID, Name: "Test App"}))
 
 	invRepo := &fakeInvitationRepo{invite: invite}
 	events = &capturingEventService{}
@@ -1057,16 +1054,15 @@ func TestCreateInvitation_ShouldDefaultToSingleUseWhenGrantsSpaceUse(t *testing.
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	assert.NoError(t, err)
 	repo := &fakeInvitationRepo{}
-	svc := NewInvitationService(repo, priv, pub, application.NewMemoryRepository(), nil, &fakeUserRepo{}, fakeEventService{}, "space-key")
+	svc := NewInvitationService(repo, priv, pub, ownerAppRepo(t), nil, &fakeUserRepo{}, fakeEventService{}, "space-key")
 	yes, no := true, false
 
 	// when
-	resp, err := svc.CreateInvitation(CreateInvitationOptions{
-		ApplicationID:      "app-1",
-		CreatedByPublicKey: "creator-pk",
-		GrantsIdentity:     &no,
-		GrantsSpaceUse:     &yes,
-		SpaceURL:           "https://space.example",
+	resp, err := svc.CreateInvitation(creatorCaller, CreateInvitationOptions{
+		ApplicationID:  "app-1",
+		GrantsIdentity: &no,
+		GrantsSpaceUse: &yes,
+		SpaceURL:       "https://space.example",
 	})
 
 	// then
@@ -1083,16 +1079,15 @@ func TestCreateInvitation_ShouldForceSpaceUseOffWhenMembershipOff(t *testing.T) 
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	assert.NoError(t, err)
 	repo := &fakeInvitationRepo{}
-	svc := NewInvitationService(repo, priv, pub, application.NewMemoryRepository(), nil, &fakeUserRepo{}, fakeEventService{}, "space-key")
+	svc := NewInvitationService(repo, priv, pub, ownerAppRepo(t), nil, &fakeUserRepo{}, fakeEventService{}, "space-key")
 	yes, no := true, false
 
 	// when
-	_, err = svc.CreateInvitation(CreateInvitationOptions{
-		ApplicationID:      "app-1",
-		CreatedByPublicKey: "creator-pk",
-		GrantsMembership:   &no,
-		GrantsSpaceUse:     &yes,
-		SpaceURL:           "https://space.example",
+	_, err = svc.CreateInvitation(creatorCaller, CreateInvitationOptions{
+		ApplicationID:    "app-1",
+		GrantsMembership: &no,
+		GrantsSpaceUse:   &yes,
+		SpaceURL:         "https://space.example",
 	})
 
 	// then
@@ -1106,13 +1101,12 @@ func TestCreateInvitation_ShouldDefaultSpaceUseToFalse(t *testing.T) {
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	assert.NoError(t, err)
 	repo := &fakeInvitationRepo{}
-	svc := NewInvitationService(repo, priv, pub, application.NewMemoryRepository(), nil, &fakeUserRepo{}, fakeEventService{}, "space-key")
+	svc := NewInvitationService(repo, priv, pub, ownerAppRepo(t), nil, &fakeUserRepo{}, fakeEventService{}, "space-key")
 
 	// when
-	_, err = svc.CreateInvitation(CreateInvitationOptions{
-		ApplicationID:      "app-1",
-		CreatedByPublicKey: "creator-pk",
-		SpaceURL:           "https://space.example",
+	_, err = svc.CreateInvitation(creatorCaller, CreateInvitationOptions{
+		ApplicationID: "app-1",
+		SpaceURL:      "https://space.example",
 	})
 
 	// then
@@ -1140,7 +1134,7 @@ func joinWithSpaceUse(t *testing.T, invite *Invitation, existingRole string, see
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	assert.NoError(t, err)
 	appRepo := application.NewMemoryRepository()
-	assert.NoError(t, appRepo.CreateApplication(&application.Application{ID: invite.ApplicationID, Name: "Test App"}))
+	assert.NoError(t, appRepo.RegisterApplication(&application.Application{ID: invite.ApplicationID, Name: "Test App"}))
 	if seedMember {
 		assert.NoError(t, appRepo.CreateMember(&application.Member{ID: "member-1", ApplicationID: invite.ApplicationID, PublicKey: acctB64}))
 	}
@@ -1249,7 +1243,7 @@ func joinGuestWithAssertionDevice(t *testing.T, enrolled, revoked bool) *fakeUse
 	assert.NoError(t, err)
 	spaceKeyB64 := base64.StdEncoding.EncodeToString(pub)
 	appRepo := application.NewMemoryRepository()
-	assert.NoError(t, appRepo.CreateApplication(&application.Application{ID: invite.ApplicationID, Name: "Test App"}))
+	assert.NoError(t, appRepo.RegisterApplication(&application.Application{ID: invite.ApplicationID, Name: "Test App"}))
 	svc := NewInvitationService(&fakeInvitationRepo{invite: invite}, priv, pub, appRepo, nil, userRepo, &capturingEventService{}, spaceKeyB64)
 	token, err := svc.GenerateToken(invite.ID, "https://space.example", nil)
 	assert.NoError(t, err)
@@ -1395,7 +1389,7 @@ func checkAsMember(t *testing.T, invite *Invitation, role string, invRepo *fakeI
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	assert.NoError(t, err)
 	appRepo := application.NewMemoryRepository()
-	assert.NoError(t, appRepo.CreateApplication(&application.Application{ID: invite.ApplicationID, Name: "Test App"}))
+	assert.NoError(t, appRepo.RegisterApplication(&application.Application{ID: invite.ApplicationID, Name: "Test App"}))
 	assert.NoError(t, appRepo.CreateMember(&application.Member{ID: "member-1", ApplicationID: invite.ApplicationID, PublicKey: "member-pk"}))
 	userRepo := &fakeUserRepo{existingUser: &user.User{PublicKey: "member-pk", Role: role}}
 	invRepo.invite = invite
@@ -1446,7 +1440,7 @@ func gatedJoin(t *testing.T, invite *Invitation, existingRole string, singleUse 
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	assert.NoError(t, err)
 	appRepo := application.NewMemoryRepository()
-	assert.NoError(t, appRepo.CreateApplication(&application.Application{ID: invite.ApplicationID, Name: "Test App"}))
+	assert.NoError(t, appRepo.RegisterApplication(&application.Application{ID: invite.ApplicationID, Name: "Test App"}))
 	invRepo.invite = invite
 	svc := NewInvitationService(invRepo, priv, pub, appRepo, nil, userRepo, events, "space-key")
 	svc.SingleUseSignup = singleUse
@@ -1625,15 +1619,14 @@ func TestCreateInvitation_ShouldPersistExpiresAtMatchingToken(t *testing.T) {
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	assert.NoError(t, err)
 	repo := &fakeInvitationRepo{}
-	svc := NewInvitationService(repo, priv, pub, application.NewMemoryRepository(), nil, &fakeUserRepo{}, fakeEventService{}, "space-key")
+	svc := NewInvitationService(repo, priv, pub, ownerAppRepo(t), nil, &fakeUserRepo{}, fakeEventService{}, "space-key")
 	hours := 24
 
 	// when
-	resp, err := svc.CreateInvitation(CreateInvitationOptions{
-		ApplicationID:      "app-1",
-		CreatedByPublicKey: "creator-pk",
-		ExpiresInHours:     &hours,
-		SpaceURL:           "https://space.example",
+	resp, err := svc.CreateInvitation(creatorCaller, CreateInvitationOptions{
+		ApplicationID:  "app-1",
+		ExpiresInHours: &hours,
+		SpaceURL:       "https://space.example",
 	})
 
 	// then
@@ -1650,13 +1643,12 @@ func TestCreateInvitation_ShouldLeaveExpiresAtNilWhenNoExpiry(t *testing.T) {
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	assert.NoError(t, err)
 	repo := &fakeInvitationRepo{}
-	svc := NewInvitationService(repo, priv, pub, application.NewMemoryRepository(), nil, &fakeUserRepo{}, fakeEventService{}, "space-key")
+	svc := NewInvitationService(repo, priv, pub, ownerAppRepo(t), nil, &fakeUserRepo{}, fakeEventService{}, "space-key")
 
 	// when
-	_, err = svc.CreateInvitation(CreateInvitationOptions{
-		ApplicationID:      "app-1",
-		CreatedByPublicKey: "creator-pk",
-		SpaceURL:           "https://space.example",
+	_, err = svc.CreateInvitation(creatorCaller, CreateInvitationOptions{
+		ApplicationID: "app-1",
+		SpaceURL:      "https://space.example",
 	})
 
 	// then
@@ -1665,4 +1657,148 @@ func TestCreateInvitation_ShouldLeaveExpiresAtNilWhenNoExpiry(t *testing.T) {
 	body, err := json.Marshal(repo.createdInvite)
 	assert.NoError(t, err)
 	assert.NotContains(t, string(body), "expiresAt")
+}
+
+var creatorCaller = &user.User{PublicKey: "creator-pk", Role: user.RoleOwner}
+
+// ownerAppRepo seeds app-1 with creatorCaller as its owner.
+func ownerAppRepo(t *testing.T) *application.MemoryRepository {
+	t.Helper()
+	appRepo := application.NewMemoryRepository()
+	assert.NoError(t, appRepo.RegisterApplication(&application.Application{ID: "app-1", Name: "Test App"}))
+	assert.NoError(t, appRepo.CreateMember(&application.Member{ID: "m-creator", ApplicationID: "app-1", PublicKey: "creator-pk", Role: application.MemberRoleOwner}))
+	return appRepo
+}
+
+// movingAppRepo reports every application as mid-move (MemoryRepository's
+// MoveGuard never blocks).
+type movingAppRepo struct{ *application.MemoryRepository }
+
+func (movingAppRepo) MoveGuard(appID, publicKey string, write bool) error {
+	return application.ErrApplicationMoving
+}
+
+func newCreateTestService(t *testing.T, appRepo application.ApplicationRepository) (*InvitationService, *fakeInvitationRepo) {
+	t.Helper()
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	assert.NoError(t, err)
+	repo := &fakeInvitationRepo{}
+	return NewInvitationService(repo, priv, pub, appRepo, nil, &fakeUserRepo{}, &capturingEventService{}, "space-key"), repo
+}
+
+func TestCreateInvitation_ShouldRejectNonOwner(t *testing.T) {
+	// given
+	appRepo := ownerAppRepo(t)
+	assert.NoError(t, appRepo.CreateMember(&application.Member{ID: "m-plain", ApplicationID: "app-1", PublicKey: "plain-pk", Role: application.MemberRoleMember}))
+	svc, repo := newCreateTestService(t, appRepo)
+
+	// when
+	_, err := svc.CreateInvitation(&user.User{PublicKey: "plain-pk"}, CreateInvitationOptions{ApplicationID: "app-1", SpaceURL: "https://space.example"})
+
+	// then
+	assert.ErrorIs(t, err, ErrNotAppAuthorized)
+	assert.Nil(t, repo.createdInvite)
+}
+
+func TestCreateInvitation_ShouldRejectSpaceUseGrantFromNonSpaceOwner(t *testing.T) {
+	// given
+	svc, repo := newCreateTestService(t, ownerAppRepo(t))
+	yes := true
+
+	// when
+	_, err := svc.CreateInvitation(&user.User{PublicKey: "creator-pk", Role: user.RoleUser}, CreateInvitationOptions{ApplicationID: "app-1", GrantsSpaceUse: &yes, SpaceURL: "https://space.example"})
+
+	// then
+	assert.ErrorIs(t, err, ErrSpaceUseNotAllowed)
+	assert.Nil(t, repo.createdInvite)
+}
+
+func TestCreateInvitation_ShouldPreferExternalURLOverRequestURL(t *testing.T) {
+	// given
+	svc, _ := newCreateTestService(t, ownerAppRepo(t))
+	svc.ExternalURL = "https://configured.example"
+
+	// when
+	resp, err := svc.CreateInvitation(creatorCaller, CreateInvitationOptions{ApplicationID: "app-1", SpaceURL: "https://spoofed.example"})
+
+	// then
+	assert.NoError(t, err)
+	claims, err := svc.ValidateToken(resp.Token)
+	assert.NoError(t, err)
+	assert.Equal(t, "https://configured.example", claims.SpaceURL)
+}
+
+func TestCreateInvitation_ShouldFallBackToRequestURLWhenExternalURLUnset(t *testing.T) {
+	// given
+	svc, _ := newCreateTestService(t, ownerAppRepo(t))
+
+	// when
+	resp, err := svc.CreateInvitation(creatorCaller, CreateInvitationOptions{ApplicationID: "app-1", SpaceURL: "https://request.example"})
+
+	// then
+	assert.NoError(t, err)
+	claims, err := svc.ValidateToken(resp.Token)
+	assert.NoError(t, err)
+	assert.Equal(t, "https://request.example", claims.SpaceURL)
+}
+
+func TestCreateInvitation_ShouldFailWhenNoSpaceURLAvailable(t *testing.T) {
+	// given
+	svc, repo := newCreateTestService(t, ownerAppRepo(t))
+
+	// when
+	_, err := svc.CreateInvitation(creatorCaller, CreateInvitationOptions{ApplicationID: "app-1"})
+
+	// then
+	assert.Error(t, err)
+	assert.Nil(t, repo.createdInvite)
+}
+
+func TestCreateInvitation_ShouldReturnMovingErrorWhileAppMoves(t *testing.T) {
+	// given
+	svc, _ := newCreateTestService(t, movingAppRepo{ownerAppRepo(t)})
+
+	// when
+	_, err := svc.CreateInvitation(creatorCaller, CreateInvitationOptions{ApplicationID: "app-1", SpaceURL: "https://space.example"})
+
+	// then
+	assert.ErrorIs(t, err, application.ErrApplicationMoving)
+}
+
+func TestRevokeInvitation_ShouldRejectInviteFromAnotherApp(t *testing.T) {
+	// given
+	svc, repo := newCreateTestService(t, ownerAppRepo(t))
+	repo.invite = &Invitation{ID: "invite-1", ApplicationID: "app-2"}
+
+	// when
+	err := svc.RevokeInvitation(creatorCaller, "app-1", "invite-1")
+
+	// then
+	assert.ErrorIs(t, err, ErrInviteAppMismatch)
+}
+
+func TestGetInvitesForApp_ShouldRejectPlainMember(t *testing.T) {
+	// given
+	appRepo := ownerAppRepo(t)
+	assert.NoError(t, appRepo.CreateMember(&application.Member{ID: "m-plain", ApplicationID: "app-1", PublicKey: "plain-pk", Role: application.MemberRoleMember}))
+	svc, _ := newCreateTestService(t, appRepo)
+
+	// when
+	_, err := svc.GetInvitesForApp(&user.User{PublicKey: "plain-pk"}, "app-1")
+
+	// then
+	assert.ErrorIs(t, err, ErrNotAppAuthorized)
+}
+
+func TestGetInvitesForApp_ShouldAllowAdmin(t *testing.T) {
+	// given
+	appRepo := ownerAppRepo(t)
+	assert.NoError(t, appRepo.CreateMember(&application.Member{ID: "m-admin", ApplicationID: "app-1", PublicKey: "admin-pk", Role: application.MemberRoleAdmin}))
+	svc, _ := newCreateTestService(t, appRepo)
+
+	// when
+	_, err := svc.GetInvitesForApp(&user.User{PublicKey: "admin-pk"}, "app-1")
+
+	// then
+	assert.NoError(t, err)
 }

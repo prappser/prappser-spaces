@@ -9,15 +9,11 @@ import (
 )
 
 type ApplicationEndpoints struct {
-	appService      *ApplicationService
-	spacePublicKey string
+	appService *ApplicationService
 }
 
-func NewApplicationEndpoints(appService *ApplicationService, spacePublicKey string) *ApplicationEndpoints {
-	return &ApplicationEndpoints{
-		appService:      appService,
-		spacePublicKey: spacePublicKey,
-	}
+func NewApplicationEndpoints(appService *ApplicationService) *ApplicationEndpoints {
+	return &ApplicationEndpoints{appService: appService}
 }
 
 // RegisterApplication handles POST /applications/register
@@ -53,17 +49,21 @@ func (ae *ApplicationEndpoints) RegisterApplication(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	// Set space public key for the application
-	app.SpacePublicKey = &ae.spacePublicKey
-
-	// Set space ID from authenticated user's JWT claims
-	if authenticatedUser.SpaceID != "" {
-		app.SpaceID = &authenticatedUser.SpaceID
-	}
-
-	// Register the application
-	_, err := ae.appService.RegisterApplication(authenticatedUser.PublicKey, &app, authenticatedUser.Role == user.RoleOwner)
+	_, err := ae.appService.RegisterApplication(authenticatedUser, &app)
 	if WriteMoveError(ctx, err) {
+		return
+	}
+	if errors.Is(err, ErrOwnerNotCaller) {
+		log.Error().Err(err).Msg("Application owner is not the caller")
+		body, _ := json.Marshal(map[string]string{"error": err.Error(), "code": "owner_not_caller"})
+		ctx.SetStatusCode(fasthttp.StatusForbidden)
+		ctx.SetContentType("application/json")
+		ctx.SetBody(body)
+		return
+	}
+	if errors.Is(err, ErrNotApplicationOwner) {
+		log.Error().Err(err).Msg("Application owned by another account")
+		ctx.Error("Forbidden", fasthttp.StatusForbidden)
 		return
 	}
 	if errors.Is(err, ErrAppLimitReached) {
