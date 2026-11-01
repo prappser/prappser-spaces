@@ -13,6 +13,7 @@ import (
 
 	"github.com/prappser/prappser-spaces/internal/application"
 	"github.com/prappser/prappser-spaces/internal/event"
+	"github.com/prappser/prappser-spaces/internal/user"
 )
 
 const (
@@ -32,47 +33,72 @@ type postChatOut struct {
 	Sequence  int64  `json:"sequence"`
 }
 
-type chatChoice struct {
+type componentChoice struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 }
 
-type chatChoices struct {
-	Chats []chatChoice `json:"chats"`
-}
-
-type severalChatsOut struct {
-	Note      string      `json:"note"`
-	Error     string      `json:"error"`
-	Untrusted chatChoices `json:"untrusted"`
-}
-
 var errChatOff = fmt.Errorf("chat is off for this app")
 
-func pickChat(app *application.Application, componentID string) (*application.Component, []application.Component, error) {
-	var chats []application.Component
+func pickComponent(app *application.Application, typeName, componentID string) (*application.Component, []application.Component, error) {
+	var found []application.Component
 	for _, g := range app.ComponentGroups {
 		for _, c := range g.Components {
-			if c.Name == chatComponentName {
-				chats = append(chats, c)
+			if c.Name == typeName {
+				found = append(found, c)
 			}
 		}
 	}
 	if componentID != "" {
-		for i := range chats {
-			if chats[i].ID == componentID {
-				return &chats[i], nil, nil
+		for i := range found {
+			if found[i].ID == componentID {
+				return &found[i], nil, nil
 			}
 		}
-		return nil, nil, fmt.Errorf("componentId is not a chat of this app")
+		return nil, nil, fmt.Errorf("componentId is not a %s of this app", strings.ToLower(typeName))
 	}
-	switch len(chats) {
+	switch len(found) {
 	case 0:
-		return nil, nil, errChatOff
+		if typeName == chatComponentName {
+			return nil, nil, errChatOff
+		}
+		return nil, nil, fmt.Errorf("no %s in this app", strings.ToLower(typeName))
 	case 1:
-		return &chats[0], nil, nil
+		return &found[0], nil, nil
 	}
-	return nil, chats, nil
+	return nil, found, nil
+}
+
+func severalOut(listKey, errMsg string, choices []application.Component) *sdk.CallToolResult {
+	list := make([]componentChoice, 0, len(choices))
+	for _, c := range choices {
+		list = append(list, componentChoice{ID: c.ID, Name: c.Name})
+	}
+	return errorResult(map[string]any{"note": untrustedNote, "error": errMsg, "untrusted": map[string]any{listKey: list}})
+}
+
+func errorResult(body any) *sdk.CallToolResult {
+	b, _ := json.Marshal(body)
+	return &sdk.CallToolResult{IsError: true, Content: []sdk.Content{&sdk.TextContent{Text: string(b)}}}
+}
+
+func submitKeyChange(ctx context.Context, d Deps, u *user.User, appID string, comp *application.Component, key string, oldValue, newValue any) (*event.Event, error) {
+	ev := event.Event{
+		ID:        uuid.Must(uuid.NewV7()).String(),
+		Type:      event.EventTypeComponentDataChanged,
+		Version:   1,
+		CreatedAt: time.Now().UnixMilli(),
+		Data: map[string]interface{}{
+			"version":          float64(1),
+			"applicationId":    appID,
+			"componentId":      comp.ID,
+			"componentGroupId": comp.ComponentGroupID,
+			"changedFields": map[string]interface{}{
+				key: map[string]interface{}{"oldValue": oldValue, "newValue": newValue},
+			},
+		},
+	}
+	return d.Events.AcceptEvent(ctx, &ev, u)
 }
 
 func addPostChatMessage(s *sdk.Server, d Deps) {
@@ -95,38 +121,17 @@ func addPostChatMessage(s *sdk.Server, d Deps) {
 		if err != nil {
 			return nil, postChatOut{}, toolError(err)
 		}
-		chat, choices, err := pickChat(app, in.ComponentID)
+		chat, choices, err := pickComponent(app, chatComponentName, in.ComponentID)
 		if err != nil {
 			return nil, postChatOut{}, err
 		}
 		if chat == nil {
-			out := severalChatsOut{Note: untrustedNote, Error: "several chats, pass componentId"}
-			for _, c := range choices {
-				out.Untrusted.Chats = append(out.Untrusted.Chats, chatChoice{ID: c.ID, Name: c.Name})
-			}
-			body, _ := json.Marshal(out)
-			return &sdk.CallToolResult{IsError: true, Content: []sdk.Content{&sdk.TextContent{Text: string(body)}}}, postChatOut{}, nil
+			return severalOut("chats", "several chats, pass componentId", choices), postChatOut{}, nil
 		}
 
-		now := time.Now().UnixMilli()
 		key := "m_" + uuid.Must(uuid.NewV7()).String()
-		msg, _ := json.Marshal(map[string]any{"v": 1, "sender": u.PublicKey, "ts": now, "body": text})
-		ev := event.Event{
-			ID:        uuid.Must(uuid.NewV7()).String(),
-			Type:      event.EventTypeComponentDataChanged,
-			Version:   1,
-			CreatedAt: now,
-			Data: map[string]interface{}{
-				"version":          float64(1),
-				"applicationId":    in.AppID,
-				"componentId":      chat.ID,
-				"componentGroupId": chat.ComponentGroupID,
-				"changedFields": map[string]interface{}{
-					key: map[string]interface{}{"oldValue": nil, "newValue": string(msg)},
-				},
-			},
-		}
-		stored, err := d.Events.AcceptEvent(ctx, &ev, u)
+		msg, _ := json.Marshal(map[string]any{"v": 1, "sender": u.PublicKey, "ts": time.Now().UnixMilli(), "body": text})
+		stored, err := submitKeyChange(ctx, d, u, in.AppID, chat, key, nil, string(msg))
 		if err != nil {
 			return nil, postChatOut{}, toolError(err)
 		}
