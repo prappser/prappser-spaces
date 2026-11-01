@@ -37,6 +37,25 @@ func NewClient(hub *Hub, conn *websocket.Conn, user *user.User) *Client {
 }
 
 func (c *Client) Subscribe(applicationID string) {
+	isMember, err := c.hub.appRepo.IsMember(applicationID, c.user.PublicKey)
+	if err != nil {
+		log.Warn().
+			Err(err).
+			Str("userPublicKey", c.user.PublicKey[:20]+"...").
+			Str("applicationId", applicationID).
+			Msg("[WS] Membership check failed")
+		c.send <- &OutgoingMessage{Type: MessageTypeError, Error: "failed to check membership"}
+		return
+	}
+	if !isMember {
+		log.Debug().
+			Str("userPublicKey", c.user.PublicKey[:20]+"...").
+			Str("applicationId", applicationID).
+			Msg("[WS] Subscribe rejected, not a member")
+		c.send <- &OutgoingMessage{Type: MessageTypeError, Error: "not a member of this application"}
+		return
+	}
+
 	c.mu.Lock()
 	c.subscriptions[applicationID] = true
 	c.mu.Unlock()

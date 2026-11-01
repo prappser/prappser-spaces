@@ -161,7 +161,7 @@ func main() {
 	spaceProfileRepository := spaceprofile.NewRepository(db)
 	statusEndpoints := status.NewEndpoints("1.0.0", config.Storage.MaxFileSize, config.Storage.ChunkSize, storageRepo, config.ExternalURL, keyService, spaceProfileRepository)
 
-	wsHub := websocket.NewHub()
+	wsHub := websocket.NewHub(appRepository)
 	go wsHub.Run()
 	log.Info().Msg("WebSocket hub started")
 
