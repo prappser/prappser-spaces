@@ -356,6 +356,38 @@ func TestApplicationService_DeleteApplication_ShouldReturnErrorForUnauthorizedUs
 	}
 }
 
+func TestApplicationService_DeleteApplication_ShouldRejectAdmin(t *testing.T) {
+	// given
+	owner := createTestUser()
+	admin := &user.User{
+		PublicKey: "admin-public-key",
+		Username:  "adminuser",
+		Role:      user.RoleUser,
+		CreatedAt: time.Now().Unix(),
+	}
+	app := createBasicApplication(owner, "Owner's App", "admin-delete-app-id")
+	app.Members = append(app.Members, Member{ID: "admin-delete-app-id-member-2", Role: MemberRoleAdmin, PublicKey: admin.PublicKey})
+	appService := NewApplicationService(NewMemoryRepository(), 0, "space-key")
+	registeredApp, err := appService.RegisterApplication(owner, app)
+	if err != nil {
+		t.Fatalf("Failed to register application: %v", err)
+	}
+
+	// when
+	err = appService.DeleteApplication(registeredApp.ID, admin)
+
+	// then
+	if err == nil {
+		t.Fatal("Expected error for admin deleting the application, got nil")
+	}
+	if err.Error() != "unauthorized" {
+		t.Errorf("Expected 'unauthorized' error, got '%s'", err.Error())
+	}
+	if _, err := appService.GetApplication(registeredApp.ID, owner); err != nil {
+		t.Errorf("Expected application to still exist, got: %v", err)
+	}
+}
+
 func TestApplicationService_DeleteApplication_ShouldReturnErrorForNonExistentApp(t *testing.T) {
 	// given
 	testUser := createTestUser()

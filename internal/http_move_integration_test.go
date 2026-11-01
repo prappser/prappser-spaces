@@ -158,6 +158,22 @@ func (f *moveFixture) setUp() {
 	require.Equal(f.t, fasthttp.StatusCreated, f.registerApp(moveOwnerPK).Response.StatusCode())
 }
 
+func (f *moveFixture) setMemberRole(pk, role string) {
+	f.t.Helper()
+	_, err := f.db.Exec(`UPDATE members SET role=$1 WHERE public_key=$2 AND application_id=$3`, role, pk, moveAppID)
+	require.NoError(f.t, err)
+}
+
+func (f *moveFixture) assertMoveForbidden(pk string) {
+	f.t.Helper()
+	start := f.startMove(pk)
+	abort := f.doJSON("DELETE", "/applications/"+moveAppID+"/move", pk, nil)
+	complete := f.completeMove(pk)
+	assert.Equal(f.t, fasthttp.StatusForbidden, start.Response.StatusCode())
+	assert.Equal(f.t, fasthttp.StatusForbidden, abort.Response.StatusCode())
+	assert.Equal(f.t, fasthttp.StatusForbidden, complete.Response.StatusCode())
+}
+
 func (f *moveFixture) submitEvent(pk, eventType string) *fasthttp.RequestCtx {
 	f.t.Helper()
 	return f.doJSON("POST", "/events", pk, map[string]any{"event": map[string]any{
@@ -292,15 +308,18 @@ func TestMoveEndpoints_ShouldReturn403ForNonOwner(t *testing.T) {
 	f := newMoveFixture(t)
 	f.setUp()
 
-	// when
-	start := f.startMove(moveMemberPK)
-	abort := f.doJSON("DELETE", "/applications/"+moveAppID+"/move", moveMemberPK, nil)
-	complete := f.completeMove(moveMemberPK)
+	// when / then
+	f.assertMoveForbidden(moveMemberPK)
+}
 
-	// then
-	assert.Equal(t, fasthttp.StatusForbidden, start.Response.StatusCode())
-	assert.Equal(t, fasthttp.StatusForbidden, abort.Response.StatusCode())
-	assert.Equal(t, fasthttp.StatusForbidden, complete.Response.StatusCode())
+func TestMoveEndpoints_ShouldReturn403ForAdmin(t *testing.T) {
+	// given
+	f := newMoveFixture(t)
+	f.setUp()
+	f.setMemberRole(moveMemberPK, "admin")
+
+	// when / then
+	f.assertMoveForbidden(moveMemberPK)
 }
 
 func TestCompleteMove_ShouldReturn409WhenNotMoving(t *testing.T) {

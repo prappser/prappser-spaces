@@ -247,7 +247,7 @@ func TestListInvites_ShouldReturn200WhenCallerIsOwner(t *testing.T) {
 }
 
 func TestListInvites_ShouldReturn200WhenCallerIsAdmin(t *testing.T) {
-	// given: admin is allowed alongside owner
+	// given
 	svc := newEndpointTestService(t, "app-1", "admin-pk", application.MemberRoleAdmin, nil)
 	ep := &InvitationEndpoints{invitationService: svc}
 	ctx := newAuthzTestCtx("GET", "admin-pk", "app-1", "", nil)

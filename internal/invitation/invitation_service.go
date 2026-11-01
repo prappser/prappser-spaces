@@ -161,7 +161,7 @@ func (s *InvitationService) CreateInvitation(caller *user.User, opts CreateInvit
 	if opts.Role == "" {
 		opts.Role = "member" // default
 	}
-	if r := application.MemberRole(opts.Role); !r.IsGrantable() {
+	if !application.MemberRole(opts.Role).IsGrantable() {
 		return nil, ErrInvalidInviteRole
 	}
 
