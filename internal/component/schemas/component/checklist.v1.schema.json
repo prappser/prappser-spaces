@@ -2,14 +2,23 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://prappser.app/schemas/component/checklist.v1.schema.json",
   "title": "Checklist component data",
-  "description": "Checklist. 'items' is one whole-list value today.",
+  "description": "Checklist. Each item is its own top-level key 'item_<id>' (the value omits the id). 'items' is the deprecated legacy whole-list value.",
   "type": "object",
   "properties": {
     "items": {
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/item"
-      },
+      "anyOf": [
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/legacyItem"
+          }
+        },
+        {
+          "const": ""
+        }
+      ],
+      "deprecated": true,
+      "description": "Deprecated. Legacy whole-list value, read by clients as a read-only base and never written.",
       "x-merge": "single"
     },
     "allowToggleInUsage": {
@@ -77,10 +86,19 @@
       "x-merge": "single"
     }
   },
-  "required": [
-    "items"
-  ],
   "patternProperties": {
+    "^item_.+$": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/keyedItem"
+        },
+        {
+          "const": ""
+        }
+      ],
+      "description": "One item per key; the key carries the id. '' is a tombstone.",
+      "x-merge": "per-entry"
+    },
     "^_": {
       "description": "Layout and UI keys. Any value.",
       "x-merge": "single"
@@ -145,14 +163,43 @@
             "null"
           ],
           "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+        },
+        "order": {
+          "type": "number",
+          "description": "Sort position among items; lower first."
         }
       },
       "required": [
-        "id",
         "title",
         "checked"
       ],
       "additionalProperties": false
+    },
+    "keyedItem": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/item"
+        },
+        {
+          "not": {
+            "required": [
+              "id"
+            ]
+          }
+        }
+      ]
+    },
+    "legacyItem": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/item"
+        },
+        {
+          "required": [
+            "id"
+          ]
+        }
+      ]
     }
   }
 }

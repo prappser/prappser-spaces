@@ -2,61 +2,79 @@
   "schema": "https://prappser.app/schemas/component/checklist.v1.schema.json",
   "cases": [
     {
-      "name": "minimal",
+      "name": "empty",
+      "data": {},
+      "valid": true
+    },
+    {
+      "name": "config only",
       "data": {
-        "items": []
+        "allowAddInUsage": true
       },
       "valid": true
     },
     {
       "name": "minimal item",
       "data": {
-        "items": [
-          {
-            "id": "i1",
-            "title": "Milk",
-            "checked": false
-          }
-        ]
+        "item_i1": {
+          "title": "Milk",
+          "checked": false
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "item with order",
+      "data": {
+        "item_i1": {
+          "title": "Milk",
+          "checked": false,
+          "order": 2.5
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "item tombstone",
+      "data": {
+        "item_i1": ""
       },
       "valid": true
     },
     {
       "name": "full",
       "data": {
-        "items": [
-          {
-            "id": "i2",
-            "title": "Passport",
-            "checked": true,
-            "detailsDocument": [
-              {
-                "insert": "Renew\n",
-                "attributes": {
-                  "bold": true
-                }
+        "item_i2": {
+          "title": "Passport",
+          "checked": true,
+          "detailsDocument": [
+            {
+              "insert": "Renew\n",
+              "attributes": {
+                "bold": true
               }
-            ],
-            "assignedMemberId": "pk-alice",
-            "attachmentIds": [
-              "file-1"
-            ],
-            "priority": "high",
-            "date": "2026-07-01",
-            "time": "09:30"
-          },
-          {
-            "id": "i3",
-            "title": "Eggs",
-            "checked": false,
-            "detailsDocument": null,
-            "assignedMemberId": null,
-            "attachmentIds": [],
-            "priority": "none",
-            "date": null,
-            "time": null
-          }
-        ],
+            }
+          ],
+          "assignedMemberId": "pk-alice",
+          "attachmentIds": [
+            "file-1"
+          ],
+          "priority": "high",
+          "date": "2026-07-01",
+          "time": "09:30",
+          "order": 1.5
+        },
+        "item_i3": {
+          "title": "Eggs",
+          "checked": false,
+          "detailsDocument": null,
+          "assignedMemberId": null,
+          "attachmentIds": [],
+          "priority": "none",
+          "date": null,
+          "time": null,
+          "order": -1
+        },
         "allowToggleInUsage": true,
         "allowAddInUsage": false,
         "maxVisibleItems": 5,
@@ -79,7 +97,6 @@
     {
       "name": "null defaults",
       "data": {
-        "items": [],
         "defaultSort": null,
         "defaultGroup": null
       },
@@ -88,32 +105,59 @@
     {
       "name": "midnight time",
       "data": {
-        "items": [
-          {
-            "id": "i1",
-            "title": "Milk",
-            "checked": false,
-            "date": "2026-01-01",
-            "time": "00:00"
-          }
-        ]
+        "item_i1": {
+          "title": "Milk",
+          "checked": false,
+          "date": "2026-01-01",
+          "time": "00:00"
+        }
       },
       "valid": true
     },
     {
       "name": "title tombstone",
       "data": {
-        "items": [],
         "_title": ""
       },
       "valid": true
     },
     {
-      "name": "missing items",
+      "name": "legacy items list",
       "data": {
-        "allowAddInUsage": true
+        "items": [
+          {
+            "id": "i1",
+            "title": "Milk",
+            "checked": false
+          }
+        ]
       },
-      "valid": false
+      "valid": true
+    },
+    {
+      "name": "legacy items empty",
+      "data": {
+        "items": []
+      },
+      "valid": true
+    },
+    {
+      "name": "legacy items tombstone",
+      "data": {
+        "items": ""
+      },
+      "valid": true
+    },
+    {
+      "name": "legacy items next to item keys",
+      "data": {
+        "items": "",
+        "item_i1": {
+          "title": "Milk",
+          "checked": false
+        }
+      },
+      "valid": true
     },
     {
       "name": "items is an object",
@@ -123,11 +167,11 @@
       "valid": false
     },
     {
-      "name": "item missing id",
+      "name": "legacy item missing id",
       "data": {
         "items": [
           {
-            "title": "x",
+            "title": "Milk",
             "checked": false
           }
         ]
@@ -135,7 +179,7 @@
       "valid": false
     },
     {
-      "name": "item empty id",
+      "name": "legacy item empty id",
       "data": {
         "items": [
           {
@@ -148,19 +192,7 @@
       "valid": false
     },
     {
-      "name": "item missing checked",
-      "data": {
-        "items": [
-          {
-            "id": "i1",
-            "title": "x"
-          }
-        ]
-      },
-      "valid": false
-    },
-    {
-      "name": "item unknown key",
+      "name": "legacy item unknown key",
       "data": {
         "items": [
           {
@@ -174,113 +206,173 @@
       "valid": false
     },
     {
+      "name": "item is an array",
+      "data": {
+        "item_i1": []
+      },
+      "valid": false
+    },
+    {
+      "name": "item is a non-empty string",
+      "data": {
+        "item_i1": "x"
+      },
+      "valid": false
+    },
+    {
+      "name": "item is null",
+      "data": {
+        "item_i1": null
+      },
+      "valid": false
+    },
+    {
+      "name": "item carries id",
+      "data": {
+        "item_i1": {
+          "id": "i1",
+          "title": "Milk",
+          "checked": false
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "item unknown key",
+      "data": {
+        "item_i1": {
+          "title": "Milk",
+          "checked": false,
+          "note": "x"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "item missing title",
+      "data": {
+        "item_i1": {
+          "checked": false
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "item missing checked",
+      "data": {
+        "item_i1": {
+          "title": "x"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "item order not a number",
+      "data": {
+        "item_i1": {
+          "title": "Milk",
+          "checked": false,
+          "order": "1"
+        }
+      },
+      "valid": false
+    },
+    {
       "name": "item bad priority",
       "data": {
-        "items": [
-          {
-            "id": "i1",
-            "title": "Milk",
-            "checked": false,
-            "priority": "urgent"
-          }
-        ]
+        "item_i1": {
+          "title": "Milk",
+          "checked": false,
+          "priority": "urgent"
+        }
       },
       "valid": false
     },
     {
       "name": "item date without zero padding",
       "data": {
-        "items": [
-          {
-            "id": "i1",
-            "title": "Milk",
-            "checked": false,
-            "date": "2026-7-1"
-          }
-        ]
+        "item_i1": {
+          "title": "Milk",
+          "checked": false,
+          "date": "2026-7-1"
+        }
       },
       "valid": false
     },
     {
       "name": "item date with time suffix",
       "data": {
-        "items": [
-          {
-            "id": "i1",
-            "title": "Milk",
-            "checked": false,
-            "date": "2026-07-01T09:30"
-          }
-        ]
+        "item_i1": {
+          "title": "Milk",
+          "checked": false,
+          "date": "2026-07-01T09:30"
+        }
       },
       "valid": false
     },
     {
       "name": "item time hour 24",
       "data": {
-        "items": [
-          {
-            "id": "i1",
-            "title": "Milk",
-            "checked": false,
-            "time": "24:00"
-          }
-        ]
+        "item_i1": {
+          "title": "Milk",
+          "checked": false,
+          "time": "24:00"
+        }
       },
       "valid": false
     },
     {
       "name": "item time without zero padding",
       "data": {
-        "items": [
-          {
-            "id": "i1",
-            "title": "Milk",
-            "checked": false,
-            "time": "9:30"
-          }
-        ]
+        "item_i1": {
+          "title": "Milk",
+          "checked": false,
+          "time": "9:30"
+        }
       },
       "valid": false
     },
     {
       "name": "item detailsDocument op without insert",
       "data": {
-        "items": [
-          {
-            "id": "i1",
-            "title": "Milk",
-            "checked": false,
-            "detailsDocument": [
-              {
-                "x": 1
-              }
-            ]
-          }
-        ]
+        "item_i1": {
+          "title": "Milk",
+          "checked": false,
+          "detailsDocument": [
+            {
+              "x": 1
+            }
+          ]
+        }
       },
       "valid": false
     },
     {
       "name": "item attachmentIds not strings",
       "data": {
-        "items": [
-          {
-            "id": "i1",
-            "title": "Milk",
-            "checked": false,
-            "attachmentIds": [
-              1
-            ]
-          }
-        ]
+        "item_i1": {
+          "title": "Milk",
+          "checked": false,
+          "attachmentIds": [
+            1
+          ]
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "empty item key",
+      "data": {
+        "item_": {
+          "title": "Milk",
+          "checked": false
+        }
       },
       "valid": false
     },
     {
       "name": "bad defaultSort",
       "data": {
-        "items": [],
         "defaultSort": "newest"
       },
       "valid": false
@@ -288,7 +380,6 @@
     {
       "name": "bad defaultGroup",
       "data": {
-        "items": [],
         "defaultGroup": "manual"
       },
       "valid": false
@@ -296,7 +387,6 @@
     {
       "name": "negative maxVisibleItems",
       "data": {
-        "items": [],
         "maxVisibleItems": -1
       },
       "valid": false
@@ -304,7 +394,6 @@
     {
       "name": "templates value not a list",
       "data": {
-        "items": [],
         "templates": {
           "Weekly": "Milk"
         }
@@ -314,7 +403,6 @@
     {
       "name": "unknown top-level key",
       "data": {
-        "items": [],
         "items2": []
       },
       "valid": false
@@ -322,7 +410,6 @@
     {
       "name": "v is not a checklist key",
       "data": {
-        "items": [],
         "v": 1
       },
       "valid": false

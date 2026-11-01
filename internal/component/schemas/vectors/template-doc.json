@@ -53,14 +53,11 @@
                 "type": "Checklist",
                 "index": 1,
                 "data": {
-                  "items": [
-                    {
-                      "id": "i1",
-                      "title": "Milk",
-                      "checked": false
-                    }
-                  ],
-                  "_title": "Packing"
+                  "_title": "Packing",
+                  "item_i1": {
+                    "title": "Milk",
+                    "checked": false
+                  }
                 }
               },
               {
@@ -360,7 +357,112 @@
                 "type": "Checklist",
                 "index": 0,
                 "data": {
-                  "items": "x"
+                  "item_i1": "x"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "checklist data carries legacy items",
+      "data": {
+        "name": "Trip",
+        "description": "Plan a trip",
+        "icon": "travel",
+        "groups": [
+          {
+            "name": "Main",
+            "index": 0,
+            "components": [
+              {
+                "type": "Text",
+                "index": 0,
+                "data": {
+                  "document": [
+                    {
+                      "insert": "Notes\n"
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "Checklist",
+                "index": 1,
+                "data": {
+                  "items": [
+                    {
+                      "id": "i1",
+                      "title": "Milk",
+                      "checked": false
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "Files",
+                "index": 2,
+                "data": {
+                  "items": []
+                }
+              },
+              {
+                "type": "Map",
+                "index": 3,
+                "data": {
+                  "centerLatitude": 51.505,
+                  "centerLongitude": -0.09,
+                  "markers": [
+                    {
+                      "id": "k1",
+                      "latitude": 51.5,
+                      "longitude": -0.1,
+                      "title": "Start"
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "Chat",
+                "index": 4,
+                "data": {
+                  "v": 1
+                }
+              },
+              {
+                "type": "Poll",
+                "index": 5,
+                "data": {
+                  "v": 1,
+                  "question": "Where?",
+                  "options": [
+                    {
+                      "id": "o1",
+                      "label": "Pizza"
+                    },
+                    {
+                      "id": "o2",
+                      "label": "Sushi"
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "Expenses",
+                "index": 6,
+                "data": {
+                  "v": 1
+                }
+              },
+              {
+                "type": "Countdown",
+                "index": 7,
+                "data": {
+                  "v": 1,
+                  "what": "Flight",
+                  "style": "iris"
                 }
               }
             ]

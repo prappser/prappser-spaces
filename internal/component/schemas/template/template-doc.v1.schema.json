@@ -230,7 +230,13 @@
           "then": {
             "properties": {
               "data": {
-                "$ref": "https://prappser.app/schemas/component/checklist.v1.schema.json"
+                "$ref": "https://prappser.app/schemas/component/checklist.v1.schema.json",
+                "not": {
+                  "required": [
+                    "items"
+                  ]
+                },
+                "description": "Templates carry no legacy 'items' list; items are item_<id> keys."
               }
             }
           }

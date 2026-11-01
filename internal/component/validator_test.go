@@ -216,7 +216,7 @@ func TestValidateComponentData_ShouldAcceptValidData(t *testing.T) {
 	require.NoError(t, err)
 
 	// when
-	err = v.ValidateComponentData("Checklist", vectorData(t, "checklist.json", "minimal"))
+	err = v.ValidateComponentData("Checklist", vectorData(t, "checklist.json", "minimal item"))
 
 	// then
 	assert.NoError(t, err)
@@ -273,6 +273,8 @@ func TestMergeMode_ShouldResolveKeys(t *testing.T) {
 	poll, pollOK := v.MergeMode("Poll", "vote_pk-alice")
 	_, lowerTypeOK := v.MergeMode("chat", "_title")
 	_, commonOK := v.MergeMode("Common", "_title")
+	item, itemOK := v.MergeMode("Checklist", "item_i1")
+	legacy, legacyOK := v.MergeMode("Checklist", "items")
 
 	// then
 	assert.True(t, entryOK)
@@ -287,6 +289,10 @@ func TestMergeMode_ShouldResolveKeys(t *testing.T) {
 	assert.Equal(t, "per-member", poll)
 	assert.False(t, lowerTypeOK)
 	assert.False(t, commonOK)
+	assert.True(t, itemOK)
+	assert.Equal(t, "per-entry", item)
+	assert.True(t, legacyOK)
+	assert.Equal(t, "single", legacy)
 }
 
 func TestValidateComponentData_ShouldReportFieldErrors(t *testing.T) {
@@ -294,8 +300,8 @@ func TestValidateComponentData_ShouldReportFieldErrors(t *testing.T) {
 	v, err := NewValidator()
 	require.NoError(t, err)
 	data := map[string]any{
-		"items": []any{map[string]any{"id": "a", "title": "t"}},
-		"bogus": float64(1),
+		"item_a": map[string]any{"title": "t"},
+		"bogus":  float64(1),
 	}
 
 	// when
@@ -307,9 +313,9 @@ func TestValidateComponentData_ShouldReportFieldErrors(t *testing.T) {
 	assert.ErrorIs(t, err, ErrInvalidData)
 	byPath := map[string]string{}
 	for _, f := range verrs {
-		byPath[f.Path] = f.Message
+		byPath[f.Path] += f.Message + "; "
 	}
-	assert.Contains(t, byPath["/items/0"], "checked")
+	assert.Contains(t, byPath["/item_a"], "checked")
 	assert.Contains(t, byPath[""], "bogus")
 }
 
