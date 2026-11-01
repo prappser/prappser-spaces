@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/goccy/go-json"
+	"github.com/prappser/prappser-spaces/internal/middleware"
 	"github.com/prappser/prappser-spaces/internal/user"
 	"github.com/rs/zerolog/log"
 	"github.com/valyala/fasthttp"
@@ -13,11 +14,12 @@ import (
 const maxTokenBodyLen = 8 * 1024
 
 type Endpoints struct {
-	service *Service
+	service           *Service
+	trustProxyHeaders bool
 }
 
-func NewEndpoints(service *Service) *Endpoints {
-	return &Endpoints{service: service}
+func NewEndpoints(service *Service, trustProxyHeaders bool) *Endpoints {
+	return &Endpoints{service: service, trustProxyHeaders: trustProxyHeaders}
 }
 
 type serverMetadata struct {
@@ -61,6 +63,7 @@ func (oe *Endpoints) Authorize(ctx *fasthttp.RequestCtx) {
 		Scope:               string(q.Peek("scope")),
 		Resource:            string(q.Peek("resource")),
 		HasResource:         q.Has("resource"),
+		SourceIP:            middleware.ClientIP(ctx, oe.trustProxyHeaders),
 	}
 
 	consentURL, err := oe.service.Authorize(context.Background(), params)

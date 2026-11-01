@@ -2,7 +2,7 @@
 
 The space is an OAuth 2.1 authorization server. Claude Code, claude.ai and ChatGPT use it to get agent tokens. Everything here returns 404 unless `MCP_ENABLED=true`.
 
-Clients identify themselves with a client ID metadata document: `client_id` is an https URL, and the space fetches the JSON there. There is no dynamic registration. PKCE with S256 is required. Codes live 60 seconds and work once. A code is burned on first use even when the exchange fails. The one exception is a server error while issuing tokens, which leaves the code usable for a retry within its 60 seconds. Tokens are the agent tokens from `AgentService`: access tokens last 1 hour, refresh tokens rotate.
+Clients identify themselves with a client ID metadata document: `client_id` is an https URL, and the space fetches the JSON there. There is no dynamic registration. PKCE with S256 is required. Codes live 60 seconds and work once. A code is burned on first use even when the exchange fails. The one exception is a server error while issuing tokens, which leaves the code usable for a retry within its 60 seconds. If a retry lands while the first exchange is still issuing tokens, it counts as reuse and kills the code, and the user restarts authorization. Tokens are the agent tokens from `AgentService`: access tokens last 1 hour, refresh tokens rotate.
 
 ## Endpoints
 

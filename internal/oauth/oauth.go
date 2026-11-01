@@ -15,10 +15,10 @@ const (
 	scopeMCP           = "mcp"
 	scopeOfflineAccess = "offline_access"
 
-	pendingTTL          = 10 * time.Minute
-	codeTTL             = 60 * time.Second
-	maxPending          = 1000
-	maxPendingPerClient = 20
+	pendingTTL            = 10 * time.Minute
+	codeTTL               = 60 * time.Second
+	maxPending            = 1000
+	maxPendingPerClientIP = 20
 )
 
 const (
@@ -53,6 +53,7 @@ var nowFunc = time.Now
 
 type pendingRequest struct {
 	clientID         string
+	sourceIP         string
 	clientName       string
 	clientHost       string
 	clientURI        string
@@ -116,12 +117,12 @@ func (s *store) sweep(now time.Time) {
 	}
 }
 
-func (s *store) evictOldestOfClient(clientID string) bool {
+func (s *store) evictOldestOfClientIP(clientID, sourceIP string) bool {
 	count := 0
 	oldestID := ""
 	var oldest time.Time
 	for id, p := range s.pending {
-		if p.clientID != clientID {
+		if p.clientID != clientID || p.sourceIP != sourceIP {
 			continue
 		}
 		count++
@@ -132,7 +133,7 @@ func (s *store) evictOldestOfClient(clientID string) bool {
 			oldestID, oldest = id, p.expiresAt
 		}
 	}
-	if count < maxPendingPerClient {
+	if count < maxPendingPerClientIP {
 		return true
 	}
 	if oldestID == "" {
@@ -153,7 +154,7 @@ func (s *store) addPending(p *pendingRequest) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.sweep(now)
-	if !s.evictOldestOfClient(p.clientID) {
+	if !s.evictOldestOfClientIP(p.clientID, p.sourceIP) {
 		return "", ErrStoreFull
 	}
 	if len(s.pending) >= maxPending {

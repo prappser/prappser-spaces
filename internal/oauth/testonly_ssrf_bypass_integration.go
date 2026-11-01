@@ -7,6 +7,7 @@ import (
 	"net/netip"
 )
 
-func (s *Service) UseTestFetcher(rootCAs *x509.CertPool) {
+// Test only: disables the SSRF guard.
+func (s *Service) TestOnlyDisableSSRFGuard(rootCAs *x509.CertPool) {
 	s.fetcher = &metadataFetcher{client: newSafeClient(func(netip.Addr) bool { return true }, rootCAs)}
 }

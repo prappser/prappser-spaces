@@ -56,7 +56,7 @@ func newFixture(t *testing.T, mutateDoc func(d map[string]any)) *fixture {
 	f.clientID = srv.URL + "/client.json"
 	f.svc = NewService(agents, users, testIssuer, "https://app.test")
 	f.svc.fetcher = fetcher
-	f.endpoints = NewEndpoints(f.svc)
+	f.endpoints = NewEndpoints(f.svc, false)
 	return f
 }
 
@@ -259,6 +259,61 @@ func TestOAuthToken_ReusedCode_ShouldRevokeDevice_Integration(t *testing.T) {
 
 	// then
 	errCode, _ := tokenError(t, second)
+	assert.Equal(t, CodeInvalidGrant, errCode)
+	_, err = f.agents.ValidateAccessToken(tok.AccessToken)
+	assert.Error(t, err)
+}
+
+func (f *fixture) failFirstIssue() (restore func()) {
+	broken, err := sql.Open("postgres", "")
+	require.NoError(f.t, err)
+	require.NoError(f.t, broken.Close())
+	working := f.svc.agents
+	f.svc.agents = user.NewAgentService(broken, f.users, nil, nil, testIssuer)
+	return func() { f.svc.agents = working }
+}
+
+func TestOAuthToken_IssueFailsThenRetry_ShouldSucceed_Integration(t *testing.T) {
+	// given
+	f := newFixture(t, nil)
+	verifier, challenge := pkcePair()
+	_, code := f.approvedCode(challenge)
+	restore := f.failFirstIssue()
+	failed := f.token(f.codeForm(code, verifier))
+	restore()
+
+	// when
+	retry := f.token(f.codeForm(code, verifier))
+
+	// then
+	assert.Equal(t, fasthttp.StatusInternalServerError, failed.Response.StatusCode())
+	require.Equal(t, fasthttp.StatusOK, retry.Response.StatusCode(), string(retry.Response.Body()))
+	var tok TokenResponse
+	require.NoError(t, json.Unmarshal(retry.Response.Body(), &tok))
+	_, err := f.agents.ValidateAccessToken(tok.AccessToken)
+	assert.NoError(t, err)
+}
+
+func TestOAuthToken_IssueFailsRetrySucceedsThenReuse_ShouldRevokeRetryDevice_Integration(t *testing.T) {
+	// given
+	f := newFixture(t, nil)
+	verifier, challenge := pkcePair()
+	_, code := f.approvedCode(challenge)
+	restore := f.failFirstIssue()
+	_ = f.token(f.codeForm(code, verifier))
+	restore()
+	retry := f.token(f.codeForm(code, verifier))
+	require.Equal(t, fasthttp.StatusOK, retry.Response.StatusCode(), string(retry.Response.Body()))
+	var tok TokenResponse
+	require.NoError(t, json.Unmarshal(retry.Response.Body(), &tok))
+	_, err := f.agents.ValidateAccessToken(tok.AccessToken)
+	require.NoError(t, err)
+
+	// when
+	third := f.token(f.codeForm(code, verifier))
+
+	// then
+	errCode, _ := tokenError(t, third)
 	assert.Equal(t, CodeInvalidGrant, errCode)
 	_, err = f.agents.ValidateAccessToken(tok.AccessToken)
 	assert.Error(t, err)

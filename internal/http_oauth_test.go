@@ -11,7 +11,7 @@ import (
 )
 
 func newOAuthTestHandler(mcpEnabled bool) fasthttp.RequestHandler {
-	endpoints := oauth.NewEndpoints(oauth.NewService(nil, nil, "https://space.test/", "https://app.test"))
+	endpoints := oauth.NewEndpoints(oauth.NewService(nil, nil, "https://space.test/", "https://app.test"), true)
 	cfg := &Config{TrustProxyHeaders: true, MCPEnabled: mcpEnabled}
 	return NewRequestHandler(cfg, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, endpoints)
 }

@@ -259,7 +259,7 @@ func main() {
 	adminEndpoints := admin.NewAdminEndpoints(admin.NewRepository(db), admin.Limits{AccountQuotaBytes: config.Storage.AccountQuota, MaxAppsPerAccount: config.MaxAppsPerAccount})
 
 	agentService := user.NewAgentService(db, userRepository, privateKey, publicKey, config.ExternalURL)
-	oauthEndpoints := oauth.NewEndpoints(oauth.NewService(agentService, userRepository, config.ExternalURL, config.AppURL))
+	oauthEndpoints := oauth.NewEndpoints(oauth.NewService(agentService, userRepository, config.ExternalURL, config.AppURL), config.TrustProxyHeaders)
 
 	requestHandler := internal.NewRequestHandler(config, userEndpoints, statusEndpoints, healthEndpoints, userService, appEndpoints, invitationEndpoints, eventEndpoints, setupEndpoints, storageEndpoints, wsHandler, spaceEndpoints, pushEndpoints, profileEndpoints, deviceEndpoints, passwordEndpoints, assertionEndpoints, ownerClaimEndpoints, keyEndpoints, accountEndpoints, adminEndpoints, registerEndpoints, spaceprofile.NewSpaceProfileEndpoints(spaceProfileRepository, storageRepo, eventService), moveEndpoints, oauthEndpoints)
 

@@ -390,20 +390,20 @@ func TestStore_Pending_ShouldBindToFirstAuthenticatedReaderAndExpire(t *testing.
 	assert.ErrorIs(t, errGone, ErrRequestNotFound)
 }
 
-func TestStore_AddPending_ShouldEvictOldestOfSameClientAtCap(t *testing.T) {
+func TestStore_AddPending_ShouldEvictOldestOfSameClientAndIPAtCap(t *testing.T) {
 	// given
 	s := newStore()
-	first, err := s.addPending(&pendingRequest{clientID: "a"})
+	first, err := s.addPending(&pendingRequest{clientID: "a", sourceIP: "ip-a"})
 	require.NoError(t, err)
-	other, err := s.addPending(&pendingRequest{clientID: "b"})
+	other, err := s.addPending(&pendingRequest{clientID: "b", sourceIP: "ip-a"})
 	require.NoError(t, err)
 	orig := nowFunc
 	n := 0
 	nowFunc = func() time.Time { n++; return orig().Add(time.Duration(n) * time.Second) }
 	defer func() { nowFunc = orig }()
 	var last string
-	for i := 1; i < maxPendingPerClient+1; i++ {
-		last, err = s.addPending(&pendingRequest{clientID: "a"})
+	for i := 1; i < maxPendingPerClientIP+1; i++ {
+		last, err = s.addPending(&pendingRequest{clientID: "a", sourceIP: "ip-a"})
 		require.NoError(t, err)
 	}
 
@@ -418,6 +418,46 @@ func TestStore_AddPending_ShouldEvictOldestOfSameClientAtCap(t *testing.T) {
 	assert.NoError(t, errOther)
 }
 
+func TestStore_AddPending_ShouldNotEvictAnotherIPsRequestsOfSameClient(t *testing.T) {
+	// given
+	s := newStore()
+	orig := nowFunc
+	n := 0
+	nowFunc = func() time.Time { n++; return orig().Add(time.Duration(n) * time.Second) }
+	defer func() { nowFunc = orig }()
+	var idsA, idsB []string
+	for i := 0; i < maxPendingPerClientIP; i++ {
+		id, err := s.addPending(&pendingRequest{clientID: "a", sourceIP: "ip-a"})
+		require.NoError(t, err)
+		idsA = append(idsA, id)
+	}
+	for i := 0; i < maxPendingPerClientIP; i++ {
+		id, err := s.addPending(&pendingRequest{clientID: "a", sourceIP: "ip-b"})
+		require.NoError(t, err)
+		idsB = append(idsB, id)
+	}
+	for _, id := range append(append([]string{}, idsA...), idsB...) {
+		_, err := s.lookupPending(id, "")
+		require.NoError(t, err)
+	}
+
+	// when
+	extra, errExtra := s.addPending(&pendingRequest{clientID: "a", sourceIP: "ip-b"})
+	_, errOldestB := s.lookupPending(idsB[0], "")
+	_, errNextB := s.lookupPending(idsB[1], "")
+	_, errExtraGet := s.lookupPending(extra, "")
+
+	// then
+	assert.NoError(t, errExtra)
+	assert.ErrorIs(t, errOldestB, ErrRequestNotFound)
+	assert.NoError(t, errNextB)
+	assert.NoError(t, errExtraGet)
+	for _, id := range idsA {
+		_, err := s.lookupPending(id, "")
+		assert.NoError(t, err)
+	}
+}
+
 func TestStore_AddPending_ShouldKeepRequestsAUserAlreadyOpened(t *testing.T) {
 	// given
 	s := newStore()
@@ -425,9 +465,9 @@ func TestStore_AddPending_ShouldKeepRequestsAUserAlreadyOpened(t *testing.T) {
 	n := 0
 	nowFunc = func() time.Time { n++; return orig().Add(time.Duration(n) * time.Second) }
 	defer func() { nowFunc = orig }()
-	ids := make([]string, 0, maxPendingPerClient)
-	for i := 0; i < maxPendingPerClient; i++ {
-		id, err := s.addPending(&pendingRequest{clientID: "a"})
+	ids := make([]string, 0, maxPendingPerClientIP)
+	for i := 0; i < maxPendingPerClientIP; i++ {
+		id, err := s.addPending(&pendingRequest{clientID: "a", sourceIP: "ip-a"})
 		require.NoError(t, err)
 		ids = append(ids, id)
 	}
@@ -435,7 +475,7 @@ func TestStore_AddPending_ShouldKeepRequestsAUserAlreadyOpened(t *testing.T) {
 	require.NoError(t, err)
 
 	// when
-	extra, errExtra := s.addPending(&pendingRequest{clientID: "a"})
+	extra, errExtra := s.addPending(&pendingRequest{clientID: "a", sourceIP: "ip-a"})
 	_, errBound := s.getPending(ids[0], "user-a")
 	_, errSecond := s.getPending(ids[1], "user-b")
 	_, errNew := s.getPending(extra, "user-b")
@@ -447,18 +487,18 @@ func TestStore_AddPending_ShouldKeepRequestsAUserAlreadyOpened(t *testing.T) {
 	assert.NoError(t, errNew)
 }
 
-func TestStore_AddPending_ShouldReturnStoreFullWhenEveryClientRequestIsOpened(t *testing.T) {
+func TestStore_AddPending_ShouldReturnStoreFullWhenEveryClientIPRequestIsOpened(t *testing.T) {
 	// given
 	s := newStore()
-	for i := 0; i < maxPendingPerClient; i++ {
-		id, err := s.addPending(&pendingRequest{clientID: "a"})
+	for i := 0; i < maxPendingPerClientIP; i++ {
+		id, err := s.addPending(&pendingRequest{clientID: "a", sourceIP: "ip-a"})
 		require.NoError(t, err)
 		_, err = s.getPending(id, "user-a")
 		require.NoError(t, err)
 	}
 
 	// when
-	_, err := s.addPending(&pendingRequest{clientID: "a"})
+	_, err := s.addPending(&pendingRequest{clientID: "a", sourceIP: "ip-a"})
 
 	// then
 	assert.ErrorIs(t, err, ErrStoreFull)
@@ -486,7 +526,7 @@ func TestStore_UnmarkCode_ShouldNotReviveCodeAfterReuseWasSeen(t *testing.T) {
 func TestApprove_ExpiredRequest_ShouldReturnNotFoundWithoutTouchingAgents(t *testing.T) {
 	// given
 	svc := NewService(nil, nil, testIssuer, "https://app.test")
-	id, err := svc.store.addPending(&pendingRequest{clientID: "a"})
+	id, err := svc.store.addPending(&pendingRequest{clientID: "a", sourceIP: "ip-a"})
 	require.NoError(t, err)
 	svc.store.pending[id].expiresAt = time.Now().Add(-time.Second)
 

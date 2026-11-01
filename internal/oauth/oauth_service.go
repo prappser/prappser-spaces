@@ -47,6 +47,7 @@ type authorizeParams struct {
 	Scope               string
 	Resource            string
 	HasResource         bool
+	SourceIP            string
 }
 
 type RequestInfo struct {
@@ -122,6 +123,7 @@ func (s *Service) Authorize(ctx context.Context, p authorizeParams) (string, err
 
 	id, err := s.store.addPending(&pendingRequest{
 		clientID:         client.id,
+		sourceIP:         p.SourceIP,
 		clientName:       client.name,
 		clientHost:       client.host,
 		clientURI:        client.uri,

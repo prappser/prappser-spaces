@@ -50,9 +50,9 @@ func TestOAuthRoutes_FullFlow_ShouldIssueValidAgentToken_Integration(t *testing.
 	pool.AddCert(srv.Certificate())
 
 	svc := oauth.NewService(agents, users, issuer, "https://app.test")
-	svc.UseTestFetcher(pool)
+	svc.TestOnlyDisableSSRFGuard(pool)
 	cfg := &Config{TrustProxyHeaders: true, MCPEnabled: true, ExternalURL: issuer}
-	handler := NewRequestHandler(cfg, nil, nil, nil, userSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, oauth.NewEndpoints(svc))
+	handler := NewRequestHandler(cfg, nil, nil, nil, userSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, oauth.NewEndpoints(svc, true))
 
 	pk := "oauth-http-" + rand.Text()
 	require.NoError(t, users.CreateUser(&user.User{PublicKey: pk, Username: pk, Role: user.RoleUser, CreatedAt: time.Now().Unix()}))
