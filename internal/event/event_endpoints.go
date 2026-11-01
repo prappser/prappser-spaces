@@ -113,6 +113,9 @@ func (ee *EventEndpoints) SubmitEvent(ctx *fasthttp.RequestCtx) {
 		var reason string
 
 		switch {
+		case errors.Is(err, ErrUnappliable):
+			statusCode = fasthttp.StatusUnprocessableEntity
+			reason = "validation_failed"
 		case errors.Is(err, ErrUnauthorized) || err.Error() == "unauthorized":
 			statusCode = fasthttp.StatusForbidden
 			reason = "unauthorized"

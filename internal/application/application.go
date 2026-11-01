@@ -1,9 +1,12 @@
 package application
 
 import (
+	"errors"
 	"fmt"
 	"time"
 )
+
+var ErrNotFound = errors.New("not found")
 
 type Application struct {
 	ID              string           `json:"id"`

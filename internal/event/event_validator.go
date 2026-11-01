@@ -12,7 +12,8 @@ import (
 )
 
 var (
-	ErrValidation = errors.New("validation error")
+	ErrValidation  = errors.New("validation error")
+	ErrUnappliable = errors.New("event cannot be applied")
 )
 
 func ValidateEvent(event *Event) error {
@@ -165,8 +166,43 @@ func validateComponentDataChangedData(data map[string]interface{}) error {
 	return nil
 }
 
+var editModeChangeTypes = map[string]bool{
+	"component_added": true, "component_removed": true, "component_reordered": true, "component_data_changed": true,
+	"component_group_added": true, "component_group_removed": true, "component_group_reordered": true, "component_group_changed": true,
+}
+
 func validateApplicationAfterEditModeChangedData(data map[string]interface{}) error {
-	// Client-side validation only - server trusts client data
+	changes, ok := data["changes"].([]interface{})
+	if !ok {
+		return fmt.Errorf("%w: changes is required", ErrValidation)
+	}
+	for i, raw := range changes {
+		change, ok := raw.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("%w: changes[%d] must be an object", ErrValidation, i)
+		}
+		changeType, _ := change["changeType"].(string)
+		if !editModeChangeTypes[changeType] {
+			return fmt.Errorf("%w: changes[%d].changeType %q is not supported", ErrValidation, i, changeType)
+		}
+		if id, _ := change["entityId"].(string); id == "" {
+			return fmt.Errorf("%w: changes[%d].entityId is required", ErrValidation, i)
+		}
+		switch changeType {
+		case "component_added", "component_group_added", "component_group_changed":
+			if _, ok := change["data"].(map[string]interface{}); !ok {
+				return fmt.Errorf("%w: changes[%d].data is required", ErrValidation, i)
+			}
+		case "component_reordered", "component_group_reordered":
+			if _, ok := numberValue(change["index"]); !ok {
+				return fmt.Errorf("%w: changes[%d].index is required", ErrValidation, i)
+			}
+		case "component_data_changed":
+			if _, ok := change["changedFields"].(map[string]interface{}); !ok {
+				return fmt.Errorf("%w: changes[%d].changedFields is required", ErrValidation, i)
+			}
+		}
+	}
 	return nil
 }
 

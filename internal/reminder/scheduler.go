@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -252,7 +253,13 @@ func (s *Scheduler) processRow(ctx context.Context, tx *sql.Tx, row dueRow, now 
 		return err
 	}
 
-	if err := s.fire(ctx, row); err != nil {
+	if err := s.fire(ctx, row); errors.Is(err, event.ErrUnappliable) {
+		log.Warn().Err(err).Str("ruleId", row.ruleID).Int("offsetIndex", row.offsetIndex).
+			Msg("[REMINDER] Event can never apply, skipping without push")
+		_, err := tx.ExecContext(ctx, `UPDATE reminder SET state = 'skipped' WHERE rule_id = $1 AND offset_index = $2`,
+			row.ruleID, row.offsetIndex)
+		return err
+	} else if err != nil {
 		return fmt.Errorf("fire: %w", err)
 	}
 
