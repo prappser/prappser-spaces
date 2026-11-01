@@ -25,7 +25,7 @@ const (
 
 	ipLimitPerMinute     = 120
 	deviceLimitPerMinute = 60
-	maxBodyBytes         = 64 * 1024
+	maxBodyBytes         = 128 * 1024
 )
 
 func limitByDevice(rl *middleware.RateLimiter, next http.Handler) http.Handler {

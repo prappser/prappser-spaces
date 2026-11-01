@@ -31,8 +31,9 @@ import (
 )
 
 type recordingBroadcaster struct {
-	mu   sync.Mutex
-	apps []string
+	mu    sync.Mutex
+	apps  []string
+	users []string
 }
 
 func (b *recordingBroadcaster) BroadcastToApplication(appID string, _ *event.Event) {
@@ -40,7 +41,11 @@ func (b *recordingBroadcaster) BroadcastToApplication(appID string, _ *event.Eve
 	defer b.mu.Unlock()
 	b.apps = append(b.apps, appID)
 }
-func (b *recordingBroadcaster) BroadcastToUser(string, *event.Event) {}
+func (b *recordingBroadcaster) BroadcastToUser(userKey string, _ *event.Event) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.users = append(b.users, userKey)
+}
 
 func (b *recordingBroadcaster) saw(appID string) bool {
 	b.mu.Lock()
@@ -66,6 +71,11 @@ type env struct {
 
 func newEnv(t *testing.T) *env {
 	t.Helper()
+	return newEnvWithAppLimit(t, 0)
+}
+
+func newEnvWithAppLimit(t *testing.T, maxApps int) *env {
+	t.Helper()
 	db := testdb.Connect(t, "mcp")
 	t.Cleanup(func() { db.Close() })
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -81,7 +91,7 @@ func newEnv(t *testing.T) *env {
 	invites := invitation.NewInvitationService(invitation.NewInvitationRepository(db), priv, pub, appRepo, db, userRepo, events, "space-key")
 	invites.ExternalURL = "https://prappser.app"
 	agents := user.NewAgentService(db, userRepo, priv, pub, base)
-	apps := application.NewApplicationService(appRepo, 0, "space-key")
+	apps := application.NewApplicationService(appRepo, maxApps, "space-key")
 
 	validator, err := component.NewValidator()
 	require.NoError(t, err)
@@ -654,4 +664,129 @@ func TestMCP_ChecklistTools_ShouldListChecklistsWhenSeveralAndNoComponentID(t *t
 	// then
 	assert.True(t, res.IsError)
 	assert.Len(t, out["untrusted"].(map[string]any)["checklists"], 2)
+}
+
+func templateDoc(name string, comps ...map[string]any) map[string]any {
+	groups := []any{}
+	for i, c := range comps {
+		groups = append(groups, map[string]any{"name": "G" + string(rune('a'+i)), "index": 5 - i, "components": []any{c}})
+	}
+	return map[string]any{"name": name, "description": "d", "icon": "home", "groups": groups}
+}
+
+func checklistComp(item map[string]any) map[string]any {
+	return map[string]any{"type": "Checklist", "index": 0, "data": map[string]any{"item_x": item}}
+}
+
+func (e *env) appCount(u *user.User) int {
+	e.t.Helper()
+	var n int
+	require.NoError(e.t, e.db.QueryRow(`SELECT COUNT(*) FROM members WHERE public_key = $1`, u.PublicKey).Scan(&n))
+	return n
+}
+
+func TestMCP_CreateApp_ShouldCreateAppOwnedByCallerWithFreshIDs(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner := e.account()
+	session, _ := e.connect(owner)
+	doc := templateDoc("  Trip plan ",
+		checklistComp(map[string]any{"title": "Pack", "checked": false, "order": 0.0}),
+		map[string]any{"type": "Text", "index": 2, "data": map[string]any{"document": []any{map[string]any{"insert": "hello\n"}}}},
+	)
+
+	// when
+	res, out := call(t, session, "create_app", map[string]any{"doc": doc})
+
+	// then
+	require.False(t, res.IsError, toJSON(out))
+	appID := out["appId"].(string)
+	assert.Equal(t, "Trip plan", out["name"])
+	_, got := call(t, session, "get_app", map[string]any{"appId": appID})
+	assert.Equal(t, "owner", got["role"])
+	content := got["untrusted"].(map[string]any)
+	assert.Equal(t, "Trip plan", content["name"])
+	assert.Len(t, content["members"], 1)
+	groups := content["componentGroups"].([]any)
+	require.Len(t, groups, 2)
+	var checklist map[string]any
+	for _, g := range groups {
+		for _, c := range g.(map[string]any)["components"].([]any) {
+			if c.(map[string]any)["name"] == "Checklist" {
+				checklist = c.(map[string]any)
+			}
+		}
+	}
+	require.NotNil(t, checklist)
+	assert.Equal(t, map[string]any{"title": "Pack", "checked": false, "order": 0.0}, checklist["data"].(map[string]any)["item_x"])
+	var indexes []int
+	rows, err := e.db.Query(`SELECT index_order FROM component_groups WHERE application_id = $1 ORDER BY index_order`, appID)
+	require.NoError(t, err)
+	defer rows.Close()
+	for rows.Next() {
+		var i int
+		require.NoError(t, rows.Scan(&i))
+		indexes = append(indexes, i)
+	}
+	assert.Equal(t, []int{4, 5}, indexes)
+	var ownerKey string
+	require.NoError(t, e.db.QueryRow(`SELECT public_key FROM members WHERE application_id = $1 AND role = 'owner'`, appID).Scan(&ownerKey))
+	assert.Equal(t, owner.PublicKey, ownerKey)
+	e.bc.mu.Lock()
+	defer e.bc.mu.Unlock()
+	assert.Contains(t, e.bc.users, owner.PublicKey)
+}
+
+func TestMCP_CreateApp_ShouldRejectDocWithMessageKey(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner := e.account()
+	session, _ := e.connect(owner)
+	doc := templateDoc("Chatty", map[string]any{"type": "Chat", "index": 0, "data": map[string]any{"m_1": "x"}})
+
+	// when
+	res, out := call(t, session, "create_app", map[string]any{"doc": doc})
+
+	// then
+	assert.True(t, res.IsError)
+	assert.Equal(t, "invalid template", out["error"])
+	assert.Equal(t, 0, e.appCount(owner))
+}
+
+func TestMCP_CreateApp_ShouldRejectAssignedMemberAndNameTooLongInUTF16(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner := e.account()
+	session, _ := e.connect(owner)
+	assigned := templateDoc("Ok", checklistComp(map[string]any{"title": "t", "checked": false, "assignedMemberId": "somebody"}))
+	tooLong := templateDoc(strings.Repeat("a", 63) + "😀")
+
+	// when
+	resAssigned, outAssigned := call(t, session, "create_app", map[string]any{"doc": assigned})
+	resLong, outLong := call(t, session, "create_app", map[string]any{"doc": tooLong})
+
+	// then
+	assert.True(t, resAssigned.IsError)
+	assert.Contains(t, toJSON(outAssigned["untrusted"]), "/groups/0/components/0/data/item_x/assignedMemberId")
+	assert.True(t, resLong.IsError)
+	assert.Contains(t, toJSON(outLong["untrusted"]), "/name")
+	assert.Equal(t, 0, e.appCount(owner))
+}
+
+func TestMCP_CreateApp_ShouldRefuseWhenAppLimitIsReached(t *testing.T) {
+	// given
+	e := newEnvWithAppLimit(t, 1)
+	owner := e.account()
+	session, _ := e.connect(owner)
+	first, _ := call(t, session, "create_app", map[string]any{"doc": templateDoc("One")})
+	require.False(t, first.IsError)
+
+	// when
+	res, out := call(t, session, "create_app", map[string]any{"doc": templateDoc("Two")})
+
+	// then
+	assert.True(t, res.IsError)
+	assert.Equal(t, "you have reached your app limit", out["error"])
+	assert.Equal(t, map[string]any{"fields": []any{}}, out["untrusted"])
+	assert.Equal(t, 1, e.appCount(owner))
 }

@@ -36,6 +36,7 @@ func newServer(d Deps) *sdk.Server {
 	addListApps(s, d)
 	addGetApp(s, d)
 	addCreateInvite(s, d)
+	addCreateApp(s, d)
 	addPostChatMessage(s, d)
 	addAddChecklistItem(s, d)
 	addUpdateChecklistItem(s, d)
