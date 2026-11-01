@@ -377,3 +377,107 @@ func TestValidateEvent_MemberAdded_ShouldRejectOwnerRole(t *testing.T) {
 		t.Fatalf("Expected ErrValidation for member_added role owner, got: %v", err)
 	}
 }
+
+func editModeData(changes ...interface{}) map[string]interface{} {
+	return map[string]interface{}{"version": float64(1), "applicationId": "app-1", "changes": changes}
+}
+
+func TestValidateApplicationAfterEditModeChangedData_ShouldAcceptClientPayload(t *testing.T) {
+	// given: the shapes the app's computeStructureChanges emits, nulls included
+	data := editModeData(
+		map[string]interface{}{"changeType": "component_group_removed", "entityType": "component_group", "entityId": "g-old", "data": nil, "index": nil, "changedFields": nil},
+		map[string]interface{}{"changeType": "component_removed", "entityType": "component", "entityId": "c-old", "data": nil, "index": nil, "changedFields": nil},
+		map[string]interface{}{"changeType": "component_group_added", "entityType": "component_group", "entityId": "g-1", "data": map[string]interface{}{"id": "g-1", "applicationId": nil, "index": float64(0), "name": "G"}, "index": nil},
+		map[string]interface{}{"changeType": "component_group_changed", "entityType": "component_group", "entityId": "g-1", "data": map[string]interface{}{"name": "", "index": float64(1)}},
+		map[string]interface{}{"changeType": "component_added", "entityType": "component", "entityId": "c-1", "data": map[string]interface{}{"id": "c-1", "componentGroupId": "g-1", "name": "C", "index": float64(0), "data": nil}},
+		map[string]interface{}{"changeType": "component_reordered", "entityType": "component", "entityId": "c-1", "index": float64(2)},
+		map[string]interface{}{"changeType": "component_group_reordered", "entityType": "component_group", "entityId": "g-1", "index": float64(0)},
+		map[string]interface{}{"changeType": "component_data_changed", "entityType": "component", "entityId": "c-1", "changedFields": map[string]interface{}{"title": "x"}},
+	)
+
+	// when
+	err := validateApplicationAfterEditModeChangedData(data)
+
+	// then
+	if err != nil {
+		t.Fatalf("Expected the client payload to pass, got: %v", err)
+	}
+}
+
+func TestValidateApplicationAfterEditModeChangedData_ShouldRejectNonMapChange(t *testing.T) {
+	// given
+	data := editModeData("component_removed")
+
+	// when
+	err := validateApplicationAfterEditModeChangedData(data)
+
+	// then
+	if !errors.Is(err, ErrValidation) {
+		t.Fatalf("Expected ErrValidation, got: %v", err)
+	}
+}
+
+func TestValidateApplicationAfterEditModeChangedData_ShouldRejectUnknownChangeType(t *testing.T) {
+	// given
+	data := editModeData(map[string]interface{}{"changeType": "component_exploded", "entityId": "c-1"})
+
+	// when
+	err := validateApplicationAfterEditModeChangedData(data)
+
+	// then
+	if !errors.Is(err, ErrValidation) {
+		t.Fatalf("Expected ErrValidation, got: %v", err)
+	}
+}
+
+func TestValidateApplicationAfterEditModeChangedData_ShouldRejectMissingEntityID(t *testing.T) {
+	// given
+	data := editModeData(map[string]interface{}{"changeType": "component_removed", "entityId": ""})
+
+	// when
+	err := validateApplicationAfterEditModeChangedData(data)
+
+	// then
+	if !errors.Is(err, ErrValidation) {
+		t.Fatalf("Expected ErrValidation, got: %v", err)
+	}
+}
+
+func TestValidateApplicationAfterEditModeChangedData_ShouldRejectAddedWithoutData(t *testing.T) {
+	// given
+	data := editModeData(map[string]interface{}{"changeType": "component_added", "entityId": "c-1", "data": nil})
+
+	// when
+	err := validateApplicationAfterEditModeChangedData(data)
+
+	// then
+	if !errors.Is(err, ErrValidation) {
+		t.Fatalf("Expected ErrValidation, got: %v", err)
+	}
+}
+
+func TestValidateApplicationAfterEditModeChangedData_ShouldRejectReorderedWithoutIndex(t *testing.T) {
+	// given
+	data := editModeData(map[string]interface{}{"changeType": "component_reordered", "entityId": "c-1", "index": "2"})
+
+	// when
+	err := validateApplicationAfterEditModeChangedData(data)
+
+	// then
+	if !errors.Is(err, ErrValidation) {
+		t.Fatalf("Expected ErrValidation, got: %v", err)
+	}
+}
+
+func TestValidateApplicationAfterEditModeChangedData_ShouldRejectDataChangedWithoutChangedFields(t *testing.T) {
+	// given
+	data := editModeData(map[string]interface{}{"changeType": "component_data_changed", "entityId": "c-1"})
+
+	// when
+	err := validateApplicationAfterEditModeChangedData(data)
+
+	// then
+	if !errors.Is(err, ErrValidation) {
+		t.Fatalf("Expected ErrValidation, got: %v", err)
+	}
+}

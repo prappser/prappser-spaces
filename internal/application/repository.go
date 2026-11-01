@@ -15,18 +15,25 @@ const activeMemberPredicate = `(m.membership_expires_at IS NULL OR m.membership_
 const ActiveMemberPredicate = activeMemberPredicate
 
 type Repository struct {
-	db *sql.DB
+	db   dbtx
+	conn *sql.DB
 }
 
-type execer interface {
+type dbtx interface {
 	Exec(query string, args ...any) (sql.Result, error)
+	Query(query string, args ...any) (*sql.Rows, error)
+	QueryRow(query string, args ...any) *sql.Row
 }
 
 func NewRepository(db *sql.DB) *Repository {
-	return &Repository{db: db}
+	return &Repository{db: db, conn: db}
 }
 
-func upsertApplication(e execer, app *Application) error {
+func (r *Repository) WithTx(tx *sql.Tx) ApplicationRepository {
+	return &Repository{db: tx}
+}
+
+func upsertApplication(e dbtx, app *Application) error {
 	query := `INSERT INTO applications (id, name, icon, space_public_key, space_id, created_at, updated_at)
 			  VALUES ($1, $2, $3, $4, $5, $6, $7)
 			  ON CONFLICT (id) DO UPDATE SET
@@ -56,7 +63,7 @@ func (r *Repository) GetApplicationByID(id string) (*Application, error) {
 	)
 
 	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("application not found")
+		return nil, fmt.Errorf("application %w", ErrNotFound)
 	}
 	if err != nil {
 		return nil, err
@@ -216,7 +223,7 @@ func (r *Repository) CreateComponentGroup(group *ComponentGroup) error {
 	return upsertComponentGroup(r.db, group)
 }
 
-func upsertComponentGroup(e execer, group *ComponentGroup) error {
+func upsertComponentGroup(e dbtx, group *ComponentGroup) error {
 	query := `INSERT INTO component_groups (id, application_id, name, index_order)
 			  VALUES ($1, $2, $3, $4)
 			  ON CONFLICT (id) DO UPDATE SET
@@ -254,7 +261,7 @@ func (r *Repository) CreateComponent(component *Component) error {
 	return upsertComponent(r.db, component)
 }
 
-func upsertComponent(e execer, component *Component) error {
+func upsertComponent(e dbtx, component *Component) error {
 	query := `INSERT INTO components (id, component_group_id, application_id, name, data, index_order)
 			  VALUES ($1, $2, $3, $4, $5, $6)
 			  ON CONFLICT (id) DO UPDATE SET
@@ -376,7 +383,7 @@ func (r *Repository) GetComponentByID(componentID string) (*Component, error) {
 	)
 
 	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("component not found")
+		return nil, fmt.Errorf("component %w", ErrNotFound)
 	}
 	if err != nil {
 		return nil, err
@@ -471,7 +478,7 @@ func (r *Repository) GetComponentGroupByID(groupID string) (*ComponentGroup, err
 	)
 
 	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("component group not found")
+		return nil, fmt.Errorf("component group %w", ErrNotFound)
 	}
 	if err != nil {
 		return nil, err
@@ -541,7 +548,7 @@ func (r *Repository) CreateMember(member *Member) error {
 	return upsertMember(r.db, member)
 }
 
-func upsertMember(e execer, member *Member) error {
+func upsertMember(e dbtx, member *Member) error {
 	// Conflict target is (application_id, public_key), not id: a re-join
 	// (new event, new member.ID) must update the SAME row for that
 	// application+key pair rather than insert a duplicate - that's what
@@ -693,7 +700,7 @@ func (r *Repository) GetMemberByPublicKey(appID, publicKey string) (*Member, err
 	)
 
 	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("member not found")
+		return nil, fmt.Errorf("member %w", ErrNotFound)
 	}
 	if err != nil {
 		return nil, err
@@ -724,7 +731,7 @@ func (r *Repository) HasOtherOwner(appID, publicKey string) (bool, error) {
 }
 
 func (r *Repository) RegisterApplication(app *Application) error {
-	tx, err := r.db.Begin()
+	tx, err := r.conn.Begin()
 	if err != nil {
 		return err
 	}
@@ -924,7 +931,7 @@ func (r *Repository) AbortMove(appID string) error {
 // deleted_at = moved_at so the existing purge job hard-deletes the tombstone after 30 days;
 // members stay so they still get the 410.
 func (r *Repository) CompleteMove(appID, targetURL, inviteToken string, now int64) error {
-	tx, err := r.db.Begin()
+	tx, err := r.conn.Begin()
 	if err != nil {
 		return err
 	}

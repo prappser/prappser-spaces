@@ -423,7 +423,7 @@ func TestExecuteMemberRemoved_ShouldNotPanicOnShortPublicKey(t *testing.T) {
 	err := svc.executeMemberRemoved(context.Background(), evt)
 
 	// then
-	if err == nil {
-		t.Fatal("Expected an error for an unknown member")
+	if err != nil {
+		t.Fatalf("Expected removing an unknown member to be a no-op, got: %v", err)
 	}
 }

@@ -14,11 +14,22 @@ import (
 var ErrCursorNotFound = errors.New("cursor not found")
 
 type EventRepository struct {
-	db *sql.DB
+	db   dbtx
+	conn *sql.DB
+}
+
+type dbtx interface {
+	Exec(query string, args ...any) (sql.Result, error)
+	Query(query string, args ...any) (*sql.Rows, error)
+	QueryRow(query string, args ...any) *sql.Row
 }
 
 func NewEventRepository(db *sql.DB) *EventRepository {
-	return &EventRepository{db: db}
+	return &EventRepository{db: db, conn: db}
+}
+
+func (r *EventRepository) withTx(tx *sql.Tx) *EventRepository {
+	return &EventRepository{db: tx}
 }
 
 // GetNextSequence floors the next sequence at applications.last_sequence as
@@ -96,13 +107,14 @@ func (r *EventRepository) Create(event *Event) error {
 }
 
 func (r *EventRepository) GetByID(id string) (*Event, error) {
-	query := `SELECT id, created_at, application_id, sequence_number, type, creator_public_key, version, data
+	query := `SELECT id, created_at, application_id, sequence_number, type, creator_public_key, version, data, space_id
 			  FROM events WHERE id = $1`
 
 	event := &Event{}
 	var eventType string
 	var dataJSON string
 	var appID sql.NullString
+	var spaceID sql.NullString
 
 	err := r.db.QueryRow(query, id).Scan(
 		&event.ID,
@@ -113,10 +125,11 @@ func (r *EventRepository) GetByID(id string) (*Event, error) {
 		&event.CreatorPublicKey,
 		&event.Version,
 		&dataJSON,
+		&spaceID,
 	)
 
 	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("event not found")
+		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to query event: %w", err)
@@ -125,6 +138,7 @@ func (r *EventRepository) GetByID(id string) (*Event, error) {
 	if appID.Valid {
 		event.ApplicationID = appID.String
 	}
+	event.SpaceID = spaceID.String
 
 	event.Type = EventType(eventType)
 

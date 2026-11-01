@@ -2,11 +2,13 @@ package event
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 	"github.com/prappser/prappser-spaces/internal/application"
 	"github.com/prappser/prappser-spaces/internal/user"
 	"github.com/rs/zerolog/log"
@@ -74,6 +76,16 @@ func (s *EventService) AcceptEvent(ctx context.Context, event *Event, submitter 
 	}
 	log.Debug().Str("eventId", event.ID).Msg("[EVENT] Validation passed")
 
+	// A retry must not be re-authorized against the state its first attempt changed.
+	existing, err := s.repo.GetByID(event.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check for duplicate event: %w", err)
+	}
+	if existing != nil && existing.CreatorPublicKey == submitter.PublicKey && existing.Type == event.Type {
+		log.Debug().Str("eventId", event.ID).Msg("[EVENT] Duplicate, returning stored event")
+		return existing, nil
+	}
+
 	// User-scoped events bypass application lookup and use a separate authorization path
 	if IsUserScoped(event.Type) {
 		return s.acceptUserScopedEvent(ctx, event, submitter)
@@ -96,6 +108,9 @@ func (s *EventService) AcceptEvent(ctx context.Context, event *Event, submitter 
 	}
 
 	app, err := s.appRepo.GetApplicationByID(appID)
+	if errors.Is(err, application.ErrNotFound) {
+		return nil, fmt.Errorf("%w: %w", ErrUnappliable, err)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("application not found: %w", err)
 	}
@@ -109,12 +124,6 @@ func (s *EventService) AcceptEvent(ctx context.Context, event *Event, submitter 
 	}
 	log.Debug().Str("eventId", event.ID).Msg("[EVENT] Authorization passed")
 
-	seq, err := s.repo.GetNextSequence(appID)
-	if err != nil {
-		return nil, fmt.Errorf("sequence generation failed: %w", err)
-	}
-	event.SequenceNumber = seq
-
 	// event.CreatedAt still holds the client's mint time here; checked
 	// against the submitter's own clock before it's overwritten below.
 	if err := checkEventStaleness(event.Type, event.CreatedAt, time.Now()); err != nil {
@@ -126,41 +135,12 @@ func (s *EventService) AcceptEvent(ctx context.Context, event *Event, submitter 
 		return nil, err
 	}
 
-	event.CreatedAt = time.Now().Unix()
-
-	log.Debug().
-		Str("eventId", event.ID).
-		Int64("sequence", event.SequenceNumber).
-		Msg("[EVENT] Persisting to database")
-
-	if err := s.repo.Create(event); err != nil {
-		log.Error().
-			Str("eventId", event.ID).
-			Err(err).
-			Msg("[EVENT] Persistence failed")
-		return nil, fmt.Errorf("persistence failed: %w", err)
+	stored, dup, err := s.persistAndApply(ctx, event, true)
+	if err != nil {
+		return nil, err
 	}
-
-	log.Debug().
-		Str("eventId", event.ID).
-		Str("type", string(event.Type)).
-		Msg("[EVENT] Executing")
-
-	// Execute event to update database state
-	if err := s.executeEvent(ctx, event); err != nil {
-		// Log error but don't fail event acceptance
-		// Event is already persisted and sequenced
-		log.Error().
-			Str("eventId", event.ID).
-			Str("type", string(event.Type)).
-			Err(err).
-			Msg("[EVENT] Execution failed - event persisted but database state not updated")
-	} else {
-		log.Debug().
-			Str("eventId", event.ID).
-			Str("type", string(event.Type)).
-			Msg("[EVENT] Execution complete")
-		s.updateAppVersion(event)
+	if dup {
+		return stored, nil
 	}
 
 	log.Debug().
@@ -170,9 +150,9 @@ func (s *EventService) AcceptEvent(ctx context.Context, event *Event, submitter 
 		Msg("[EVENT] Accepted successfully")
 
 	// Broadcast to WebSocket clients
-	s.broadcastEvent(event)
+	s.broadcastEvent(stored)
 
-	return event, nil
+	return stored, nil
 }
 
 // acceptUserScopedEvent handles the user-scoped event path (no application context).
@@ -189,38 +169,12 @@ func (s *EventService) acceptUserScopedEvent(ctx context.Context, event *Event, 
 	// Set space ID from submitter's JWT claims
 	event.SpaceID = submitter.SpaceID
 
-	// User-scoped events have no sequence number
-	event.SequenceNumber = 0
-	event.CreatedAt = time.Now().Unix()
-
-	log.Debug().
-		Str("eventId", event.ID).
-		Msg("[EVENT] Persisting user-scoped event to database")
-
-	if err := s.repo.Create(event); err != nil {
-		log.Error().
-			Str("eventId", event.ID).
-			Err(err).
-			Msg("[EVENT] Persistence failed")
-		return nil, fmt.Errorf("persistence failed: %w", err)
+	stored, dup, err := s.persistAndApply(ctx, event, false)
+	if err != nil {
+		return nil, err
 	}
-
-	log.Debug().
-		Str("eventId", event.ID).
-		Str("type", string(event.Type)).
-		Msg("[EVENT] Executing")
-
-	if err := s.executeEvent(ctx, event); err != nil {
-		log.Error().
-			Str("eventId", event.ID).
-			Str("type", string(event.Type)).
-			Err(err).
-			Msg("[EVENT] Execution failed - event persisted but database state not updated")
-	} else {
-		log.Debug().
-			Str("eventId", event.ID).
-			Str("type", string(event.Type)).
-			Msg("[EVENT] Execution complete")
+	if dup {
+		return stored, nil
 	}
 
 	log.Debug().
@@ -229,10 +183,10 @@ func (s *EventService) acceptUserScopedEvent(ctx context.Context, event *Event, 
 		Msg("[EVENT] User-scoped event accepted successfully")
 
 	if s.broadcaster != nil {
-		s.broadcaster.BroadcastToUser(event.CreatorPublicKey, event)
+		s.broadcaster.BroadcastToUser(stored.CreatorPublicKey, stored)
 	}
 
-	return event, nil
+	return stored, nil
 }
 
 // ProduceEvent creates an event without authorization checks.
@@ -267,49 +221,12 @@ func (s *EventService) ProduceEvent(ctx context.Context, event *Event) (*Event, 
 	// Set ApplicationID field from data
 	event.ApplicationID = appID
 
-	seq, err := s.repo.GetNextSequence(appID)
+	stored, dup, err := s.persistAndApply(ctx, event, true)
 	if err != nil {
-		return nil, fmt.Errorf("sequence generation failed: %w", err)
+		return nil, err
 	}
-	event.SequenceNumber = seq
-
-	event.CreatedAt = time.Now().Unix()
-
-	log.Debug().
-		Str("eventId", event.ID).
-		Int64("sequence", event.SequenceNumber).
-		Msg("[EVENT] Persisting to database")
-
-	if err := s.repo.Create(event); err != nil {
-		log.Error().
-			Str("eventId", event.ID).
-			Err(err).
-			Msg("[EVENT] Persistence failed")
-		return nil, fmt.Errorf("persistence failed: %w", err)
-	}
-
-	log.Debug().
-		Str("eventId", event.ID).
-		Str("type", string(event.Type)).
-		Msg("[EVENT] Executing")
-
-	// Execute event to update database state
-	if err := s.executeEvent(ctx, event); err != nil {
-		// Log error but don't fail event acceptance
-		// Event is already persisted and sequenced
-		log.Error().
-			Str("eventId", event.ID).
-			Str("type", string(event.Type)).
-			Str("applicationId", event.ApplicationID).
-			Err(err).
-			Msg("[EVENT] Execution failed - event persisted but database state not updated")
-	} else {
-		log.Debug().
-			Str("eventId", event.ID).
-			Str("type", string(event.Type)).
-			Str("applicationId", event.ApplicationID).
-			Msg("[EVENT] Execution complete")
-		s.updateAppVersion(event)
+	if dup {
+		return stored, nil
 	}
 
 	log.Debug().
@@ -319,44 +236,19 @@ func (s *EventService) ProduceEvent(ctx context.Context, event *Event) (*Event, 
 		Msg("[EVENT] Space-produced event accepted successfully")
 
 	// Broadcast to WebSocket clients
-	s.broadcastEvent(event)
+	s.broadcastEvent(stored)
 
-	return event, nil
+	return stored, nil
 }
 
 // produceUserScopedEvent handles the user-scoped path for space-produced events.
 func (s *EventService) produceUserScopedEvent(ctx context.Context, event *Event) (*Event, error) {
-	event.SequenceNumber = 0
-	event.CreatedAt = time.Now().Unix()
-
-	log.Debug().
-		Str("eventId", event.ID).
-		Msg("[EVENT] Persisting user-scoped space-produced event to database")
-
-	if err := s.repo.Create(event); err != nil {
-		log.Error().
-			Str("eventId", event.ID).
-			Err(err).
-			Msg("[EVENT] Persistence failed")
-		return nil, fmt.Errorf("persistence failed: %w", err)
+	stored, dup, err := s.persistAndApply(ctx, event, false)
+	if err != nil {
+		return nil, err
 	}
-
-	log.Debug().
-		Str("eventId", event.ID).
-		Str("type", string(event.Type)).
-		Msg("[EVENT] Executing")
-
-	if err := s.executeEvent(ctx, event); err != nil {
-		log.Error().
-			Str("eventId", event.ID).
-			Str("type", string(event.Type)).
-			Err(err).
-			Msg("[EVENT] Execution failed - event persisted but database state not updated")
-	} else {
-		log.Debug().
-			Str("eventId", event.ID).
-			Str("type", string(event.Type)).
-			Msg("[EVENT] Execution complete")
+	if dup {
+		return stored, nil
 	}
 
 	log.Debug().
@@ -365,10 +257,106 @@ func (s *EventService) produceUserScopedEvent(ctx context.Context, event *Event)
 		Msg("[EVENT] Server-produced user-scoped event accepted successfully")
 
 	if s.broadcaster != nil {
-		s.broadcaster.BroadcastToUser(event.CreatorPublicKey, event)
+		s.broadcaster.BroadcastToUser(stored.CreatorPublicKey, stored)
 	}
 
-	return event, nil
+	return stored, nil
+}
+
+func (s *EventService) persistAndApply(ctx context.Context, event *Event, sequenced bool) (stored *Event, dup bool, err error) {
+	defer func() {
+		var pqErr *pq.Error
+		if errors.As(err, &pqErr) && pqErr.Code == "23503" {
+			err = fmt.Errorf("%w: %w", ErrUnappliable, err)
+		}
+		if err != nil {
+			log.Debug().Str("eventId", event.ID).Err(err).Msg("[EVENT] Rejected, nothing persisted")
+		}
+	}()
+
+	// A bare *fasthttp.RequestCtx (tests, background callers) panics in Done().
+	ctx = context.WithoutCancel(ctx)
+	tx, err := s.repo.conn.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to begin event transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	txs := *s
+	txs.repo = s.repo.withTx(tx)
+	if s.appRepo != nil {
+		txs.appRepo = s.appRepo.WithTx(tx)
+	}
+
+	if sequenced {
+		// ponytail: the reminder scheduler holds a reminder row lock while it calls
+		// ProduceEvent, and a component delete under this app lock cascades into that
+		// row. The cycle passes through Go so Postgres can't see it; the timeout breaks
+		// it and both sides retry (client on 5xx, scheduler row stays pending).
+		if _, err := tx.ExecContext(ctx, `SET LOCAL lock_timeout = '5s'`); err != nil {
+			return nil, false, fmt.Errorf("failed to set lock timeout: %w", err)
+		}
+		var deleted bool
+		err := tx.QueryRowContext(ctx, `SELECT deleted_at IS NOT NULL FROM applications WHERE id = $1 FOR NO KEY UPDATE`, event.ApplicationID).Scan(&deleted)
+		if errors.Is(err, sql.ErrNoRows) || (err == nil && deleted && event.Type != EventTypeApplicationMoved) {
+			return nil, false, fmt.Errorf("%w: application %s not found", ErrUnappliable, event.ApplicationID)
+		}
+		if err != nil {
+			return nil, false, fmt.Errorf("failed to lock application: %w", err)
+		}
+	}
+
+	existing, err := txs.repo.GetByID(event.ID)
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to check for duplicate event: %w", err)
+	}
+	if existing != nil {
+		if existing.ApplicationID == event.ApplicationID && existing.CreatorPublicKey == event.CreatorPublicKey && existing.Type == event.Type {
+			log.Debug().Str("eventId", event.ID).Msg("[EVENT] Duplicate, returning stored event")
+			return existing, true, nil
+		}
+		return nil, false, fmt.Errorf("%w: event id %s is already used by another event", ErrUnappliable, event.ID)
+	}
+
+	event.SequenceNumber = 0
+	if sequenced {
+		seq, err := txs.repo.GetNextSequence(event.ApplicationID)
+		if err != nil {
+			return nil, false, fmt.Errorf("sequence generation failed: %w", err)
+		}
+		event.SequenceNumber = seq
+	}
+	event.CreatedAt = time.Now().Unix()
+
+	log.Debug().
+		Str("eventId", event.ID).
+		Int64("sequence", event.SequenceNumber).
+		Msg("[EVENT] Persisting to database")
+
+	if err := txs.repo.Create(event); err != nil {
+		log.Error().
+			Str("eventId", event.ID).
+			Err(err).
+			Msg("[EVENT] Persistence failed")
+		return nil, false, fmt.Errorf("persistence failed: %w", err)
+	}
+
+	if err := txs.executeEvent(ctx, event); err != nil {
+		return nil, false, fmt.Errorf("execution failed: %w", err)
+	}
+	log.Debug().
+		Str("eventId", event.ID).
+		Str("type", string(event.Type)).
+		Msg("[EVENT] Execution complete")
+
+	if sequenced {
+		txs.updateAppVersion(event)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, false, fmt.Errorf("failed to commit event: %w", err)
+	}
+	return event, false, nil
 }
 
 // explicitRecipientEventTypes is the allowlist of event types whose
@@ -680,6 +668,13 @@ func (s *EventService) executeMemberRemoved(ctx context.Context, event *Event) e
 
 	// Get member by publicKey to get the member ID
 	member, err := s.appRepo.GetMemberByPublicKey(appID, memberPublicKey)
+	if errors.Is(err, application.ErrNotFound) {
+		log.Debug().
+			Str("applicationId", appID).
+			Str("memberPublicKey", short).
+			Msg("[MEMBER_REMOVED] Member already gone, nothing to delete")
+		return nil
+	}
 	if err != nil {
 		log.Error().
 			Str("applicationId", appID).
@@ -769,6 +764,9 @@ func (s *EventService) executeMemberRoleChanged(ctx context.Context, event *Even
 
 	// Get member by publicKey
 	member, err := s.appRepo.GetMemberByPublicKey(appID, memberPublicKey)
+	if errors.Is(err, application.ErrNotFound) {
+		return fmt.Errorf("%w: %w", ErrUnappliable, err)
+	}
 	if err != nil {
 		return fmt.Errorf("member not found: %w", err)
 	}
@@ -790,9 +788,9 @@ func (s *EventService) executeComponentDataChanged(ctx context.Context, event *E
 	}
 
 	// Get current component
-	component, err := s.appRepo.GetComponentByID(componentID)
+	component, err := s.componentInApp(event.ApplicationID, componentID)
 	if err != nil {
-		return fmt.Errorf("component not found: %w", err)
+		return err
 	}
 
 	// Apply delta: extract newValue from each field change
@@ -838,83 +836,111 @@ func (s *EventService) executeApplicationAfterEditModeChanged(ctx context.Contex
 		return fmt.Errorf("missing changes in application_after_edit_mode_changed event")
 	}
 
+	appID := event.ApplicationID
 	for i, changeRaw := range changesRaw {
 		change, ok := changeRaw.(map[string]interface{})
 		if !ok {
-			log.Warn().Int("index", i).Msg("[EDIT_MODE] Skipping invalid change entry")
-			continue
+			return fmt.Errorf("%w: change %d is not an object", ErrValidation, i)
 		}
 
 		changeType, _ := change["changeType"].(string)
-		entityType, _ := change["entityType"].(string)
 		entityID, _ := change["entityId"].(string)
 
+		var err error
 		switch changeType {
 		case "component_added":
-			if err := s.executeComponentAdded(change); err != nil {
-				log.Error().Err(err).Str("entityId", entityID).Msg("[EDIT_MODE] Failed to add component")
-			}
+			err = s.executeComponentAdded(appID, change)
 		case "component_removed":
-			if err := s.appRepo.DeleteComponent(entityID); err != nil {
-				log.Error().Err(err).Str("entityId", entityID).Msg("[EDIT_MODE] Failed to remove component")
+			if _, err = s.componentInApp(appID, entityID); err == nil {
+				err = s.appRepo.DeleteComponent(entityID)
+			} else if errors.Is(err, ErrUnappliable) {
+				err = nil
 			}
 		case "component_reordered":
-			if indexRaw, ok := change["index"].(float64); ok {
-				if err := s.appRepo.UpdateComponentIndex(entityID, int(indexRaw)); err != nil {
-					log.Error().Err(err).Str("entityId", entityID).Msg("[EDIT_MODE] Failed to reorder component")
-				}
+			if _, err = s.componentInApp(appID, entityID); err == nil {
+				err = s.appRepo.UpdateComponentIndex(entityID, getInt(change, "index"))
 			}
 		case "component_data_changed":
-			if err := s.executeComponentDataDelta(entityID, change); err != nil {
-				log.Error().Err(err).Str("entityId", entityID).Msg("[EDIT_MODE] Failed to update component data")
-			}
+			err = s.executeComponentDataDelta(appID, entityID, change)
 		case "component_group_added":
-			if err := s.executeComponentGroupAdded(change); err != nil {
-				log.Error().Err(err).Str("entityId", entityID).Msg("[EDIT_MODE] Failed to add component group")
-			}
+			err = s.executeComponentGroupAdded(appID, change)
 		case "component_group_removed":
-			if err := s.appRepo.DeleteComponentGroup(entityID); err != nil {
-				log.Error().Err(err).Str("entityId", entityID).Msg("[EDIT_MODE] Failed to remove component group")
+			if _, err = s.groupInApp(appID, entityID); err == nil {
+				err = s.appRepo.DeleteComponentGroup(entityID)
+			} else if errors.Is(err, ErrUnappliable) {
+				err = nil
 			}
 		case "component_group_reordered":
-			if indexRaw, ok := change["index"].(float64); ok {
-				if err := s.appRepo.UpdateComponentGroupIndex(entityID, int(indexRaw)); err != nil {
-					log.Error().Err(err).Str("entityId", entityID).Msg("[EDIT_MODE] Failed to reorder component group")
-				}
+			if _, err = s.groupInApp(appID, entityID); err == nil {
+				err = s.appRepo.UpdateComponentGroupIndex(entityID, getInt(change, "index"))
 			}
 		case "component_group_changed":
-			data, ok := change["data"].(map[string]interface{})
-			if ok {
+			var group *application.ComponentGroup
+			if group, err = s.groupInApp(appID, entityID); err == nil {
+				data, _ := change["data"].(map[string]interface{})
 				name, _ := data["name"].(string)
-				indexRaw, _ := data["index"].(float64)
-				if name != "" {
-					if err := s.appRepo.UpdateComponentGroup(entityID, name, int(indexRaw)); err != nil {
-						log.Error().Err(err).Str("entityId", entityID).Msg("[EDIT_MODE] Failed to update component group")
-					}
+				if name == "" {
+					name = group.Name
 				}
+				err = s.appRepo.UpdateComponentGroup(entityID, name, getInt(data, "index"))
 			}
 		default:
-			log.Warn().
-				Str("changeType", changeType).
-				Str("entityType", entityType).
-				Msg("[EDIT_MODE] Unknown change type")
+			err = fmt.Errorf("%w: unknown change type %q", ErrValidation, changeType)
+		}
+		if err != nil {
+			return fmt.Errorf("change %d (%s %s): %w", i, changeType, entityID, err)
 		}
 	}
 
 	return nil
 }
 
+func (s *EventService) componentInApp(appID, id string) (*application.Component, error) {
+	component, err := s.appRepo.GetComponentByID(id)
+	if errors.Is(err, application.ErrNotFound) || (err == nil && component.ApplicationID != appID) {
+		return nil, fmt.Errorf("%w: component %s not found", ErrUnappliable, id)
+	}
+	return component, err
+}
+
+func (s *EventService) groupInApp(appID, id string) (*application.ComponentGroup, error) {
+	group, err := s.appRepo.GetComponentGroupByID(id)
+	if errors.Is(err, application.ErrNotFound) || (err == nil && group.ApplicationID != appID) {
+		return nil, fmt.Errorf("%w: component group %s not found", ErrUnappliable, id)
+	}
+	return group, err
+}
+
+func upsertTarget(appID string, data map[string]interface{}, lookupErr error, existingAppID func() string) error {
+	if lookupErr != nil && !errors.Is(lookupErr, application.ErrNotFound) {
+		return lookupErr
+	}
+	target := getString(data, "applicationId")
+	if (target != "" && target != appID) || (lookupErr == nil && existingAppID() != appID) {
+		return fmt.Errorf("%w: %s belongs to another application", ErrUnappliable, getString(data, "id"))
+	}
+	return nil
+}
+
 // executeComponentAdded creates a new component from change data
-func (s *EventService) executeComponentAdded(change map[string]interface{}) error {
+func (s *EventService) executeComponentAdded(appID string, change map[string]interface{}) error {
 	data, ok := change["data"].(map[string]interface{})
 	if !ok {
 		return fmt.Errorf("missing data for component_added")
 	}
 
+	existing, err := s.appRepo.GetComponentByID(getString(data, "id"))
+	if err := upsertTarget(appID, data, err, func() string { return existing.ApplicationID }); err != nil {
+		return err
+	}
+	if _, err := s.groupInApp(appID, getString(data, "componentGroupId")); err != nil {
+		return err
+	}
+
 	component := &application.Component{
 		ID:               getString(data, "id"),
 		ComponentGroupID: getString(data, "componentGroupId"),
-		ApplicationID:    getString(data, "applicationId"),
+		ApplicationID:    appID,
 		Name:             getString(data, "name"),
 		Index:            getInt(data, "index"),
 	}
@@ -927,15 +953,20 @@ func (s *EventService) executeComponentAdded(change map[string]interface{}) erro
 }
 
 // executeComponentGroupAdded creates a new component group from change data
-func (s *EventService) executeComponentGroupAdded(change map[string]interface{}) error {
+func (s *EventService) executeComponentGroupAdded(appID string, change map[string]interface{}) error {
 	data, ok := change["data"].(map[string]interface{})
 	if !ok {
 		return fmt.Errorf("missing data for component_group_added")
 	}
 
+	existing, err := s.appRepo.GetComponentGroupByID(getString(data, "id"))
+	if err := upsertTarget(appID, data, err, func() string { return existing.ApplicationID }); err != nil {
+		return err
+	}
+
 	group := &application.ComponentGroup{
 		ID:            getString(data, "id"),
-		ApplicationID: getString(data, "applicationId"),
+		ApplicationID: appID,
 		Name:          getString(data, "name"),
 		Index:         getInt(data, "index"),
 	}
@@ -944,14 +975,14 @@ func (s *EventService) executeComponentGroupAdded(change map[string]interface{})
 }
 
 // executeComponentDataDelta applies delta changes to a component from a structure change
-func (s *EventService) executeComponentDataDelta(componentID string, change map[string]interface{}) error {
+func (s *EventService) executeComponentDataDelta(appID, componentID string, change map[string]interface{}) error {
 	changedFieldsRaw, ok := change["changedFields"].(map[string]interface{})
 	if !ok {
 		return fmt.Errorf("missing changedFields for component_data_changed")
 	}
 
 	// Get current component
-	component, err := s.appRepo.GetComponentByID(componentID)
+	component, err := s.componentInApp(appID, componentID)
 	if err != nil {
 		return err
 	}
@@ -981,10 +1012,8 @@ func getString(m map[string]interface{}, key string) string {
 }
 
 func getInt(m map[string]interface{}, key string) int {
-	if v, ok := m[key].(float64); ok {
-		return int(v)
-	}
-	return 0
+	v, _ := numberValue(m[key])
+	return int(v)
 }
 
 // extractRecipients reads an optional "recipients" list from event data.

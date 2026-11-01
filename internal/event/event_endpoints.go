@@ -124,6 +124,9 @@ func (ee *EventEndpoints) SubmitEvent(ctx *fasthttp.RequestCtx) {
 			// logic keyed on ErrUnauthorized's status code.
 			statusCode = fasthttp.StatusConflict
 			reason = "stale_event"
+		case errors.Is(err, ErrUnappliable):
+			statusCode = fasthttp.StatusUnprocessableEntity
+			reason = "validation_failed"
 		default:
 			statusCode = fasthttp.StatusInternalServerError
 			reason = "internal_error"

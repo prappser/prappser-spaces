@@ -1,6 +1,7 @@
 package application
 
 import (
+	"database/sql"
 	"fmt"
 	"sort"
 	"time"
@@ -11,6 +12,10 @@ type MemoryRepository struct {
 	componentGroups map[string]*ComponentGroup
 	components      map[string]*Component
 	members         map[string]*Member
+}
+
+func (r *MemoryRepository) WithTx(tx *sql.Tx) ApplicationRepository {
+	return r
 }
 
 func NewMemoryRepository() *MemoryRepository {
@@ -79,11 +84,11 @@ func (r *MemoryRepository) HasOtherOwner(appID, publicKey string) (bool, error) 
 func (r *MemoryRepository) GetApplicationByID(id string) (*Application, error) {
 	app, exists := r.applications[id]
 	if !exists {
-		return nil, fmt.Errorf("application not found")
+		return nil, fmt.Errorf("application %w", ErrNotFound)
 	}
 
 	if app.DeletedAt != nil {
-		return nil, fmt.Errorf("application not found")
+		return nil, fmt.Errorf("application %w", ErrNotFound)
 	}
 
 	// Create a copy and load component groups
@@ -235,7 +240,7 @@ func (r *MemoryRepository) GetComponentsByApplicationID(appID string) ([]*Compon
 func (r *MemoryRepository) GetComponentByID(componentID string) (*Component, error) {
 	comp, exists := r.components[componentID]
 	if !exists {
-		return nil, fmt.Errorf("component not found")
+		return nil, fmt.Errorf("component %w", ErrNotFound)
 	}
 	return comp, nil
 }
@@ -270,7 +275,7 @@ func (r *MemoryRepository) DeleteComponent(componentID string) error {
 func (r *MemoryRepository) GetComponentGroupByID(groupID string) (*ComponentGroup, error) {
 	group, exists := r.componentGroups[groupID]
 	if !exists {
-		return nil, fmt.Errorf("component group not found")
+		return nil, fmt.Errorf("component group %w", ErrNotFound)
 	}
 	return group, nil
 }
@@ -411,7 +416,7 @@ func (r *MemoryRepository) GetMemberByPublicKey(appID, publicKey string) (*Membe
 			return member, nil
 		}
 	}
-	return nil, fmt.Errorf("member not found")
+	return nil, fmt.Errorf("member %w", ErrNotFound)
 }
 
 // GetApplicationsByMemberPublicKey returns all applications where the user is a member

@@ -235,3 +235,43 @@ func TestScheduler_Integration_MidBatchFailureDoesNotRollBackOrRefireOthers(t *t
 		t.Errorf("expected rule-b to still be pending after its second failed fire, got %v", got)
 	}
 }
+
+type unappliableProducer struct{ calls int }
+
+func (p *unappliableProducer) ProduceEvent(ctx context.Context, e *event.Event) (*event.Event, error) {
+	p.calls++
+	return nil, fmt.Errorf("persist: %w", event.ErrUnappliable)
+}
+
+func TestScheduler_Integration_UnappliableFireSkipsRow(t *testing.T) {
+	// given: a due row whose app the event service can no longer apply to
+	db, componentID := getTestDB(t)
+	defer db.Close()
+	repo := NewRepository(db)
+	data := &event.ReminderChangedData{
+		ID: "rule-unappliable", ApplicationID: "test-app-1", ComponentID: componentID,
+		TargetKey: "item:1", Title: "Gone app", DueAt: time.Now().Unix() - 1, TZ: "Europe/Warsaw",
+		Offsets: []string{"PT0S"}, State: "pending", Rev: 1,
+	}
+	if err := repo.ApplyRuleChange(context.Background(), data); err != nil {
+		t.Fatalf("unexpected error creating rule: %v", err)
+	}
+	producer := &unappliableProducer{}
+	s := NewScheduler(db, producer, "space-key")
+
+	// when
+	if err := s.Tick(context.Background()); err != nil {
+		t.Fatalf("unexpected tick error: %v", err)
+	}
+	if err := s.Tick(context.Background()); err != nil {
+		t.Fatalf("unexpected tick error: %v", err)
+	}
+
+	// then
+	if got := rowStates(t, db, "rule-unappliable")[0]; got != "skipped" {
+		t.Errorf("expected the row to be skipped, got %v", got)
+	}
+	if producer.calls != 1 {
+		t.Errorf("expected one fire attempt, got %d", producer.calls)
+	}
+}
