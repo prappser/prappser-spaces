@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://prappser.app/schemas/component/poll.v1.schema.json",
+  "title": "Poll component data",
+  "description": "Poll config plus one vote_<memberPublicKey> key per member. A vote is an option id; '' means no vote.",
+  "type": "object",
+  "properties": {
+    "v": {
+      "const": 1,
+      "description": "Wire format version. Absent means 1.",
+      "x-merge": "single"
+    },
+    "question": {
+      "type": "string",
+      "x-merge": "single"
+    },
+    "options": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/option"
+      },
+      "x-merge": "single"
+    },
+    "closed": {
+      "type": "boolean",
+      "x-merge": "single"
+    },
+    "_title": {
+      "type": "string",
+      "description": "Panel title. '' clears it (tombstone).",
+      "x-merge": "single"
+    },
+    "_sectionBreak": {
+      "type": "boolean",
+      "x-merge": "single"
+    },
+    "_width": {
+      "type": "number",
+      "x-merge": "single"
+    },
+    "_spaceAbove": {
+      "type": "number",
+      "x-merge": "single"
+    },
+    "_spaceBelow": {
+      "type": "number",
+      "x-merge": "single"
+    }
+  },
+  "required": [
+    "question",
+    "options"
+  ],
+  "patternProperties": {
+    "^vote_.+$": {
+      "type": "string",
+      "x-merge": "per-member"
+    },
+    "^_": {
+      "description": "Layout and UI keys. Any value.",
+      "x-merge": "single"
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "option": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "label": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "label"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

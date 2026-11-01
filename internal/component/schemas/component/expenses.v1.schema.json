@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://prappser.app/schemas/component/expenses.v1.schema.json",
+  "title": "Expenses component data",
+  "description": "Shared expenses. One e_<uuid> key per expense and one s_<uuid> key per settlement; '' deletes (tombstone). Amounts are integer minor units.",
+  "type": "object",
+  "properties": {
+    "v": {
+      "const": 1,
+      "description": "Wire format version. Absent means 1.",
+      "x-merge": "single"
+    },
+    "_title": {
+      "type": "string",
+      "description": "Panel title. '' clears it (tombstone).",
+      "x-merge": "single"
+    },
+    "_sectionBreak": {
+      "type": "boolean",
+      "x-merge": "single"
+    },
+    "_width": {
+      "type": "number",
+      "x-merge": "single"
+    },
+    "_spaceAbove": {
+      "type": "number",
+      "x-merge": "single"
+    },
+    "_spaceBelow": {
+      "type": "number",
+      "x-merge": "single"
+    }
+  },
+  "patternProperties": {
+    "^e_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$": {
+      "type": "string",
+      "description": "JSON-encoded expense, see $defs/expense. Annotation only: '' and future non-JSON values are also stored here.",
+      "contentMediaType": "application/json",
+      "x-merge": "per-entry"
+    },
+    "^s_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$": {
+      "type": "string",
+      "description": "JSON-encoded settlement, see $defs/settlement. Annotation only: '' and future non-JSON values are also stored here.",
+      "contentMediaType": "application/json",
+      "x-merge": "per-entry"
+    },
+    "^_": {
+      "description": "Layout and UI keys. Any value.",
+      "x-merge": "single"
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "expense": {
+      "type": "object",
+      "properties": {
+        "what": {
+          "type": "string"
+        },
+        "payer": {
+          "type": "string",
+          "description": "A member public key."
+        },
+        "amount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "with": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Member public keys. Absent means all current members."
+        }
+      },
+      "required": [
+        "what",
+        "payer",
+        "amount"
+      ],
+      "additionalProperties": false
+    },
+    "settlement": {
+      "type": "object",
+      "properties": {
+        "from": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        },
+        "amount": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "from",
+        "to",
+        "amount"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

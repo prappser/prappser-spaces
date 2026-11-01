@@ -1,0 +1,158 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://prappser.app/schemas/component/checklist.v1.schema.json",
+  "title": "Checklist component data",
+  "description": "Checklist. 'items' is one whole-list value today.",
+  "type": "object",
+  "properties": {
+    "items": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/item"
+      },
+      "x-merge": "single"
+    },
+    "allowToggleInUsage": {
+      "type": "boolean",
+      "x-merge": "single"
+    },
+    "allowAddInUsage": {
+      "type": "boolean",
+      "x-merge": "single"
+    },
+    "maxVisibleItems": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "0 means unlimited.",
+      "x-merge": "single"
+    },
+    "templates": {
+      "type": "object",
+      "description": "Saved templates: name to item titles.",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "x-merge": "single"
+    },
+    "defaultSort": {
+      "enum": [
+        "manual",
+        "date",
+        "priority",
+        null
+      ],
+      "x-merge": "single"
+    },
+    "defaultGroup": {
+      "enum": [
+        "none",
+        "date",
+        "priority",
+        null
+      ],
+      "x-merge": "single"
+    },
+    "_title": {
+      "type": "string",
+      "description": "Panel title. '' clears it (tombstone).",
+      "x-merge": "single"
+    },
+    "_sectionBreak": {
+      "type": "boolean",
+      "x-merge": "single"
+    },
+    "_width": {
+      "type": "number",
+      "x-merge": "single"
+    },
+    "_spaceAbove": {
+      "type": "number",
+      "x-merge": "single"
+    },
+    "_spaceBelow": {
+      "type": "number",
+      "x-merge": "single"
+    }
+  },
+  "required": [
+    "items"
+  ],
+  "patternProperties": {
+    "^_": {
+      "description": "Layout and UI keys. Any value.",
+      "x-merge": "single"
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "item": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string"
+        },
+        "checked": {
+          "type": "boolean"
+        },
+        "detailsDocument": {
+          "anyOf": [
+            {
+              "$ref": "https://prappser.app/schemas/component/common.v1.schema.json#/$defs/quillOps"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "assignedMemberId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "A member public key."
+        },
+        "attachmentIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "priority": {
+          "enum": [
+            "none",
+            "low",
+            "medium",
+            "high"
+          ]
+        },
+        "date": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+        },
+        "time": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "checked"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

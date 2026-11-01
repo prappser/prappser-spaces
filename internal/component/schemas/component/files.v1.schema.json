@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://prappser.app/schemas/component/files.v1.schema.json",
+  "title": "Files component data",
+  "description": "File list.",
+  "type": "object",
+  "properties": {
+    "items": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/item"
+      },
+      "x-merge": "single"
+    },
+    "allowAddInRunMode": {
+      "type": "boolean",
+      "x-merge": "single"
+    },
+    "allowDeleteInRunMode": {
+      "type": "boolean",
+      "description": "Also gates editing captions in run mode.",
+      "x-merge": "single"
+    },
+    "maxVisibleItems": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "0 means unlimited.",
+      "x-merge": "single"
+    },
+    "layout": {
+      "enum": [
+        "grid",
+        "list"
+      ],
+      "x-merge": "single"
+    },
+    "_title": {
+      "type": "string",
+      "description": "Panel title. '' clears it (tombstone).",
+      "x-merge": "single"
+    },
+    "_sectionBreak": {
+      "type": "boolean",
+      "x-merge": "single"
+    },
+    "_width": {
+      "type": "number",
+      "x-merge": "single"
+    },
+    "_spaceAbove": {
+      "type": "number",
+      "x-merge": "single"
+    },
+    "_spaceBelow": {
+      "type": "number",
+      "x-merge": "single"
+    }
+  },
+  "required": [
+    "items"
+  ],
+  "patternProperties": {
+    "^_": {
+      "description": "Layout and UI keys. Any value.",
+      "x-merge": "single"
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "item": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "storageId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "index": {
+          "type": "integer"
+        },
+        "caption": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "filename": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "contentType": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sizeBytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        }
+      },
+      "required": [
+        "id",
+        "storageId",
+        "index"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

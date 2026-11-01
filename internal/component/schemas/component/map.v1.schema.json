@@ -1,0 +1,204 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://prappser.app/schemas/component/map.v1.schema.json",
+  "title": "Map component data",
+  "description": "Map with markers and an optional route.",
+  "type": "object",
+  "properties": {
+    "centerLatitude": {
+      "type": "number",
+      "x-merge": "single"
+    },
+    "centerLongitude": {
+      "type": "number",
+      "x-merge": "single"
+    },
+    "zoom": {
+      "type": "number",
+      "x-merge": "single"
+    },
+    "markers": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/marker"
+      },
+      "x-merge": "single"
+    },
+    "allowAddMarkerInUsage": {
+      "type": "boolean",
+      "x-merge": "single"
+    },
+    "routeEnabled": {
+      "type": "boolean",
+      "x-merge": "single"
+    },
+    "routeMarkerIds": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "x-merge": "single"
+    },
+    "routeColor": {
+      "enum": [
+        "red",
+        "blue",
+        "green",
+        "orange",
+        "purple",
+        "pink",
+        "yellow",
+        "teal",
+        "brown",
+        "gray"
+      ],
+      "x-merge": "single"
+    },
+    "routeStrokeWidth": {
+      "type": "number",
+      "x-merge": "single"
+    },
+    "showRouteDistance": {
+      "type": "boolean",
+      "x-merge": "single"
+    },
+    "trackUserLocation": {
+      "type": "boolean",
+      "x-merge": "single"
+    },
+    "useUserLocationInRoute": {
+      "type": "boolean",
+      "x-merge": "single"
+    },
+    "otherUsers": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/userLocation"
+      },
+      "description": "Legacy, read-only. Nothing writes it.",
+      "x-merge": "single"
+    },
+    "_title": {
+      "type": "string",
+      "description": "Panel title. '' clears it (tombstone).",
+      "x-merge": "single"
+    },
+    "_sectionBreak": {
+      "type": "boolean",
+      "x-merge": "single"
+    },
+    "_width": {
+      "type": "number",
+      "x-merge": "single"
+    },
+    "_spaceAbove": {
+      "type": "number",
+      "x-merge": "single"
+    },
+    "_spaceBelow": {
+      "type": "number",
+      "x-merge": "single"
+    }
+  },
+  "required": [
+    "centerLatitude",
+    "centerLongitude"
+  ],
+  "patternProperties": {
+    "^_": {
+      "description": "Layout and UI keys. Any value.",
+      "x-merge": "single"
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "marker": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "latitude": {
+          "type": "number"
+        },
+        "longitude": {
+          "type": "number"
+        },
+        "title": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "color": {
+          "enum": [
+            "red",
+            "blue",
+            "green",
+            "orange",
+            "purple",
+            "pink",
+            "yellow",
+            "teal",
+            "brown",
+            "gray"
+          ]
+        },
+        "type": {
+          "enum": [
+            "standard",
+            "start",
+            "waypoint",
+            "destination"
+          ]
+        },
+        "createdBy": {
+          "type": "string",
+          "description": "A member public key, or ''."
+        },
+        "createdAtMs": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Epoch ms, 0 means unset."
+        }
+      },
+      "required": [
+        "id",
+        "latitude",
+        "longitude",
+        "title"
+      ],
+      "additionalProperties": false
+    },
+    "userLocation": {
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string"
+        },
+        "displayName": {
+          "type": "string"
+        },
+        "latitude": {
+          "type": "number"
+        },
+        "longitude": {
+          "type": "number"
+        },
+        "lastUpdated": {
+          "type": "string",
+          "description": "ISO 8601 timestamp."
+        }
+      },
+      "required": [
+        "userId",
+        "displayName",
+        "latitude",
+        "longitude",
+        "lastUpdated"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

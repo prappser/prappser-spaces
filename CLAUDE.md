@@ -131,6 +131,9 @@ internal/
     client_metadata.go     - SSRF-safe client metadata document fetch, validation, redirect matching
     oauth_service.go       - Service: authorize, consent approve/deny, token (code + refresh)
     oauth_endpoints.go     - Endpoints: AS metadata, authorize, token, consent API
+  component/
+    schemas/               — copy of the app repo's JSON Schemas, synced by scripts/sync-schemas.sh (hash manifest in schemas.sha256)
+    validator.go           — Validator: ValidateComponentData, ValidateTemplateDoc, MergeMode (x-merge)
   health/
     health.go              — HealthEndpoints
   status/

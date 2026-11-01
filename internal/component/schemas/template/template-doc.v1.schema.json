@@ -1,0 +1,355 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://prappser.app/schemas/template/template-doc.v1.schema.json",
+  "title": "Template document v1",
+  "description": "The 'template' object of a prappser.template file.",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 280
+    },
+    "icon": {
+      "enum": [
+        "home",
+        "star",
+        "favorite",
+        "folder",
+        "list",
+        "dashboard",
+        "settings",
+        "notifications",
+        "lightbulb",
+        "eco",
+        "anchor",
+        "bookmark",
+        "flag",
+        "extension",
+        "public",
+        "key",
+        "shield",
+        "bolt",
+        "diamond",
+        "work",
+        "business",
+        "school",
+        "book",
+        "calculator",
+        "tasks",
+        "notes",
+        "schedule",
+        "build",
+        "code",
+        "apartment",
+        "architecture",
+        "science",
+        "engineering",
+        "terminal",
+        "storage",
+        "cloud",
+        "dns",
+        "chat",
+        "email",
+        "phone",
+        "people",
+        "forum",
+        "share",
+        "call",
+        "contact_mail",
+        "campaign",
+        "podcast",
+        "rss_feed",
+        "camera",
+        "music",
+        "video",
+        "image",
+        "palette",
+        "headphones",
+        "movie",
+        "brush",
+        "photo_library",
+        "audiotrack",
+        "mic",
+        "radio",
+        "theater_comedy",
+        "calendar",
+        "alarm",
+        "timer",
+        "analytics",
+        "savings",
+        "inventory",
+        "receipt",
+        "assignment",
+        "event",
+        "trending_up",
+        "pie_chart",
+        "speed",
+        "task_alt",
+        "shopping",
+        "restaurant",
+        "travel",
+        "health",
+        "sports",
+        "games",
+        "fitness",
+        "pets",
+        "directions_car",
+        "local_cafe",
+        "self_improvement",
+        "hiking",
+        "pool",
+        "beach_access",
+        "park",
+        "nightlife",
+        "local_bar",
+        "emoji_nature",
+        "yard",
+        "auto_stories",
+        "quiz",
+        "history_edu",
+        "psychology",
+        "biotech",
+        "devices",
+        "smartphone",
+        "laptop",
+        "router",
+        "bluetooth",
+        "memory"
+      ]
+    },
+    "groups": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "$ref": "#/$defs/group"
+      }
+    }
+  },
+  "required": [
+    "name",
+    "description",
+    "icon",
+    "groups"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "group": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "index": {
+          "type": "integer"
+        },
+        "components": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/component"
+          }
+        }
+      },
+      "required": [
+        "name",
+        "index",
+        "components"
+      ],
+      "additionalProperties": false
+    },
+    "component": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "enum": [
+            "Text",
+            "Checklist",
+            "Files",
+            "Map",
+            "Chat",
+            "Poll",
+            "Expenses",
+            "Countdown"
+          ]
+        },
+        "index": {
+          "type": "integer"
+        },
+        "data": {
+          "type": "object",
+          "description": "Member-authored keys are forbidden: a template carries no messages, reactions, votes or expenses.",
+          "propertyNames": {
+            "not": {
+              "pattern": "^(m_|react_|vote_|e_|s_)"
+            }
+          }
+        }
+      },
+      "required": [
+        "type",
+        "index",
+        "data"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "Text"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "https://prappser.app/schemas/component/text.v1.schema.json"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "Checklist"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "https://prappser.app/schemas/component/checklist.v1.schema.json"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "Files"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "https://prappser.app/schemas/component/files.v1.schema.json"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "Map"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "https://prappser.app/schemas/component/map.v1.schema.json"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "Chat"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "https://prappser.app/schemas/component/chat.v1.schema.json"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "Poll"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "https://prappser.app/schemas/component/poll.v1.schema.json"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "Expenses"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "https://prappser.app/schemas/component/expenses.v1.schema.json"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "Countdown"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "https://prappser.app/schemas/component/countdown.v1.schema.json"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

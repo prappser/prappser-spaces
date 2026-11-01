@@ -1,0 +1,132 @@
+{
+  "schema": "https://prappser.app/schemas/component/countdown.v1.schema.json",
+  "cases": [
+    {
+      "name": "empty data",
+      "data": {},
+      "valid": true
+    },
+    {
+      "name": "defaults",
+      "data": {
+        "v": 1,
+        "style": "lagoon",
+        "precision": "auto",
+        "size": "medium"
+      },
+      "valid": true
+    },
+    {
+      "name": "full",
+      "data": {
+        "v": 1,
+        "targetAt": 1790000000000,
+        "what": "Holiday",
+        "style": "ember",
+        "emoji": "🏖",
+        "precision": "days",
+        "size": "large",
+        "runEditable": true,
+        "customColor": 4278190335,
+        "_title": "Title",
+        "_sectionBreak": true,
+        "_width": 480,
+        "_spaceAbove": 8,
+        "_spaceBelow": 8
+      },
+      "valid": true
+    },
+    {
+      "name": "cleared custom color",
+      "data": {
+        "v": 1,
+        "customColor": null
+      },
+      "valid": true
+    },
+    {
+      "name": "every style",
+      "data": {
+        "style": "slate"
+      },
+      "valid": true
+    },
+    {
+      "name": "version 2",
+      "data": {
+        "v": 2
+      },
+      "valid": false
+    },
+    {
+      "name": "bad style",
+      "data": {
+        "style": "neon"
+      },
+      "valid": false
+    },
+    {
+      "name": "bad precision",
+      "data": {
+        "precision": "weeks"
+      },
+      "valid": false
+    },
+    {
+      "name": "bad size",
+      "data": {
+        "size": "xl"
+      },
+      "valid": false
+    },
+    {
+      "name": "runEditable is a string",
+      "data": {
+        "runEditable": "yes"
+      },
+      "valid": false
+    },
+    {
+      "name": "targetAt is a string",
+      "data": {
+        "targetAt": "tomorrow"
+      },
+      "valid": false
+    },
+    {
+      "name": "targetAt is fractional",
+      "data": {
+        "targetAt": 1.5
+      },
+      "valid": false
+    },
+    {
+      "name": "customColor is a string",
+      "data": {
+        "customColor": "#ff0000"
+      },
+      "valid": false
+    },
+    {
+      "name": "customColor is negative",
+      "data": {
+        "customColor": -1
+      },
+      "valid": false
+    },
+    {
+      "name": "what is a number",
+      "data": {
+        "what": 5
+      },
+      "valid": false
+    },
+    {
+      "name": "unknown top-level key",
+      "data": {
+        "title": "x"
+      },
+      "valid": false
+    }
+  ]
+}

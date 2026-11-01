@@ -1,0 +1,678 @@
+{
+  "schema": "https://prappser.app/schemas/template/template-doc.v1.schema.json",
+  "cases": [
+    {
+      "name": "minimal",
+      "data": {
+        "name": "Trip",
+        "description": "Plan a trip",
+        "icon": "travel",
+        "groups": []
+      },
+      "valid": true
+    },
+    {
+      "name": "empty description and group",
+      "data": {
+        "name": "Trip",
+        "description": "",
+        "icon": "travel",
+        "groups": [
+          {
+            "name": "Main",
+            "index": 0,
+            "components": []
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "all eight component types",
+      "data": {
+        "name": "Trip",
+        "description": "Plan a trip",
+        "icon": "travel",
+        "groups": [
+          {
+            "name": "Main",
+            "index": 0,
+            "components": [
+              {
+                "type": "Text",
+                "index": 0,
+                "data": {
+                  "document": [
+                    {
+                      "insert": "Notes\n"
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "Checklist",
+                "index": 1,
+                "data": {
+                  "items": [
+                    {
+                      "id": "i1",
+                      "title": "Milk",
+                      "checked": false
+                    }
+                  ],
+                  "_title": "Packing"
+                }
+              },
+              {
+                "type": "Files",
+                "index": 2,
+                "data": {
+                  "items": []
+                }
+              },
+              {
+                "type": "Map",
+                "index": 3,
+                "data": {
+                  "centerLatitude": 51.505,
+                  "centerLongitude": -0.09,
+                  "markers": [
+                    {
+                      "id": "k1",
+                      "latitude": 51.5,
+                      "longitude": -0.1,
+                      "title": "Start"
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "Chat",
+                "index": 4,
+                "data": {
+                  "v": 1
+                }
+              },
+              {
+                "type": "Poll",
+                "index": 5,
+                "data": {
+                  "v": 1,
+                  "question": "Where?",
+                  "options": [
+                    {
+                      "id": "o1",
+                      "label": "Pizza"
+                    },
+                    {
+                      "id": "o2",
+                      "label": "Sushi"
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "Expenses",
+                "index": 6,
+                "data": {
+                  "v": 1
+                }
+              },
+              {
+                "type": "Countdown",
+                "index": 7,
+                "data": {
+                  "v": 1,
+                  "what": "Flight",
+                  "style": "iris"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "longest allowed name",
+      "data": {
+        "name": "nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn",
+        "description": "Plan a trip",
+        "icon": "travel",
+        "groups": []
+      },
+      "valid": true
+    },
+    {
+      "name": "longest allowed description",
+      "data": {
+        "name": "Trip",
+        "description": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "icon": "travel",
+        "groups": []
+      },
+      "valid": true
+    },
+    {
+      "name": "empty name",
+      "data": {
+        "name": "",
+        "description": "Plan a trip",
+        "icon": "travel",
+        "groups": []
+      },
+      "valid": false
+    },
+    {
+      "name": "name of 65 characters",
+      "data": {
+        "name": "nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn",
+        "description": "Plan a trip",
+        "icon": "travel",
+        "groups": []
+      },
+      "valid": false
+    },
+    {
+      "name": "description of 281 characters",
+      "data": {
+        "name": "Trip",
+        "description": "ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "icon": "travel",
+        "groups": []
+      },
+      "valid": false
+    },
+    {
+      "name": "unknown icon",
+      "data": {
+        "name": "Trip",
+        "description": "Plan a trip",
+        "icon": "rocket",
+        "groups": []
+      },
+      "valid": false
+    },
+    {
+      "name": "storage icon",
+      "data": {
+        "name": "Trip",
+        "description": "Plan a trip",
+        "icon": "storage:abc",
+        "groups": []
+      },
+      "valid": false
+    },
+    {
+      "name": "missing icon",
+      "data": {
+        "name": "Trip",
+        "description": "",
+        "groups": []
+      },
+      "valid": false
+    },
+    {
+      "name": "unknown document key",
+      "data": {
+        "name": "Trip",
+        "description": "Plan a trip",
+        "icon": "travel",
+        "groups": [],
+        "author": "me"
+      },
+      "valid": false
+    },
+    {
+      "name": "group missing index",
+      "data": {
+        "name": "Trip",
+        "description": "Plan a trip",
+        "icon": "travel",
+        "groups": [
+          {
+            "name": "Main",
+            "components": []
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "group unknown key",
+      "data": {
+        "name": "Trip",
+        "description": "Plan a trip",
+        "icon": "travel",
+        "groups": [
+          {
+            "name": "Main",
+            "index": 0,
+            "components": [],
+            "color": "red"
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "component missing data",
+      "data": {
+        "name": "Trip",
+        "description": "Plan a trip",
+        "icon": "travel",
+        "groups": [
+          {
+            "name": "Main",
+            "index": 0,
+            "components": [
+              {
+                "type": "Chat",
+                "index": 0
+              }
+            ]
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "component unknown key",
+      "data": {
+        "name": "Trip",
+        "description": "Plan a trip",
+        "icon": "travel",
+        "groups": [
+          {
+            "name": "Main",
+            "index": 0,
+            "components": [
+              {
+                "type": "Chat",
+                "index": 0,
+                "data": {},
+                "id": "x"
+              }
+            ]
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "unknown component type",
+      "data": {
+        "name": "Trip",
+        "description": "Plan a trip",
+        "icon": "travel",
+        "groups": [
+          {
+            "name": "Main",
+            "index": 0,
+            "components": [
+              {
+                "type": "Table",
+                "index": 0,
+                "data": {}
+              }
+            ]
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "legacy Gallery type",
+      "data": {
+        "name": "Trip",
+        "description": "Plan a trip",
+        "icon": "travel",
+        "groups": [
+          {
+            "name": "Main",
+            "index": 0,
+            "components": [
+              {
+                "type": "Gallery",
+                "index": 0,
+                "data": {
+                  "items": []
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "checklist data fails its own schema",
+      "data": {
+        "name": "Trip",
+        "description": "Plan a trip",
+        "icon": "travel",
+        "groups": [
+          {
+            "name": "Main",
+            "index": 0,
+            "components": [
+              {
+                "type": "Checklist",
+                "index": 0,
+                "data": {
+                  "items": "x"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "poll data fails its own schema",
+      "data": {
+        "name": "Trip",
+        "description": "Plan a trip",
+        "icon": "travel",
+        "groups": [
+          {
+            "name": "Main",
+            "index": 0,
+            "components": [
+              {
+                "type": "Poll",
+                "index": 0,
+                "data": {
+                  "v": 1
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "countdown data with a bad style",
+      "data": {
+        "name": "Trip",
+        "description": "Plan a trip",
+        "icon": "travel",
+        "groups": [
+          {
+            "name": "Main",
+            "index": 0,
+            "components": [
+              {
+                "type": "Countdown",
+                "index": 0,
+                "data": {
+                  "style": "neon"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "message key in data",
+      "data": {
+        "name": "Trip",
+        "description": "Plan a trip",
+        "icon": "travel",
+        "groups": [
+          {
+            "name": "Main",
+            "index": 0,
+            "components": [
+              {
+                "type": "Chat",
+                "index": 0,
+                "data": {
+                  "_title": "Chat",
+                  "m_01234567-89ab-7def-8123-456789abcdef": "{\"v\":1,\"sender\":\"pk-alice\",\"ts\":1760000000000,\"body\":\"hi\"}"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "message key control: same chat without the message key",
+      "data": {
+        "name": "Trip",
+        "description": "Plan a trip",
+        "icon": "travel",
+        "groups": [
+          {
+            "name": "Main",
+            "index": 0,
+            "components": [
+              {
+                "type": "Chat",
+                "index": 0,
+                "data": {
+                  "_title": "Chat"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "reaction key in data",
+      "data": {
+        "name": "Trip",
+        "description": "Plan a trip",
+        "icon": "travel",
+        "groups": [
+          {
+            "name": "Main",
+            "index": 0,
+            "components": [
+              {
+                "type": "Chat",
+                "index": 0,
+                "data": {
+                  "_title": "Chat",
+                  "react_m_01234567-89ab-7def-8123-456789abcdef_pk-alice": "👍"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "reaction key control: same chat without the reaction key",
+      "data": {
+        "name": "Trip",
+        "description": "Plan a trip",
+        "icon": "travel",
+        "groups": [
+          {
+            "name": "Main",
+            "index": 0,
+            "components": [
+              {
+                "type": "Chat",
+                "index": 0,
+                "data": {
+                  "_title": "Chat"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "vote key in data",
+      "data": {
+        "name": "Trip",
+        "description": "Plan a trip",
+        "icon": "travel",
+        "groups": [
+          {
+            "name": "Main",
+            "index": 0,
+            "components": [
+              {
+                "type": "Poll",
+                "index": 0,
+                "data": {
+                  "question": "Q",
+                  "options": [
+                    {
+                      "id": "o1",
+                      "label": "A"
+                    }
+                  ],
+                  "vote_pk-alice": "o1"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "vote key control: same poll without the vote key",
+      "data": {
+        "name": "Trip",
+        "description": "Plan a trip",
+        "icon": "travel",
+        "groups": [
+          {
+            "name": "Main",
+            "index": 0,
+            "components": [
+              {
+                "type": "Poll",
+                "index": 0,
+                "data": {
+                  "question": "Q",
+                  "options": [
+                    {
+                      "id": "o1",
+                      "label": "A"
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "expense key in data",
+      "data": {
+        "name": "Trip",
+        "description": "Plan a trip",
+        "icon": "travel",
+        "groups": [
+          {
+            "name": "Main",
+            "index": 0,
+            "components": [
+              {
+                "type": "Expenses",
+                "index": 0,
+                "data": {
+                  "_title": "Costs",
+                  "e_01234567-89ab-7def-8123-456789abcdef": "{\"what\":\"Dinner\",\"payer\":\"pk-alice\",\"amount\":4250}"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "expense key control: same expenses without the expense key",
+      "data": {
+        "name": "Trip",
+        "description": "Plan a trip",
+        "icon": "travel",
+        "groups": [
+          {
+            "name": "Main",
+            "index": 0,
+            "components": [
+              {
+                "type": "Expenses",
+                "index": 0,
+                "data": {
+                  "_title": "Costs"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "settlement key in data",
+      "data": {
+        "name": "Trip",
+        "description": "Plan a trip",
+        "icon": "travel",
+        "groups": [
+          {
+            "name": "Main",
+            "index": 0,
+            "components": [
+              {
+                "type": "Expenses",
+                "index": 0,
+                "data": {
+                  "_title": "Costs",
+                  "s_01234567-89ab-7def-8123-456789abcdef": "{\"from\":\"pk-bob\",\"to\":\"pk-alice\",\"amount\":1000}"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "settlement key control: same expenses without the settlement key",
+      "data": {
+        "name": "Trip",
+        "description": "Plan a trip",
+        "icon": "travel",
+        "groups": [
+          {
+            "name": "Main",
+            "index": 0,
+            "components": [
+              {
+                "type": "Expenses",
+                "index": 0,
+                "data": {
+                  "_title": "Costs"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "valid": true
+    }
+  ]
+}

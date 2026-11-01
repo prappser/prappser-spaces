@@ -14,6 +14,7 @@ require (
 	github.com/minio/minio-go/v7 v7.0.98
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/rs/zerolog v1.33.0
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/stretchr/testify v1.10.0
 	github.com/teambition/rrule-go v1.8.2
 	github.com/valyala/fasthttp v1.58.0

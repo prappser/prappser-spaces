@@ -1,0 +1,177 @@
+{
+  "schema": "https://prappser.app/schemas/component/files.v1.schema.json",
+  "cases": [
+    {
+      "name": "minimal",
+      "data": {
+        "items": []
+      },
+      "valid": true
+    },
+    {
+      "name": "minimal item",
+      "data": {
+        "items": [
+          {
+            "id": "g1",
+            "storageId": "s1",
+            "index": 0
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "full",
+      "data": {
+        "items": [
+          {
+            "id": "g2",
+            "storageId": "s2",
+            "index": 1,
+            "caption": "Cover",
+            "filename": "a.pdf",
+            "contentType": "application/pdf",
+            "sizeBytes": 1024
+          },
+          {
+            "id": "g3",
+            "storageId": "s1",
+            "index": 0,
+            "caption": null,
+            "filename": null,
+            "contentType": null,
+            "sizeBytes": null
+          }
+        ],
+        "allowAddInRunMode": false,
+        "allowDeleteInRunMode": true,
+        "maxVisibleItems": 3,
+        "layout": "list",
+        "_title": "Title",
+        "_sectionBreak": true,
+        "_width": 480,
+        "_spaceAbove": 8,
+        "_spaceBelow": 8
+      },
+      "valid": true
+    },
+    {
+      "name": "missing items",
+      "data": {
+        "layout": "grid"
+      },
+      "valid": false
+    },
+    {
+      "name": "item missing storageId",
+      "data": {
+        "items": [
+          {
+            "id": "g1",
+            "index": 0
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "item empty storageId",
+      "data": {
+        "items": [
+          {
+            "id": "g1",
+            "storageId": "",
+            "index": 0
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "item missing index",
+      "data": {
+        "items": [
+          {
+            "id": "g1",
+            "storageId": "s1"
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "item index is a string",
+      "data": {
+        "items": [
+          {
+            "id": "g1",
+            "storageId": "s1",
+            "index": "0"
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "item negative sizeBytes",
+      "data": {
+        "items": [
+          {
+            "id": "g1",
+            "storageId": "s1",
+            "index": 0,
+            "sizeBytes": -1
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "item unknown key",
+      "data": {
+        "items": [
+          {
+            "id": "g1",
+            "storageId": "s1",
+            "index": 0,
+            "url": "x"
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "bad layout",
+      "data": {
+        "items": [],
+        "layout": "masonry"
+      },
+      "valid": false
+    },
+    {
+      "name": "allowEditInRunMode is the Dart name, not the key",
+      "data": {
+        "items": [],
+        "allowEditInRunMode": true
+      },
+      "valid": false
+    },
+    {
+      "name": "negative maxVisibleItems",
+      "data": {
+        "items": [],
+        "maxVisibleItems": -2
+      },
+      "valid": false
+    },
+    {
+      "name": "unknown top-level key",
+      "data": {
+        "items": [],
+        "files": []
+      },
+      "valid": false
+    }
+  ]
+}
