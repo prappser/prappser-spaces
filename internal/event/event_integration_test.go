@@ -10,6 +10,8 @@ import (
 	"time"
 
 	_ "github.com/lib/pq"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/prappser/prappser-spaces/internal/application"
 	"github.com/prappser/prappser-spaces/internal/testdb"
@@ -290,4 +292,48 @@ func TestAcceptEvent_RemovedAdmin_RejectedAndNotPersisted(t *testing.T) {
 	if events != 0 {
 		t.Fatalf("expected rejected event not to be persisted, got %d rows", events)
 	}
+}
+
+func TestAcceptEvent_UserScopedWithForeignIdentity_ShouldReachOnlySubmitter(t *testing.T) {
+	// given
+	db := testdb.Connect(t, "event")
+	defer db.Close()
+	prefix := "test-userscoped-foreign-"
+	appRepo := seedRoleApp(t, db, prefix)
+	repo := NewEventRepository(db)
+	service := NewEventService(repo, appRepo, nil, nil)
+	outsider := prefix + "outsider"
+	testdb.InsertTestUser(t, db, outsider)
+	evt := &Event{
+		ID:               prefix + "evt",
+		Type:             EventTypeUserSettingsChanged,
+		CreatorPublicKey: prefix + "owner",
+		ApplicationID:    prefix + "app",
+		Version:          1,
+		CreatedAt:        time.Now().Unix(),
+		Data:             map[string]interface{}{"userPublicKey": outsider},
+	}
+
+	// when
+	_, err := service.AcceptEvent(context.Background(), evt, &user.User{PublicKey: outsider})
+
+	// then
+	require.NoError(t, err)
+	ownerEvents, _, err := repo.GetSince(prefix+"owner", "", 100)
+	require.NoError(t, err)
+	for _, e := range ownerEvents {
+		assert.NotEqual(t, evt.ID, e.ID, "app member must not receive the outsider's event")
+	}
+	outsiderEvents, _, err := repo.GetSince(outsider, "", 100)
+	require.NoError(t, err)
+	var ids []string
+	for _, e := range outsiderEvents {
+		ids = append(ids, e.ID)
+	}
+	assert.Contains(t, ids, evt.ID)
+	stored, err := repo.GetByID(evt.ID)
+	require.NoError(t, err)
+	require.NotNil(t, stored)
+	assert.Empty(t, stored.ApplicationID)
+	assert.Equal(t, outsider, stored.CreatorPublicKey)
 }

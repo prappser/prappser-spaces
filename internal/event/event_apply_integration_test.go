@@ -612,3 +612,24 @@ func TestAcceptEvent_ComponentGroupChangedWithOnlyName_ShouldKeepIndex(t *testin
 	assert.Equal(t, "New", group.Name)
 	assert.Equal(t, 3, group.Index)
 }
+
+func TestAcceptEvent_ForgedCreatorPublicKey_ShouldStoreSubmitterAsCreator(t *testing.T) {
+	// given
+	db := connectApply(t)
+	prefix := "apply-forged-creator-"
+	appRepo := seedRoleApp(t, db, prefix)
+	seedComponent(t, appRepo, prefix+"app", prefix+"comp")
+	repo := NewEventRepository(db)
+	service := NewEventService(repo, appRepo, nil, nil)
+
+	// when
+	accepted, err := service.AcceptEvent(context.Background(), componentDataEvent(prefix+"evt", prefix+"app", prefix+"owner", prefix+"comp", "x"), &user.User{PublicKey: prefix + "member"})
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, prefix+"member", accepted.CreatorPublicKey)
+	stored, err := repo.GetByID(prefix + "evt")
+	require.NoError(t, err)
+	require.NotNil(t, stored)
+	assert.Equal(t, prefix+"member", stored.CreatorPublicKey)
+}
