@@ -21,11 +21,12 @@ const (
 )
 
 type Deps struct {
-	Apps        *application.ApplicationService
-	Invitations *invitation.InvitationService
-	Events      *event.EventService
-	Agents      *user.AgentService
-	ExternalURL string
+	Apps              *application.ApplicationService
+	Invitations       *invitation.InvitationService
+	Events            *event.EventService
+	Agents            *user.AgentService
+	ExternalURL       string
+	TrustProxyHeaders bool
 }
 
 func newServer(d Deps) *sdk.Server {

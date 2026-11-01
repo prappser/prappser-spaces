@@ -114,6 +114,12 @@ func (e *env) app(owner *user.User, chats int, members ...*user.User) string {
 	return appID
 }
 
+func (e *env) makeAdmin(appID string, u *user.User) {
+	e.t.Helper()
+	_, err := e.db.Exec(`UPDATE members SET role = $1 WHERE application_id = $2 AND public_key = $3`, string(application.MemberRoleAdmin), appID, u.PublicKey)
+	require.NoError(e.t, err)
+}
+
 type bearer string
 
 func (b bearer) RoundTrip(r *http.Request) (*http.Response, error) {
@@ -295,6 +301,76 @@ func TestMCP_AgentReadOff_ShouldHideAppFromMemberAgentButNotOwnerAgent(t *testin
 	assert.Contains(t, errText(getRes), "app not found or not open to agents")
 	assert.True(t, postRes.IsError)
 	assert.Len(t, ownerList["apps"], 1)
+}
+
+func TestMCP_AgentReadOff_ShouldDenyAdminAgentInviteAndAnswerLikeMissingApp(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner, admin := e.account(), e.account()
+	appID := e.app(owner, 0, admin)
+	e.makeAdmin(appID, admin)
+	require.NoError(t, e.apps.SetAgentRead(appID, owner, false))
+	session, _ := e.connect(admin)
+
+	// when
+	closed, _ := call(t, session, "create_invite", map[string]any{"appId": appID})
+	missing, _ := call(t, session, "create_invite", map[string]any{"appId": uuid.NewString()})
+
+	// then
+	assert.True(t, closed.IsError)
+	assert.Equal(t, "app not found or not open to agents", errText(closed))
+	assert.Equal(t, errText(closed), errText(missing))
+}
+
+func TestMCP_CreateInvite_ShouldAnswerNonMemberAgentLikeMissingApp(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner, stranger := e.account(), e.account()
+	appID := e.app(owner, 0)
+	session, _ := e.connect(stranger)
+
+	// when
+	notMember, _ := call(t, session, "create_invite", map[string]any{"appId": appID})
+	missing, _ := call(t, session, "create_invite", map[string]any{"appId": uuid.NewString()})
+
+	// then
+	assert.True(t, notMember.IsError)
+	assert.Equal(t, "app not found or not open to agents", errText(notMember))
+	assert.Equal(t, errText(missing), errText(notMember))
+}
+
+func TestMCP_AgentReadOff_ShouldLetOwnerAgentPostChat(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner := e.account()
+	appID := e.app(owner, 1)
+	require.NoError(t, e.apps.SetAgentRead(appID, owner, false))
+	session, _ := e.connect(owner)
+
+	// when
+	res, out := call(t, session, "post_chat_message", map[string]any{"appId": appID, "text": "hi"})
+
+	// then
+	require.False(t, res.IsError, toJSON(out))
+	assert.NotEmpty(t, out["messageId"])
+}
+
+func TestMCP_GetApp_ShouldReturnChatMessagesUnderUntrusted(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner := e.account()
+	appID := e.app(owner, 1)
+	session, _ := e.connect(owner)
+	call(t, session, "post_chat_message", map[string]any{"appId": appID, "text": "hello team"})
+
+	// when
+	_, get := call(t, session, "get_app", map[string]any{"appId": appID})
+
+	// then
+	assert.NotContains(t, get, "componentGroups")
+	untrusted := get["untrusted"].(map[string]any)
+	assert.Contains(t, toJSON(untrusted["componentGroups"]), "hello team")
+	assert.Contains(t, toJSON(untrusted["componentGroups"]), owner.PublicKey)
 }
 
 func rawPost(t *testing.T, url, token string) *http.Response {

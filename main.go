@@ -262,11 +262,12 @@ func main() {
 	var handler fasthttp.RequestHandler = requestHandler
 	if config.MCPEnabled {
 		handler = mcp.Mount(handler, mcp.Deps{
-			Apps:        appService,
-			Invitations: invitationService,
-			Events:      eventService,
-			Agents:      user.NewAgentService(db, userRepository, privateKey, publicKey, config.ExternalURL),
-			ExternalURL: config.ExternalURL,
+			Apps:              appService,
+			Invitations:       invitationService,
+			Events:            eventService,
+			Agents:            user.NewAgentService(db, userRepository, privateKey, publicKey, config.ExternalURL),
+			ExternalURL:       config.ExternalURL,
+			TrustProxyHeaders: config.TrustProxyHeaders,
 		})
 		log.Info().Msg("MCP endpoint enabled")
 	}
