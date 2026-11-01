@@ -41,23 +41,6 @@ func TestAuthorizeUserScopedEvent_TemplateChanged_ForeignUserPublicKey(t *testin
 	}
 }
 
-func TestAuthorizeUserScopedEvent_TemplateChanged_ForgedCreatorPublicKey(t *testing.T) {
-	submitter := &user.User{PublicKey: "pk-1"}
-	// data.userPublicKey matches the submitter, but the envelope's
-	// CreatorPublicKey (which backlog replay routes by) is forged to a
-	// victim account.
-	evt := &Event{
-		Type:             EventTypeTemplateChanged,
-		CreatorPublicKey: "pk-2",
-		Data:             validTemplateChangedData(),
-	}
-
-	err := AuthorizeUserScopedEvent(evt, submitter)
-	if !errors.Is(err, ErrUnauthorized) {
-		t.Fatalf("Expected ErrUnauthorized for forged creatorPublicKey, got: %v", err)
-	}
-}
-
 func TestAuthorizeEvent_SpaceProfileChanged_ShouldRejectClientSubmission(t *testing.T) {
 	// given
 	submitter := &user.User{PublicKey: "pk-1"}

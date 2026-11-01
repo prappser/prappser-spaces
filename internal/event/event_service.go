@@ -70,6 +70,9 @@ func (s *EventService) AcceptEvent(ctx context.Context, event *Event, submitter 
 		Str("submitter", submitter.Username).
 		Msg("[EVENT] Received from client")
 
+	// Creator is whoever authenticated; rejecting would drop queued edits made under another account on the same device.
+	event.CreatorPublicKey = submitter.PublicKey
+
 	if err := ValidateEvent(event); err != nil {
 		log.Debug().
 			Str("eventId", event.ID).
@@ -85,6 +88,9 @@ func (s *EventService) AcceptEvent(ctx context.Context, event *Event, submitter 
 			return nil, fmt.Errorf("%w: applicationId not found in event data", ErrValidation)
 		}
 		event.ApplicationID = appID
+	} else {
+		// A client-sent applicationId would route the event to that app's members.
+		event.ApplicationID = ""
 	}
 
 	// A retry must not be re-authorized against the state its first attempt changed.
@@ -92,7 +98,7 @@ func (s *EventService) AcceptEvent(ctx context.Context, event *Event, submitter 
 	if err != nil {
 		return nil, fmt.Errorf("failed to check for duplicate event: %w", err)
 	}
-	if isRetryOf(existing, event.ApplicationID, submitter.PublicKey, event.Type) {
+	if isRetryOf(existing, event.ApplicationID, event.CreatorPublicKey, event.Type) {
 		log.Debug().Str("eventId", event.ID).Msg("[EVENT] Duplicate, returning stored event")
 		return existing, nil
 	}
