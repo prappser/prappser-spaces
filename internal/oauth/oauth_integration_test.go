@@ -6,6 +6,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/base64"
 	"net/http"
 	"net/url"
@@ -24,6 +25,7 @@ import (
 
 type fixture struct {
 	t         *testing.T
+	db        *sql.DB
 	svc       *Service
 	endpoints *Endpoints
 	users     user.UserRepository
@@ -43,7 +45,7 @@ func newFixture(t *testing.T, mutateDoc func(d map[string]any)) *fixture {
 	userSvc := user.NewUserService(users, nil, user.Config{JWTExpirationHours: 24}, priv, pub)
 	agents := user.NewAgentService(db, users, priv, pub, testIssuer)
 
-	f := &fixture{t: t, users: users, userSvc: userSvc, agents: agents, auth: middleware.NewAuthMiddleware(userSvc)}
+	f := &fixture{t: t, db: db, users: users, userSvc: userSvc, agents: agents, auth: middleware.NewAuthMiddleware(userSvc)}
 	srv, fetcher := docServer(t, func(w http.ResponseWriter, r *http.Request) {
 		doc := goodDoc(f.clientID)
 		if mutateDoc != nil {
@@ -460,4 +462,22 @@ func TestOAuthAuthorize_InvalidClientDoc_ShouldReturn400_Integration(t *testing.
 	// then
 	assert.Equal(t, fasthttp.StatusBadRequest, ctx.Response.StatusCode())
 	assert.Empty(t, ctx.Response.Header.Peek("Location"))
+}
+
+func TestOAuthToken_IssueTokensServerError_ShouldKeepCodeUsable_Integration(t *testing.T) {
+	// given
+	f := newFixture(t, nil)
+	verifier, challenge := pkcePair()
+	_, code := f.approvedCode(challenge)
+	require.NoError(t, f.db.Close())
+
+	// when
+	ctx := f.token(f.codeForm(code, verifier))
+
+	// then
+	assert.Equal(t, fasthttp.StatusInternalServerError, ctx.Response.StatusCode(), string(ctx.Response.Body()))
+	assert.Contains(t, string(ctx.Response.Body()), CodeServerError)
+	f.svc.store.mu.Lock()
+	defer f.svc.store.mu.Unlock()
+	assert.False(t, f.svc.store.codes[hashCode(code)].used)
 }

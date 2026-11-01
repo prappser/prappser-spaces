@@ -303,6 +303,7 @@ func (s *Service) exchangeCode(p tokenParams) (*TokenResponse, error) {
 		return nil, newError(CodeInvalidGrant, "agent limit reached, revoke an agent in Prappser settings")
 	}
 	if err != nil {
+		s.store.unmarkCode(p.Code)
 		log.Error().Err(err).Msg("[OAUTH] Failed to issue tokens")
 		return nil, newError(CodeServerError, "failed to issue tokens")
 	}

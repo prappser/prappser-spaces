@@ -93,13 +93,13 @@ func TestOAuthRoutes_Metadata_ShouldDescribeServer(t *testing.T) {
 	assert.NotContains(t, got, "registration_endpoint")
 }
 
-func TestOAuthRoutes_TokenRateLimit_ShouldTripAt20PerMinute(t *testing.T) {
+func TestOAuthRoutes_TokenRateLimit_ShouldTripAt60PerMinute(t *testing.T) {
 	// given
 	handler := newOAuthTestHandler(true)
 
 	// when
 	var last int
-	for i := 0; i < 21; i++ {
+	for i := 0; i < oauthTokenRateLimitPerMinute+1; i++ {
 		ctx := newAuthRouteRequestCtxWithMethod("POST", "/oauth/token")
 		handler(ctx)
 		last = ctx.Response.StatusCode()

@@ -9,7 +9,10 @@ import (
 	"github.com/valyala/fasthttp"
 )
 
-const oauthRateLimitPerMinute = 20
+const (
+	oauthAuthorizeRateLimitPerMinute = 20
+	oauthTokenRateLimitPerMinute     = 60
+)
 
 func isOAuthPath(path string) bool {
 	return path == "/.well-known/oauth-authorization-server" ||
@@ -19,7 +22,8 @@ func isOAuthPath(path string) bool {
 }
 
 func newOAuthRouter(config *Config, endpoints *oauth.Endpoints, authMiddleware *middleware.AuthMiddleware, ipRateLimiter *middleware.RateLimiter) fasthttp.RequestHandler {
-	oauthRateLimiter := middleware.NewRateLimiter(oauthRateLimitPerMinute, time.Minute, config.TrustProxyHeaders)
+	authorizeRateLimiter := middleware.NewRateLimiter(oauthAuthorizeRateLimitPerMinute, time.Minute, config.TrustProxyHeaders)
+	tokenRateLimiter := middleware.NewRateLimiter(oauthTokenRateLimitPerMinute, time.Minute, config.TrustProxyHeaders)
 
 	notFound := func(ctx *fasthttp.RequestCtx) {
 		ctx.Error("Not Found", fasthttp.StatusNotFound)
@@ -49,14 +53,14 @@ func newOAuthRouter(config *Config, endpoints *oauth.Endpoints, authMiddleware *
 				methodNotAllowed(ctx)
 				return
 			}
-			oauthRateLimiter.LimitByIP(endpoints.Authorize)(ctx)
+			authorizeRateLimiter.LimitByIP(endpoints.Authorize)(ctx)
 			return
 		case "/oauth/token":
 			if method != "POST" {
 				methodNotAllowed(ctx)
 				return
 			}
-			oauthRateLimiter.LimitByIP(endpoints.Token)(ctx)
+			tokenRateLimiter.LimitByIP(endpoints.Token)(ctx)
 			return
 		}
 

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -76,7 +77,7 @@ func TestIsPublicAddr_ShouldRejectNonGlobalRanges(t *testing.T) {
 		"127.0.0.1", "::1", "10.0.0.1", "172.16.5.4", "192.168.1.1", "fd00::1", "169.254.169.254",
 		"fe80::1", "224.0.0.1", "ff02::1", "0.0.0.0", "::", "0.1.2.3", "100.64.0.1", "192.0.0.8",
 		"192.0.2.1", "198.18.0.1", "198.51.100.7", "203.0.113.9", "240.0.0.1", "255.255.255.255",
-		"64:ff9b::808:808", "2001:db8::1", "::ffff:127.0.0.1", "::ffff:10.0.0.1", "ff01::1",
+		"64:ff9b::808:808", "64:ff9b:1::1", "2002:808:808::1", "2001:db8::1", "::ffff:127.0.0.1", "::ffff:10.0.0.1", "ff01::1",
 	}
 	allowed := []string{"8.8.8.8", "1.1.1.1", "93.184.216.34", "2606:4700:4700::1111", "::ffff:8.8.8.8"}
 
@@ -104,6 +105,7 @@ func TestRedirectMatches_ShouldFollowLoopbackPortRule(t *testing.T) {
 		{"localhost port ignored", "http://localhost:3000/callback", []string{"http://localhost/callback"}, true},
 		{"ipv6 port ignored", "http://[::1]:9999/callback", []string{"http://[::1]/callback"}, true},
 		{"registered port ignored", portlessLoop, []string{"http://127.0.0.1:7000/callback"}, true},
+		{"loopback escaped slash not decoded", "http://127.0.0.1:1234/a%2Fb", []string{"http://127.0.0.1/a/b"}, false},
 		{"loopback path mismatch", "http://127.0.0.1:1/other", []string{portlessLoop}, false},
 		{"loopback query mismatch", "http://127.0.0.1:1/callback?x=1", []string{portlessLoop}, false},
 		{"loopback host mismatch", "http://localhost:1/callback", []string{portlessLoop}, false},
@@ -356,7 +358,7 @@ func TestAuthorize_FullStore_ShouldReturnErrStoreFull(t *testing.T) {
 	// given
 	svc, clientID := serveDoc(t, goodDoc)
 	for i := 0; i < maxPending; i++ {
-		_, err := svc.store.addPending(&pendingRequest{})
+		_, err := svc.store.addPending(&pendingRequest{clientID: strconv.Itoa(i)})
 		require.NoError(t, err)
 	}
 
@@ -367,7 +369,7 @@ func TestAuthorize_FullStore_ShouldReturnErrStoreFull(t *testing.T) {
 	assert.ErrorIs(t, err, ErrStoreFull)
 }
 
-func TestStore_Pending_ShouldBindToFirstUserAndExpire(t *testing.T) {
+func TestStore_Pending_ShouldBindToFirstAuthenticatedReaderAndExpire(t *testing.T) {
 	// given
 	s := newStore()
 	id, err := s.addPending(&pendingRequest{redirectURI: "x"})
@@ -386,6 +388,113 @@ func TestStore_Pending_ShouldBindToFirstUserAndExpire(t *testing.T) {
 	assert.ErrorIs(t, errTakeOther, ErrWrongUser)
 	assert.NoError(t, errTake)
 	assert.ErrorIs(t, errGone, ErrRequestNotFound)
+}
+
+func TestStore_AddPending_ShouldEvictOldestOfSameClientAtCap(t *testing.T) {
+	// given
+	s := newStore()
+	first, err := s.addPending(&pendingRequest{clientID: "a"})
+	require.NoError(t, err)
+	other, err := s.addPending(&pendingRequest{clientID: "b"})
+	require.NoError(t, err)
+	orig := nowFunc
+	n := 0
+	nowFunc = func() time.Time { n++; return orig().Add(time.Duration(n) * time.Second) }
+	defer func() { nowFunc = orig }()
+	var last string
+	for i := 1; i < maxPendingPerClient+1; i++ {
+		last, err = s.addPending(&pendingRequest{clientID: "a"})
+		require.NoError(t, err)
+	}
+
+	// when
+	_, errFirst := s.getPending(first, "u")
+	_, errLast := s.getPending(last, "u")
+	_, errOther := s.getPending(other, "u")
+
+	// then
+	assert.ErrorIs(t, errFirst, ErrRequestNotFound)
+	assert.NoError(t, errLast)
+	assert.NoError(t, errOther)
+}
+
+func TestStore_AddPending_ShouldKeepRequestsAUserAlreadyOpened(t *testing.T) {
+	// given
+	s := newStore()
+	orig := nowFunc
+	n := 0
+	nowFunc = func() time.Time { n++; return orig().Add(time.Duration(n) * time.Second) }
+	defer func() { nowFunc = orig }()
+	ids := make([]string, 0, maxPendingPerClient)
+	for i := 0; i < maxPendingPerClient; i++ {
+		id, err := s.addPending(&pendingRequest{clientID: "a"})
+		require.NoError(t, err)
+		ids = append(ids, id)
+	}
+	_, err := s.getPending(ids[0], "user-a")
+	require.NoError(t, err)
+
+	// when
+	extra, errExtra := s.addPending(&pendingRequest{clientID: "a"})
+	_, errBound := s.getPending(ids[0], "user-a")
+	_, errSecond := s.getPending(ids[1], "user-b")
+	_, errNew := s.getPending(extra, "user-b")
+
+	// then
+	assert.NoError(t, errExtra)
+	assert.NoError(t, errBound)
+	assert.ErrorIs(t, errSecond, ErrRequestNotFound)
+	assert.NoError(t, errNew)
+}
+
+func TestStore_AddPending_ShouldReturnStoreFullWhenEveryClientRequestIsOpened(t *testing.T) {
+	// given
+	s := newStore()
+	for i := 0; i < maxPendingPerClient; i++ {
+		id, err := s.addPending(&pendingRequest{clientID: "a"})
+		require.NoError(t, err)
+		_, err = s.getPending(id, "user-a")
+		require.NoError(t, err)
+	}
+
+	// when
+	_, err := s.addPending(&pendingRequest{clientID: "a"})
+
+	// then
+	assert.ErrorIs(t, err, ErrStoreFull)
+}
+
+func TestStore_UnmarkCode_ShouldNotReviveCodeAfterReuseWasSeen(t *testing.T) {
+	// given
+	s := newStore()
+	code, err := s.addCode(&authCode{clientID: "c"})
+	require.NoError(t, err)
+	_, reused1, _ := s.consumeCode(code)
+	_, reused2, _ := s.consumeCode(code)
+
+	// when
+	s.unmarkCode(code)
+	_, reused3, found3 := s.consumeCode(code)
+
+	// then
+	assert.False(t, reused1)
+	assert.True(t, reused2)
+	assert.True(t, found3)
+	assert.True(t, reused3)
+}
+
+func TestApprove_ExpiredRequest_ShouldReturnNotFoundWithoutTouchingAgents(t *testing.T) {
+	// given
+	svc := NewService(nil, nil, testIssuer, "https://app.test")
+	id, err := svc.store.addPending(&pendingRequest{clientID: "a"})
+	require.NoError(t, err)
+	svc.store.pending[id].expiresAt = time.Now().Add(-time.Second)
+
+	// when
+	_, err = svc.Approve(id, "u")
+
+	// then
+	assert.ErrorIs(t, err, ErrRequestNotFound)
 }
 
 func TestStore_Codes_ShouldBeSingleUseAndExpire(t *testing.T) {

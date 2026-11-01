@@ -2,7 +2,7 @@
 
 The space is an OAuth 2.1 authorization server. Claude Code, claude.ai and ChatGPT use it to get agent tokens. Everything here returns 404 unless `MCP_ENABLED=true`.
 
-Clients identify themselves with a client ID metadata document: `client_id` is an https URL, and the space fetches the JSON there. There is no dynamic registration. PKCE with S256 is required. Codes live 60 seconds and work once. Tokens are the agent tokens from `AgentService`: access tokens last 1 hour, refresh tokens rotate.
+Clients identify themselves with a client ID metadata document: `client_id` is an https URL, and the space fetches the JSON there. There is no dynamic registration. PKCE with S256 is required. Codes live 60 seconds and work once. A code is burned on first use even when the exchange fails. The one exception is a server error while issuing tokens, which leaves the code usable for a retry within its 60 seconds. Tokens are the agent tokens from `AgentService`: access tokens last 1 hour, refresh tokens rotate.
 
 ## Endpoints
 
@@ -29,7 +29,7 @@ The app then calls the consent API on that space with the user's JWT. Agent toke
 
     {clientId, clientHost, clientName, clientUri?, logoUri?, redirectHost, redirectLoopback, scope, expiresAt}
 
-`expiresAt` is unix seconds. The first account to read a request is bound to it.
+`expiresAt` is unix seconds. `/oauth/authorize` is anonymous, so a request is not tied to whoever started it. The first authenticated account that reads it with this call is bound to it. The app's account picker runs before that call.
 
 `approve` and `deny` return `{"redirectUri": "..."}`. The app navigates the browser to it. It carries `code` (or `error=access_denied`), `state` when the client sent one, and `iss`.
 

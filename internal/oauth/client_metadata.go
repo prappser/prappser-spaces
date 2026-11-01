@@ -36,7 +36,9 @@ var blockedPrefixes = []netip.Prefix{
 	netip.MustParsePrefix("240.0.0.0/4"),
 	netip.MustParsePrefix("255.255.255.255/32"),
 	netip.MustParsePrefix("64:ff9b::/96"),
+	netip.MustParsePrefix("64:ff9b:1::/48"),
 	netip.MustParsePrefix("2001:db8::/32"),
+	netip.MustParsePrefix("2002::/16"),
 }
 
 func isPublicAddr(a netip.Addr) bool {
@@ -247,7 +249,7 @@ func redirectMatches(requested *url.URL, raw string, registered []string) bool {
 		if err != nil || e.Scheme != "http" || e.User != nil || strings.Contains(entry, "#") {
 			continue
 		}
-		if e.Hostname() == requested.Hostname() && e.Path == requested.Path && e.RawQuery == requested.RawQuery {
+		if e.Hostname() == requested.Hostname() && e.EscapedPath() == requested.EscapedPath() && e.RawQuery == requested.RawQuery {
 			return true
 		}
 	}

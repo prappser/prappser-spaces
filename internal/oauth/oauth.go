@@ -15,9 +15,10 @@ const (
 	scopeMCP           = "mcp"
 	scopeOfflineAccess = "offline_access"
 
-	pendingTTL = 10 * time.Minute
-	codeTTL    = 60 * time.Second
-	maxPending = 1000
+	pendingTTL          = 10 * time.Minute
+	codeTTL             = 60 * time.Second
+	maxPending          = 1000
+	maxPendingPerClient = 20
 )
 
 const (
@@ -74,6 +75,7 @@ type authCode struct {
 	userPublicKey string
 	deviceKey     string
 	used          bool
+	reuseSeen     bool
 	expiresAt     time.Time
 }
 
@@ -114,6 +116,32 @@ func (s *store) sweep(now time.Time) {
 	}
 }
 
+func (s *store) evictOldestOfClient(clientID string) bool {
+	count := 0
+	oldestID := ""
+	var oldest time.Time
+	for id, p := range s.pending {
+		if p.clientID != clientID {
+			continue
+		}
+		count++
+		if p.userPublicKey != "" {
+			continue
+		}
+		if oldestID == "" || p.expiresAt.Before(oldest) {
+			oldestID, oldest = id, p.expiresAt
+		}
+	}
+	if count < maxPendingPerClient {
+		return true
+	}
+	if oldestID == "" {
+		return false
+	}
+	delete(s.pending, oldestID)
+	return true
+}
+
 func (s *store) addPending(p *pendingRequest) (string, error) {
 	id, err := randomToken()
 	if err != nil {
@@ -125,6 +153,9 @@ func (s *store) addPending(p *pendingRequest) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.sweep(now)
+	if !s.evictOldestOfClient(p.clientID) {
+		return "", ErrStoreFull
+	}
 	if len(s.pending) >= maxPending {
 		return "", ErrStoreFull
 	}
@@ -191,7 +222,18 @@ func (s *store) consumeCode(code string) (c authCode, reused, found bool) {
 	}
 	reused = entry.used
 	entry.used = true
+	if reused {
+		entry.reuseSeen = true
+	}
 	return *entry, reused, true
+}
+
+func (s *store) unmarkCode(code string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if entry, ok := s.codes[hashCode(code)]; ok && !entry.reuseSeen {
+		entry.used = false
+	}
 }
 
 func (s *store) setCodeDevice(code, deviceKey string) {
