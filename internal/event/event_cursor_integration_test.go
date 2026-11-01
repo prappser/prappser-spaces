@@ -277,3 +277,47 @@ func idsOf(events []*Event) []string {
 	}
 	return ids
 }
+
+func TestGetSince_ShouldSkipAppEventsForExpiredMember(t *testing.T) {
+	// given
+	db := testdb.Connect(t, "event")
+	defer db.Close()
+	repo := NewEventRepository(db)
+
+	activePK := "test-expiry-active-user"
+	expiredPK := "test-expiry-expired-user"
+	testdb.InsertTestUser(t, db, activePK)
+	testdb.InsertTestUser(t, db, expiredPK)
+	appID := "test-expiry-app"
+	insertTestApplication(t, db, appID)
+	insertTestMember(t, db, "test-expiry-member-active", appID, activePK)
+	insertTestMember(t, db, "test-expiry-member-expired", appID, expiredPK)
+	if _, err := db.Exec(
+		"UPDATE members SET membership_expires_at = $1 WHERE id = $2",
+		time.Now().Add(-time.Hour).Unix(), "test-expiry-member-expired",
+	); err != nil {
+		t.Fatalf("Failed to expire member: %v", err)
+	}
+	ev := &Event{ID: "expiry-app-event", Type: EventTypeComponentDataChanged, ApplicationID: appID, CreatorPublicKey: activePK, Version: 1, Data: map[string]interface{}{}, CreatedAt: time.Now().Unix()}
+	if err := repo.Create(ev); err != nil {
+		t.Fatalf("Failed to create app-scoped event: %v", err)
+	}
+
+	// when
+	forActive, _, err := repo.GetSince(activePK, "", 10)
+	if err != nil {
+		t.Fatalf("unexpected error calling GetSince for active member: %v", err)
+	}
+	forExpired, _, err := repo.GetSince(expiredPK, "", 10)
+	if err != nil {
+		t.Fatalf("unexpected error calling GetSince for expired member: %v", err)
+	}
+
+	// then
+	if len(forActive) != 1 || forActive[0].ID != ev.ID {
+		t.Fatalf("expected active member to get [%s], got %v", ev.ID, idsOf(forActive))
+	}
+	if len(forExpired) != 0 {
+		t.Fatalf("expected expired member to get no events, got %v", idsOf(forExpired))
+	}
+}
