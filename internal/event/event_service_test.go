@@ -587,6 +587,39 @@ func TestApplyErr_ValidationErrorDuringExecute_ShouldBeUnappliable(t *testing.T)
 	assert.ErrorIs(t, got, ErrUnappliable)
 }
 
+func TestApplyErr_ValidationWrappingSerializationFailure_ShouldStayRetryable(t *testing.T) {
+	// given
+	err := fmt.Errorf("%w: %w", ErrValidation, &pq.Error{Code: "40001"})
+
+	// when
+	got := applyErr(err)
+
+	// then
+	assert.NotErrorIs(t, got, ErrUnappliable)
+}
+
+func TestApplyErr_ValidationWrappingBadConn_ShouldStayRetryable(t *testing.T) {
+	// given
+	err := fmt.Errorf("%w: %w", ErrValidation, driver.ErrBadConn)
+
+	// when
+	got := applyErr(err)
+
+	// then
+	assert.NotErrorIs(t, got, ErrUnappliable)
+}
+
+func TestApplyErr_ValidationOnDuplicateEventID_ShouldBeUnappliable(t *testing.T) {
+	// given
+	err := fmt.Errorf("%w: %w", ErrValidation, &pq.Error{Code: "23505", Constraint: "events_pkey"})
+
+	// when
+	got := applyErr(err)
+
+	// then
+	assert.ErrorIs(t, got, ErrUnappliable)
+}
+
 func TestExecuteComponentDataChanged_MissingComponentID_ShouldBeValidationError(t *testing.T) {
 	// given
 	svc := NewEventService(nil, nil, nil, nil)
