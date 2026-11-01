@@ -43,6 +43,7 @@ type User struct {
 	// key equals the account key). Not part of the wire representation: it is
 	// request-scoped identity, not account data.
 	DevicePublicKey string `json:"-"`
+	Agent           bool   `json:"-"`
 	// HasPassword reports whether this account has password-login credentials
 	// set. Populated only by GetProfile (looked up on demand, not stored on
 	// the account record) - omitempty so every other endpoint that serializes

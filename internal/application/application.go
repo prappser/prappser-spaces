@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/prappser/prappser-spaces/internal/user"
 )
 
 var ErrNotFound = errors.New("not found")
@@ -20,6 +22,8 @@ type Application struct {
 	ComponentGroups []ComponentGroup `json:"componentGroups"`
 	Members         []Member         `json:"members"`
 	LastSequence    *int64           `json:"lastSequence,omitempty"`
+	// When off, only the app owner's own agents may see or act on the app.
+	AgentReadEnabled bool `json:"agentReadEnabled"`
 }
 
 type ComponentGroup struct {
@@ -98,4 +102,12 @@ func (a *Application) GetOwnerPublicKey() (string, error) {
 		return "", err
 	}
 	return owner.PublicKey, nil
+}
+
+func (a *Application) AgentAllowed(caller *user.User) bool {
+	if !caller.Agent || a.AgentReadEnabled {
+		return true
+	}
+	owner, err := a.GetOwner()
+	return err == nil && owner.PublicKey == caller.PublicKey
 }

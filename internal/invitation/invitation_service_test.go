@@ -1734,6 +1734,48 @@ func TestCreateInvitation_ShouldRejectNonOwner(t *testing.T) {
 	assert.Nil(t, repo.createdInvite)
 }
 
+func TestCreateInvitation_ShouldRejectAgentWhenAgentAccessOff(t *testing.T) {
+	// given
+	appRepo := ownerAppRepo(t)
+	assert.NoError(t, appRepo.CreateMember(&application.Member{ID: "m-admin", ApplicationID: "app-1", PublicKey: "admin-pk", Role: application.MemberRoleAdmin}))
+	assert.NoError(t, appRepo.SetAgentReadEnabled("app-1", false))
+	svc, repo := newCreateTestService(t, appRepo)
+	opts := CreateInvitationOptions{ApplicationID: "app-1", SpaceURL: "https://space.example"}
+
+	// when
+	_, err := svc.CreateInvitation(&user.User{PublicKey: "admin-pk", Agent: true}, opts)
+
+	// then
+	assert.ErrorIs(t, err, application.ErrAgentReadOff)
+	assert.Nil(t, repo.createdInvite)
+	_, err = svc.CreateInvitation(&user.User{PublicKey: "admin-pk"}, opts)
+	assert.NoError(t, err)
+}
+
+func TestCreateInvitation_ShouldAnswerAgentLikeClosedAppWhenNotAMember(t *testing.T) {
+	// given
+	svc, repo := newCreateTestService(t, ownerAppRepo(t))
+
+	// when
+	_, err := svc.CreateInvitation(&user.User{PublicKey: "stranger-pk", Agent: true}, CreateInvitationOptions{ApplicationID: "app-1", SpaceURL: "https://space.example"})
+
+	// then
+	assert.ErrorIs(t, err, application.ErrAgentReadOff)
+	assert.Nil(t, repo.createdInvite)
+}
+
+func TestCreateInvitation_ShouldAnswerAgentLikeClosedAppWhenAppIsMissing(t *testing.T) {
+	// given
+	svc, repo := newCreateTestService(t, ownerAppRepo(t))
+
+	// when
+	_, err := svc.CreateInvitation(&user.User{PublicKey: "admin-pk", Agent: true}, CreateInvitationOptions{ApplicationID: "missing", SpaceURL: "https://space.example"})
+
+	// then
+	assert.ErrorIs(t, err, application.ErrAgentReadOff)
+	assert.Nil(t, repo.createdInvite)
+}
+
 func TestCreateInvitation_ShouldRejectSpaceUseGrantFromNonSpaceOwner(t *testing.T) {
 	// given
 	svc, repo := newCreateTestService(t, ownerAppRepo(t))

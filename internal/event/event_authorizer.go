@@ -29,6 +29,7 @@ var (
 //   - Submitter is nil
 //   - Application is nil
 //   - Submitter is not a member of the application
+//   - Submitter is an agent and the application has agent access off (only the owner's own agents pass)
 //   - Submitter lacks required role for the event type
 //   - Event type is unknown
 func AuthorizeEvent(event *Event, submitter *user.User, app *application.Application) error {
@@ -42,6 +43,10 @@ func AuthorizeEvent(event *Event, submitter *user.User, app *application.Applica
 	member := findMember(app, submitter.PublicKey)
 	if member == nil {
 		return fmt.Errorf("%w: user is not a member of this application", ErrUnauthorized)
+	}
+
+	if !app.AgentAllowed(submitter) {
+		return fmt.Errorf("%w: agent access is off for this application", ErrUnauthorized)
 	}
 
 	isOwner := member.Role == application.MemberRoleOwner

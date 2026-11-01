@@ -221,7 +221,7 @@ func TestApplicationService_ListApplications_ShouldReturnUserApplicationsOnly(t 
 	}
 
 	// when
-	apps, err := appService.ListApplications(testUser.PublicKey)
+	apps, err := appService.ListApplications(testUser)
 
 	// then
 	if err != nil {
@@ -790,4 +790,139 @@ func TestApplicationService_RegisterApplication_ShouldKeepClientSpaceIDWhenCalle
 	if assert.NotNil(t, registered.SpaceID) {
 		assert.Equal(t, "client-space-id", *registered.SpaceID)
 	}
+}
+
+func agentOf(u *user.User) *user.User {
+	return &user.User{PublicKey: u.PublicKey, Role: u.Role, Agent: true}
+}
+
+func TestApplication_AgentAllowed_ShouldAllowHumanWhenFlagOff(t *testing.T) {
+	// given
+	app := &Application{AgentReadEnabled: false, Members: []Member{{Role: MemberRoleOwner, PublicKey: "owner"}}}
+
+	// when
+	allowed := app.AgentAllowed(&user.User{PublicKey: "admin"})
+
+	// then
+	assert.True(t, allowed)
+}
+
+func TestApplication_AgentAllowed_ShouldAllowAgentWhenFlagOn(t *testing.T) {
+	// given
+	app := &Application{AgentReadEnabled: true, Members: []Member{{Role: MemberRoleOwner, PublicKey: "owner"}}}
+
+	// when
+	allowed := app.AgentAllowed(&user.User{PublicKey: "admin", Agent: true})
+
+	// then
+	assert.True(t, allowed)
+}
+
+func TestApplication_AgentAllowed_ShouldDenyNonOwnerAgentWhenFlagOff(t *testing.T) {
+	// given
+	app := &Application{AgentReadEnabled: false, Members: []Member{
+		{Role: MemberRoleOwner, PublicKey: "owner"},
+		{Role: MemberRoleAdmin, PublicKey: "admin"},
+	}}
+
+	// when
+	allowed := app.AgentAllowed(&user.User{PublicKey: "admin", Agent: true})
+
+	// then
+	assert.False(t, allowed)
+}
+
+func TestApplication_AgentAllowed_ShouldAllowOwnerAgentWhenFlagOff(t *testing.T) {
+	// given
+	app := &Application{AgentReadEnabled: false, Members: []Member{{Role: MemberRoleOwner, PublicKey: "owner"}}}
+
+	// when
+	allowed := app.AgentAllowed(&user.User{PublicKey: "owner", Agent: true})
+
+	// then
+	assert.True(t, allowed)
+}
+
+func TestApplicationService_ListApplications_ShouldHideAgentOffAppsFromNonOwnerAgent(t *testing.T) {
+	// given
+	owner := createTestUser()
+	member := createRegularUser()
+	appRepo := NewMemoryRepository()
+	appService := NewApplicationService(appRepo, 0, "space-key")
+	for _, id := range []string{"open-app", "closed-app"} {
+		app := createBasicApplication(owner, id, id)
+		app.Members = append(app.Members, Member{ID: id + "-m2", Role: MemberRoleMember, PublicKey: member.PublicKey})
+		_, err := appService.RegisterApplication(owner, app)
+		assert.NoError(t, err)
+	}
+	assert.NoError(t, appRepo.SetAgentReadEnabled("closed-app", false))
+
+	// when
+	memberAgentApps, err1 := appService.ListApplications(agentOf(member))
+	ownerAgentApps, err2 := appService.ListApplications(agentOf(owner))
+	memberApps, err3 := appService.ListApplications(member)
+
+	// then
+	assert.NoError(t, err1)
+	assert.NoError(t, err2)
+	assert.NoError(t, err3)
+	assert.Len(t, memberAgentApps, 1)
+	assert.Equal(t, "open-app", memberAgentApps[0].ID)
+	assert.Len(t, ownerAgentApps, 2)
+	assert.Len(t, memberApps, 2)
+}
+
+func TestApplicationService_GetApplication_ShouldReturnErrAgentReadOffForNonOwnerAgent(t *testing.T) {
+	// given
+	owner := createTestUser()
+	member := createRegularUser()
+	appRepo := NewMemoryRepository()
+	appService := NewApplicationService(appRepo, 0, "space-key")
+	app := createBasicApplication(owner, "App", "app-1")
+	app.Members = append(app.Members, Member{ID: "m2", Role: MemberRoleMember, PublicKey: member.PublicKey})
+	_, err := appService.RegisterApplication(owner, app)
+	assert.NoError(t, err)
+	assert.NoError(t, appRepo.SetAgentReadEnabled("app-1", false))
+
+	// when
+	_, agentErr := appService.GetApplication("app-1", agentOf(member))
+	_, humanErr := appService.GetApplication("app-1", member)
+
+	// then
+	assert.ErrorIs(t, agentErr, ErrAgentReadOff)
+	assert.NoError(t, humanErr)
+}
+
+func TestApplicationService_SetAgentRead_ShouldAllowOwnerAndRejectOthers(t *testing.T) {
+	// given
+	owner := createTestUser()
+	member := createRegularUser()
+	appRepo := NewMemoryRepository()
+	appService := NewApplicationService(appRepo, 0, "space-key")
+	app := createBasicApplication(owner, "App", "app-1")
+	app.Members = append(app.Members, Member{ID: "m2", Role: MemberRoleAdmin, PublicKey: member.PublicKey})
+	_, err := appService.RegisterApplication(owner, app)
+	assert.NoError(t, err)
+
+	// when
+	memberErr := appService.SetAgentRead("app-1", member, false)
+	ownerErr := appService.SetAgentRead("app-1", owner, false)
+
+	// then
+	assert.ErrorIs(t, memberErr, ErrNotApplicationOwner)
+	assert.NoError(t, ownerErr)
+	got, err := appRepo.GetApplicationByID("app-1")
+	assert.NoError(t, err)
+	assert.False(t, got.AgentReadEnabled)
+}
+
+func TestApplicationService_SetAgentRead_ShouldReturnNotFoundForUnknownApp(t *testing.T) {
+	// given
+	appService := NewApplicationService(NewMemoryRepository(), 0, "space-key")
+
+	// when
+	err := appService.SetAgentRead("missing", createTestUser(), false)
+
+	// then
+	assert.ErrorIs(t, err, ErrNotFound)
 }

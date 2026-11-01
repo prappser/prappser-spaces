@@ -51,7 +51,7 @@ func upsertApplication(e dbtx, app *Application) error {
 }
 
 func (r *Repository) GetApplicationByID(id string) (*Application, error) {
-	query := `SELECT id, name, icon, space_public_key, space_id, created_at, updated_at, last_sequence
+	query := `SELECT id, name, icon, space_public_key, space_id, created_at, updated_at, last_sequence, agent_read_enabled
 			  FROM applications WHERE id = $1 AND deleted_at IS NULL`
 
 	app := &Application{}
@@ -59,7 +59,7 @@ func (r *Repository) GetApplicationByID(id string) (*Application, error) {
 	var spaceID sql.NullString
 	err := r.db.QueryRow(query, id).Scan(
 		&app.ID, &app.Name, &app.Icon, &app.SpacePublicKey, &spaceID, &app.CreatedAt, &app.UpdatedAt,
-		&lastSequence,
+		&lastSequence, &app.AgentReadEnabled,
 	)
 
 	if err == sql.ErrNoRows {
@@ -142,6 +142,21 @@ func (r *Repository) UpdateLastSequence(appID string, sequence int64) error {
 	}
 	if rowsAffected == 0 {
 		return fmt.Errorf("application not found or deleted: %s", appID)
+	}
+	return nil
+}
+
+func (r *Repository) SetAgentReadEnabled(appID string, enabled bool) error {
+	result, err := r.db.Exec(`UPDATE applications SET agent_read_enabled = $1, updated_at = $2 WHERE id = $3 AND deleted_at IS NULL`, enabled, time.Now().Unix(), appID)
+	if err != nil {
+		return err
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsAffected == 0 {
+		return fmt.Errorf("application %w", ErrNotFound)
 	}
 	return nil
 }
@@ -770,7 +785,7 @@ func (r *Repository) IsApplicationLive(id string) (bool, error) {
 }
 
 func (r *Repository) GetApplicationsByMemberPublicKey(publicKey string) ([]*Application, error) {
-	query := `SELECT DISTINCT a.id, a.name, a.icon, a.space_public_key, a.space_id, a.created_at, a.updated_at, a.last_sequence
+	query := `SELECT DISTINCT a.id, a.name, a.icon, a.space_public_key, a.space_id, a.created_at, a.updated_at, a.last_sequence, a.agent_read_enabled
 			  FROM applications a
 			  INNER JOIN members m ON a.id = m.application_id
 			  WHERE m.public_key = $1 AND a.deleted_at IS NULL AND ` + activeMemberPredicate + `
@@ -787,7 +802,7 @@ func (r *Repository) GetApplicationsByMemberPublicKey(publicKey string) ([]*Appl
 		app := &Application{}
 		var lastSequence sql.NullInt64
 		var spaceID sql.NullString
-		err := rows.Scan(&app.ID, &app.Name, &app.Icon, &app.SpacePublicKey, &spaceID, &app.CreatedAt, &app.UpdatedAt, &lastSequence)
+		err := rows.Scan(&app.ID, &app.Name, &app.Icon, &app.SpacePublicKey, &spaceID, &app.CreatedAt, &app.UpdatedAt, &lastSequence, &app.AgentReadEnabled)
 		if err != nil {
 			return nil, err
 		}

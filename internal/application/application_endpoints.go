@@ -95,7 +95,7 @@ func (ae *ApplicationEndpoints) ListApplications(ctx *fasthttp.RequestCtx) {
 	}
 
 	// Get user's applications
-	apps, err := ae.appService.ListApplications(authenticatedUser.PublicKey)
+	apps, err := ae.appService.ListApplications(authenticatedUser)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to list applications")
 		ctx.Error("Failed to list applications", fasthttp.StatusInternalServerError)
@@ -144,6 +144,56 @@ func (ae *ApplicationEndpoints) GetApplication(ctx *fasthttp.RequestCtx) {
 	ctx.SetStatusCode(fasthttp.StatusOK)
 	ctx.SetContentType("application/json")
 	json.NewEncoder(ctx).Encode(app)
+}
+
+type agentReadRequest struct {
+	Enabled *bool `json:"enabled"`
+}
+
+// SetAgentRead handles PUT /applications/{id}/agent-read
+func (ae *ApplicationEndpoints) SetAgentRead(ctx *fasthttp.RequestCtx) {
+	authenticatedUser, ok := ctx.UserValue("user").(*user.User)
+	if !ok || authenticatedUser == nil {
+		log.Error().Msg("Failed to get authenticated user from context")
+		ctx.Error("Unauthorized", fasthttp.StatusUnauthorized)
+		return
+	}
+	appID, _ := ctx.UserValue("appID").(string)
+	if appID == "" {
+		ctx.Error("Application ID is required", fasthttp.StatusBadRequest)
+		return
+	}
+
+	var req agentReadRequest
+	if err := json.Unmarshal(ctx.PostBody(), &req); err != nil || req.Enabled == nil {
+		log.Error().Err(err).Msg("Invalid agent-read request body")
+		ctx.Error("enabled is required", fasthttp.StatusBadRequest)
+		return
+	}
+
+	err := ae.appService.SetAgentRead(appID, authenticatedUser, *req.Enabled)
+	if WriteMoveError(ctx, err) {
+		return
+	}
+	if errors.Is(err, ErrNotApplicationOwner) {
+		log.Error().Err(err).Msg("Only the application owner can change agent access")
+		ctx.Error("Forbidden", fasthttp.StatusForbidden)
+		return
+	}
+	if errors.Is(err, ErrNotFound) {
+		log.Error().Err(err).Msg("Application not found")
+		ctx.Error("Application not found", fasthttp.StatusNotFound)
+		return
+	}
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to set agent access")
+		ctx.Error("Failed to set agent access", fasthttp.StatusInternalServerError)
+		return
+	}
+
+	ctx.SetStatusCode(fasthttp.StatusOK)
+	ctx.SetContentType("application/json")
+	json.NewEncoder(ctx).Encode(map[string]bool{"agentReadEnabled": *req.Enabled})
 }
 
 // GetApplicationState handles GET /applications/{id}/state

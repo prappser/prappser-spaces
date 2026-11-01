@@ -101,7 +101,7 @@ func (ie *InvitationEndpoints) CreateInvite(ctx *fasthttp.RequestCtx) {
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to create invitation")
 		switch {
-		case errors.Is(err, ErrNotAppAuthorized):
+		case errors.Is(err, ErrNotAppAuthorized), errors.Is(err, application.ErrAgentReadOff):
 			ctx.Error("forbidden", fasthttp.StatusForbidden)
 		case application.WriteMoveError(ctx, err):
 		case errors.Is(err, ErrSpaceUseNotAllowed):

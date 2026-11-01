@@ -9,6 +9,7 @@ type ApplicationRepository interface {
 	GetApplicationByID(id string) (*Application, error)
 	GetApplicationState(id string) (*ApplicationState, error)
 	UpdateApplicationTimestamp(id string) error
+	SetAgentReadEnabled(appID string, enabled bool) error
 	DeleteApplication(id string) error
 
 	CreateComponentGroup(group *ComponentGroup) error

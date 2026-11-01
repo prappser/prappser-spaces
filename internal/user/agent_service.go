@@ -185,5 +185,6 @@ func (as *AgentService) ValidateAccessToken(tokenString string) (*User, error) {
 		return nil, fmt.Errorf("user not found")
 	}
 	user.DevicePublicKey = device.DevicePublicKey
+	user.Agent = true
 	return user, nil
 }

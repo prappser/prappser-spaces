@@ -49,6 +49,7 @@ docker compose up -d && go test -tags=integration ./internal/... .  # Integratio
 - **Auth**: Ed25519 JWT via `github.com/golang-jwt/jwt/v5`; JWE/JWS for owner registration via `github.com/lestrrat-go/jwx/v3`
 - **Logging**: `github.com/rs/zerolog` — package-level `log` throughout
 - **WebSocket**: `github.com/fasthttp/websocket`
+- **MCP**: `github.com/modelcontextprotocol/go-sdk` (Go 1.25), mounted on fasthttp via `fasthttpadaptor`
 - **Storage**: local filesystem or S3-compatible via `github.com/minio/minio-go/v7`
 - **Testing**: `github.com/stretchr/testify/assert`
 
@@ -120,6 +121,10 @@ internal/
   spaceprofile/
     spaceprofile.go        — Profile: the owner's name and image for this space, served in GET /status
     spaceprofile_endpoints.go — owner-only PUT /space/profile; fans out space_profile_changed to every app
+  mcp/
+    server.go              — Deps, newServer(): one add{Tool} line per tool; toolError maps service errors
+    routes.go              — Mount(): /mcp (bearer auth via AgentService) and protected-resource metadata
+    {tool}.go              — one file per tool (list_apps, get_app, create_invite, post_chat_message)
   health/
     health.go              — HealthEndpoints
   status/
