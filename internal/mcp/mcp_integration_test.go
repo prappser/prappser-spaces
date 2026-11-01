@@ -23,6 +23,7 @@ import (
 	"github.com/valyala/fasthttp"
 
 	"github.com/prappser/prappser-spaces/internal/application"
+	"github.com/prappser/prappser-spaces/internal/component"
 	"github.com/prappser/prappser-spaces/internal/event"
 	"github.com/prappser/prappser-spaces/internal/invitation"
 	"github.com/prappser/prappser-spaces/internal/testdb"
@@ -60,6 +61,7 @@ type env struct {
 	agents   *user.AgentService
 	userRepo user.UserRepository
 	bc       *recordingBroadcaster
+	events   *event.EventService
 }
 
 func newEnv(t *testing.T) *env {
@@ -81,11 +83,14 @@ func newEnv(t *testing.T) *env {
 	agents := user.NewAgentService(db, userRepo, priv, pub, base)
 	apps := application.NewApplicationService(appRepo, 0, "space-key")
 
+	validator, err := component.NewValidator()
+	require.NoError(t, err)
+
 	next := func(ctx *fasthttp.RequestCtx) { ctx.Error("fallthrough", fasthttp.StatusNotFound) }
-	srv := &fasthttp.Server{Handler: Mount(next, Deps{Apps: apps, Invitations: invites, Events: events, Agents: agents, ExternalURL: base})}
+	srv := &fasthttp.Server{Handler: Mount(next, Deps{Apps: apps, Invitations: invites, Events: events, Agents: agents, Validator: validator, ExternalURL: base})}
 	go srv.Serve(ln)
 	t.Cleanup(func() { srv.Shutdown() })
-	return &env{t: t, db: db, base: base, apps: apps, agents: agents, userRepo: userRepo, bc: bc}
+	return &env{t: t, db: db, base: base, apps: apps, agents: agents, userRepo: userRepo, bc: bc, events: events}
 }
 
 func (e *env) account() *user.User {
@@ -118,6 +123,29 @@ func (e *env) makeAdmin(appID string, u *user.User) {
 	e.t.Helper()
 	_, err := e.db.Exec(`UPDATE members SET role = $1 WHERE application_id = $2 AND public_key = $3`, string(application.MemberRoleAdmin), appID, u.PublicKey)
 	require.NoError(e.t, err)
+}
+
+func (e *env) checklistApp(owner *user.User, checklists int, data map[string]any, members ...*user.User) string {
+	e.t.Helper()
+	appID := e.app(owner, 0, members...)
+	_, err := e.db.Exec(`DELETE FROM components WHERE application_id = $1`, appID)
+	require.NoError(e.t, err)
+	for i := 0; i < checklists; i++ {
+		raw, _ := json.Marshal(data)
+		_, err = e.db.Exec(`INSERT INTO components (id, component_group_id, application_id, name, data, index_order) VALUES ($1, $2, $3, 'Checklist', $4, $5)`,
+			appID+"-list"+string(rune('a'+i)), appID+"-g", appID, string(raw), i)
+		require.NoError(e.t, err)
+	}
+	return appID
+}
+
+func (e *env) listData(appID string) map[string]any {
+	e.t.Helper()
+	var raw string
+	require.NoError(e.t, e.db.QueryRow(`SELECT data FROM components WHERE id = $1`, appID+"-lista").Scan(&raw))
+	var out map[string]any
+	require.NoError(e.t, json.Unmarshal([]byte(raw), &out))
+	return out
 }
 
 type bearer string
@@ -463,4 +491,167 @@ func TestMCP_OtherPaths_ShouldFallThrough(t *testing.T) {
 	// then
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 	assert.Contains(t, body.String(), "fallthrough")
+}
+
+func TestMCP_AddChecklistItem_ShouldWriteOnlyTheNewKeyAndBroadcast(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner, friend := e.account(), e.account()
+	appID := e.checklistApp(owner, 1, map[string]any{"title": "Packing", "item_f": map[string]any{"title": "friend", "checked": false, "order": 4.5}}, friend)
+	session, _ := e.connect(owner)
+	friendItem := map[string]any{"title": "friend edit", "checked": true, "order": 4.5}
+	ev := event.Event{ID: uuid.NewString(), Type: event.EventTypeComponentDataChanged, Version: 1, CreatedAt: time.Now().UnixMilli(), Data: map[string]interface{}{
+		"version": float64(1), "applicationId": appID, "componentId": appID + "-lista", "componentGroupId": appID + "-g",
+		"changedFields": map[string]interface{}{"item_f": map[string]interface{}{"oldValue": nil, "newValue": friendItem}},
+	}}
+	_, err := e.events.AcceptEvent(context.Background(), &ev, friend)
+	require.NoError(t, err)
+
+	// when
+	res, out := call(t, session, "add_checklist_item", map[string]any{"appId": appID, "title": "  sunscreen "})
+
+	// then
+	require.False(t, res.IsError, toJSON(out))
+	key := "item_" + out["itemId"].(string)
+	data := e.listData(appID)
+	assert.Equal(t, map[string]any{"title": "sunscreen", "checked": false, "order": 5.5}, data[key])
+	assert.Equal(t, friendItem, data["item_f"])
+	assert.Equal(t, "Packing", data["title"])
+	assert.Len(t, data, 3)
+	assert.True(t, e.bc.saw(appID))
+}
+
+func TestMCP_UpdateChecklistItem_ShouldWriteLegacyItemUnderItsOwnKey(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner := e.account()
+	legacy := []any{map[string]any{"id": "a", "title": "x", "checked": false}}
+	appID := e.checklistApp(owner, 1, map[string]any{"items": legacy})
+	session, _ := e.connect(owner)
+
+	// when
+	res, out := call(t, session, "update_checklist_item", map[string]any{"appId": appID, "itemId": "a", "checked": true})
+
+	// then
+	require.False(t, res.IsError, toJSON(out))
+	data := e.listData(appID)
+	assert.Equal(t, map[string]any{"title": "x", "checked": true, "order": 0.0}, data["item_a"])
+	assert.Equal(t, legacy, data["items"])
+}
+
+func TestMCP_UpdateChecklistItem_ShouldRenameKeyedItemAndRejectUnknownOrDeleted(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner := e.account()
+	appID := e.checklistApp(owner, 1, map[string]any{
+		"item_a": map[string]any{"title": "old", "checked": true, "order": 1.0},
+		"item_d": "",
+	})
+	session, _ := e.connect(owner)
+
+	// when
+	ok, okOut := call(t, session, "update_checklist_item", map[string]any{"appId": appID, "itemId": "a", "title": "new"})
+	unknown, _ := call(t, session, "update_checklist_item", map[string]any{"appId": appID, "itemId": "zzz", "title": "n"})
+	deleted, _ := call(t, session, "update_checklist_item", map[string]any{"appId": appID, "itemId": "d", "checked": true})
+	empty, _ := call(t, session, "update_checklist_item", map[string]any{"appId": appID, "itemId": "a"})
+
+	// then
+	require.False(t, ok.IsError, toJSON(okOut))
+	assert.Equal(t, map[string]any{"title": "new", "checked": true, "order": 1.0}, e.listData(appID)["item_a"])
+	assert.Contains(t, errText(unknown), "item not found")
+	assert.Contains(t, errText(deleted), "item not found")
+	assert.True(t, empty.IsError)
+}
+
+func TestMCP_ChecklistTools_ShouldEnforceRolesAndUsageFlags(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner, member, viewer, admin := e.account(), e.account(), e.account(), e.account()
+	appID := e.checklistApp(owner, 1, map[string]any{
+		"allowToggleInUsage": false,
+		"allowAddInUsage":    false,
+		"item_a":             map[string]any{"title": "x", "checked": false, "order": 0.0},
+	}, member, viewer, admin)
+	e.makeAdmin(appID, admin)
+	_, err := e.db.Exec(`UPDATE members SET role = 'viewer' WHERE application_id = $1 AND public_key = $2`, appID, viewer.PublicKey)
+	require.NoError(t, err)
+	memberSession, _ := e.connect(member)
+	viewerSession, _ := e.connect(viewer)
+	adminSession, _ := e.connect(admin)
+
+	// when
+	viewed, _ := call(t, viewerSession, "add_checklist_item", map[string]any{"appId": appID, "title": "t"})
+	added, _ := call(t, memberSession, "add_checklist_item", map[string]any{"appId": appID, "title": "t"})
+	renamed, _ := call(t, memberSession, "update_checklist_item", map[string]any{"appId": appID, "itemId": "a", "title": "t"})
+	checked, _ := call(t, memberSession, "update_checklist_item", map[string]any{"appId": appID, "itemId": "a", "checked": true})
+	byAdmin, adminOut := call(t, adminSession, "update_checklist_item", map[string]any{"appId": appID, "itemId": "a", "checked": true})
+
+	// then
+	assert.Contains(t, errText(viewed), "viewers cannot edit")
+	assert.Contains(t, errText(added), "does not allow adding")
+	assert.Contains(t, errText(renamed), "does not allow renaming")
+	assert.Contains(t, errText(checked), "does not allow checking")
+	assert.False(t, byAdmin.IsError, toJSON(adminOut))
+}
+
+func TestMCP_ChecklistTools_ShouldHideAppWhenAgentReadIsOff(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner, member := e.account(), e.account()
+	appID := e.checklistApp(owner, 1, map[string]any{}, member)
+	require.NoError(t, e.apps.SetAgentRead(appID, owner, false))
+	session, _ := e.connect(member)
+
+	// when
+	res, _ := call(t, session, "add_checklist_item", map[string]any{"appId": appID, "title": "t"})
+
+	// then
+	assert.Equal(t, "app not found or not open to agents", errText(res))
+}
+
+func TestMCP_AgentReadOff_ShouldLetOwnerAgentAddChecklistItem(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner := e.account()
+	appID := e.checklistApp(owner, 1, map[string]any{})
+	require.NoError(t, e.apps.SetAgentRead(appID, owner, false))
+	session, _ := e.connect(owner)
+
+	// when
+	res, out := call(t, session, "add_checklist_item", map[string]any{"appId": appID, "title": "t"})
+
+	// then
+	require.False(t, res.IsError, toJSON(out))
+	assert.NotEmpty(t, out["itemId"])
+}
+
+func TestMCP_UpdateChecklistItem_ShouldReportFieldPathWhenPatchIsInvalid(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner := e.account()
+	appID := e.checklistApp(owner, 1, map[string]any{"item_a": map[string]any{"title": "x", "checked": false, "bogus": 1.0}})
+	session, _ := e.connect(owner)
+
+	// when
+	res, out := call(t, session, "update_checklist_item", map[string]any{"appId": appID, "itemId": "a", "checked": true})
+
+	// then
+	assert.True(t, res.IsError)
+	assert.Equal(t, "invalid data", out["error"])
+	assert.Contains(t, toJSON(out["untrusted"]), "/item_a")
+}
+
+func TestMCP_ChecklistTools_ShouldListChecklistsWhenSeveralAndNoComponentID(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner := e.account()
+	appID := e.checklistApp(owner, 2, map[string]any{})
+	session, _ := e.connect(owner)
+
+	// when
+	res, out := call(t, session, "add_checklist_item", map[string]any{"appId": appID, "title": "t"})
+
+	// then
+	assert.True(t, res.IsError)
+	assert.Len(t, out["untrusted"].(map[string]any)["checklists"], 2)
 }

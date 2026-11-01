@@ -30,6 +30,7 @@ import (
 	"github.com/prappser/prappser-spaces/internal"
 	"github.com/prappser/prappser-spaces/internal/admin"
 	"github.com/prappser/prappser-spaces/internal/application"
+	"github.com/prappser/prappser-spaces/internal/component"
 	"github.com/prappser/prappser-spaces/internal/event"
 	"github.com/prappser/prappser-spaces/internal/health"
 	"github.com/prappser/prappser-spaces/internal/invitation"
@@ -265,11 +266,16 @@ func main() {
 
 	var handler fasthttp.RequestHandler = requestHandler
 	if config.MCPEnabled {
+		componentValidator, err := component.NewValidator()
+		if err != nil {
+			log.Fatal().Err(err).Msg("Failed to load component schemas")
+		}
 		handler = mcp.Mount(handler, mcp.Deps{
 			Apps:              appService,
 			Invitations:       invitationService,
 			Events:            eventService,
 			Agents:            agentService,
+			Validator:         componentValidator,
 			ExternalURL:       config.ExternalURL,
 			TrustProxyHeaders: config.TrustProxyHeaders,
 		})

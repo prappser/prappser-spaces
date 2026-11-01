@@ -16,12 +16,12 @@ func appWithChats(ids ...string) *application.Application {
 	return &application.Application{ComponentGroups: []application.ComponentGroup{{Components: comps}}}
 }
 
-func TestPickChat_ShouldUseTheOnlyChat(t *testing.T) {
+func TestPickComponent_ShouldUseTheOnlyChat(t *testing.T) {
 	// given
 	app := appWithChats("c1")
 
 	// when
-	chat, choices, err := pickChat(app, "")
+	chat, choices, err := pickComponent(app, chatComponentName, "")
 
 	// then
 	assert.NoError(t, err)
@@ -29,12 +29,12 @@ func TestPickChat_ShouldUseTheOnlyChat(t *testing.T) {
 	assert.Equal(t, "c1", chat.ID)
 }
 
-func TestPickChat_ShouldReturnChoicesWhenSeveral(t *testing.T) {
+func TestPickComponent_ShouldReturnChoicesWhenSeveral(t *testing.T) {
 	// given
 	app := appWithChats("c1", "c2")
 
 	// when
-	chat, choices, err := pickChat(app, "")
+	chat, choices, err := pickComponent(app, chatComponentName, "")
 
 	// then
 	assert.NoError(t, err)
@@ -42,23 +42,23 @@ func TestPickChat_ShouldReturnChoicesWhenSeveral(t *testing.T) {
 	assert.Len(t, choices, 2)
 }
 
-func TestPickChat_ShouldRejectNonChatComponentID(t *testing.T) {
+func TestPickComponent_ShouldRejectNonChatComponentID(t *testing.T) {
 	// given
 	app := appWithChats("c1")
 
 	// when
-	_, _, err := pickChat(app, "notes")
+	_, _, err := pickComponent(app, chatComponentName, "notes")
 
 	// then
 	assert.Error(t, err)
 }
 
-func TestPickChat_ShouldReportChatOffWhenNone(t *testing.T) {
+func TestPickComponent_ShouldReportChatOffWhenNone(t *testing.T) {
 	// given
 	app := appWithChats()
 
 	// when
-	_, _, err := pickChat(app, "")
+	_, _, err := pickComponent(app, chatComponentName, "")
 
 	// then
 	assert.ErrorIs(t, err, errChatOff)

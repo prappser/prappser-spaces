@@ -7,6 +7,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/prappser/prappser-spaces/internal/application"
+	"github.com/prappser/prappser-spaces/internal/component"
 	"github.com/prappser/prappser-spaces/internal/event"
 	"github.com/prappser/prappser-spaces/internal/invitation"
 	"github.com/prappser/prappser-spaces/internal/user"
@@ -25,6 +26,7 @@ type Deps struct {
 	Invitations       *invitation.InvitationService
 	Events            *event.EventService
 	Agents            *user.AgentService
+	Validator         *component.Validator
 	ExternalURL       string
 	TrustProxyHeaders bool
 }
@@ -35,6 +37,8 @@ func newServer(d Deps) *sdk.Server {
 	addGetApp(s, d)
 	addCreateInvite(s, d)
 	addPostChatMessage(s, d)
+	addAddChecklistItem(s, d)
+	addUpdateChecklistItem(s, d)
 	return s
 }
 
@@ -59,9 +63,9 @@ func toolError(err error) error {
 	case errors.Is(err, invitation.ErrInvalidInviteRole):
 		return errors.New("role must be admin, member or viewer")
 	case errors.Is(err, event.ErrUnauthorized):
-		return errors.New("you are not allowed to post in this app")
+		return errors.New("you are not allowed to change this app")
 	case errors.Is(err, event.ErrValidation), errors.Is(err, event.ErrUnappliable):
-		return errors.New("the app rejected the message")
+		return errors.New("the app rejected the change")
 	}
 	log.Error().Err(err).Msg("[MCP] Tool failed")
 	return errors.New("internal error")
