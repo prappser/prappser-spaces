@@ -270,16 +270,17 @@ func (s *EventService) produceUserScopedEvent(ctx context.Context, event *Event)
 	return stored, nil
 }
 
-func applyErr(err error, executed bool) error {
+func applyErr(err error) error {
 	if err == nil || errors.Is(err, ErrUnappliable) {
 		return err
 	}
 	var netErr net.Error
 	if errors.Is(err, driver.ErrBadConn) || errors.Is(err, sql.ErrConnDone) ||
-		errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || errors.As(err, &netErr) {
+		errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || errors.As(err, &netErr) ||
+		errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return err
 	}
-	unappliable := executed
+	unappliable := errors.Is(err, ErrValidation)
 	var pqErr *pq.Error
 	if errors.As(err, &pqErr) {
 		switch pqErr.Code.Class() {
@@ -302,7 +303,7 @@ func applyErr(err error, executed bool) error {
 
 func (s *EventService) persistAndApply(ctx context.Context, event *Event, sequenced bool) (stored *Event, dup bool, err error) {
 	defer func() {
-		err = applyErr(err, false)
+		err = applyErr(err)
 		if err != nil {
 			log.Debug().Str("eventId", event.ID).Err(err).Msg("[EVENT] Rejected, nothing persisted")
 		}
@@ -376,7 +377,7 @@ func (s *EventService) persistAndApply(ctx context.Context, event *Event, sequen
 	}
 
 	if err := txs.executeEvent(ctx, event); err != nil {
-		return nil, false, applyErr(fmt.Errorf("execution failed: %w", err), true)
+		return nil, false, fmt.Errorf("execution failed: %w", err)
 	}
 	log.Debug().
 		Str("eventId", event.ID).
@@ -813,12 +814,12 @@ func (s *EventService) executeMemberRoleChanged(ctx context.Context, event *Even
 func (s *EventService) executeComponentDataChanged(ctx context.Context, event *Event) error {
 	componentID, ok := event.Data["componentId"].(string)
 	if !ok || componentID == "" {
-		return fmt.Errorf("missing componentId in component_data_changed event")
+		return fmt.Errorf("%w: missing componentId in component_data_changed event", ErrValidation)
 	}
 
 	changedFieldsRaw, ok := event.Data["changedFields"].(map[string]interface{})
 	if !ok {
-		return fmt.Errorf("missing changedFields in component_data_changed event")
+		return fmt.Errorf("%w: missing changedFields in component_data_changed event", ErrValidation)
 	}
 
 	// Get current component
@@ -857,7 +858,7 @@ func (s *EventService) executeReminderChanged(ctx context.Context, event *Event)
 
 	var data ReminderChangedData
 	if err := UnmarshalData(event.Data, &data); err != nil {
-		return fmt.Errorf("failed to unmarshal reminder_changed data: %w", err)
+		return fmt.Errorf("%w: failed to unmarshal reminder_changed data: %w", ErrValidation, err)
 	}
 
 	return s.reminderStore.ApplyRuleChange(ctx, &data)

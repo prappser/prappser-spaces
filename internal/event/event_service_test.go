@@ -3,6 +3,7 @@ package event
 import (
 	"context"
 	"database/sql/driver"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -437,7 +438,7 @@ func TestApplyErr_UniqueViolationOnOtherConstraint_ShouldBeUnappliable(t *testin
 	err := fmt.Errorf("persistence failed: %w", &pq.Error{Code: "23505", Constraint: "idx_members_app_key"})
 
 	// when
-	got := applyErr(err, false)
+	got := applyErr(err)
 
 	// then
 	assert.ErrorIs(t, got, ErrUnappliable)
@@ -448,7 +449,7 @@ func TestApplyErr_NotNullViolation_ShouldBeUnappliable(t *testing.T) {
 	err := &pq.Error{Code: "23502"}
 
 	// when
-	got := applyErr(err, false)
+	got := applyErr(err)
 
 	// then
 	assert.ErrorIs(t, got, ErrUnappliable)
@@ -459,7 +460,7 @@ func TestApplyErr_CheckViolation_ShouldBeUnappliable(t *testing.T) {
 	err := &pq.Error{Code: "23514"}
 
 	// when
-	got := applyErr(err, false)
+	got := applyErr(err)
 
 	// then
 	assert.ErrorIs(t, got, ErrUnappliable)
@@ -470,7 +471,7 @@ func TestApplyErr_DuplicateEventID_ShouldStayRetryable(t *testing.T) {
 	err := fmt.Errorf("persistence failed: %w", &pq.Error{Code: "23505", Constraint: "events_pkey"})
 
 	// when
-	got := applyErr(err, false)
+	got := applyErr(err)
 
 	// then
 	assert.NotErrorIs(t, got, ErrUnappliable)
@@ -481,7 +482,7 @@ func TestApplyErr_LockTimeoutDuringExecute_ShouldStayRetryable(t *testing.T) {
 	err := fmt.Errorf("execution failed: %w", &pq.Error{Code: "55P03"})
 
 	// when
-	got := applyErr(err, true)
+	got := applyErr(err)
 
 	// then
 	assert.NotErrorIs(t, got, ErrUnappliable)
@@ -492,7 +493,7 @@ func TestApplyErr_SerializationFailureDuringExecute_ShouldStayRetryable(t *testi
 	err := fmt.Errorf("execution failed: %w", &pq.Error{Code: "40001"})
 
 	// when
-	got := applyErr(err, true)
+	got := applyErr(err)
 
 	// then
 	assert.NotErrorIs(t, got, ErrUnappliable)
@@ -503,7 +504,7 @@ func TestApplyErr_DeadlockDuringExecute_ShouldStayRetryable(t *testing.T) {
 	err := fmt.Errorf("execution failed: %w", &pq.Error{Code: "40P01"})
 
 	// when
-	got := applyErr(err, true)
+	got := applyErr(err)
 
 	// then
 	assert.NotErrorIs(t, got, ErrUnappliable)
@@ -514,7 +515,7 @@ func TestApplyErr_ConnectionFailureDuringExecute_ShouldStayRetryable(t *testing.
 	err := fmt.Errorf("execution failed: %w", &pq.Error{Code: "08006"})
 
 	// when
-	got := applyErr(err, true)
+	got := applyErr(err)
 
 	// then
 	assert.NotErrorIs(t, got, ErrUnappliable)
@@ -525,7 +526,7 @@ func TestApplyErr_BadConnDuringExecute_ShouldStayRetryable(t *testing.T) {
 	err := fmt.Errorf("execution failed: %w", driver.ErrBadConn)
 
 	// when
-	got := applyErr(err, true)
+	got := applyErr(err)
 
 	// then
 	assert.NotErrorIs(t, got, ErrUnappliable)
@@ -536,8 +537,91 @@ func TestApplyErr_DataExceptionOutsideExecute_ShouldBeUnappliable(t *testing.T) 
 	err := fmt.Errorf("persistence failed: %w", &pq.Error{Code: "22021"})
 
 	// when
-	got := applyErr(err, false)
+	got := applyErr(err)
 
 	// then
 	assert.ErrorIs(t, got, ErrUnappliable)
+}
+
+func TestApplyErr_ContextCanceledDuringExecute_ShouldStayRetryable(t *testing.T) {
+	// given
+	err := fmt.Errorf("execution failed: %w", context.Canceled)
+
+	// when
+	got := applyErr(err)
+
+	// then
+	assert.NotErrorIs(t, got, ErrUnappliable)
+}
+
+func TestApplyErr_DeadlineExceededDuringExecute_ShouldStayRetryable(t *testing.T) {
+	// given
+	err := fmt.Errorf("execution failed: %w", context.DeadlineExceeded)
+
+	// when
+	got := applyErr(err)
+
+	// then
+	assert.NotErrorIs(t, got, ErrUnappliable)
+}
+
+func TestApplyErr_EnvironmentalErrorDuringExecute_ShouldStayRetryable(t *testing.T) {
+	// given
+	err := fmt.Errorf("execution failed: %w", errors.New("storage unavailable"))
+
+	// when
+	got := applyErr(err)
+
+	// then
+	assert.NotErrorIs(t, got, ErrUnappliable)
+}
+
+func TestApplyErr_ValidationErrorDuringExecute_ShouldBeUnappliable(t *testing.T) {
+	// given
+	err := fmt.Errorf("execution failed: %w", fmt.Errorf("%w: unknown change type", ErrValidation))
+
+	// when
+	got := applyErr(err)
+
+	// then
+	assert.ErrorIs(t, got, ErrUnappliable)
+}
+
+func TestExecuteComponentDataChanged_MissingComponentID_ShouldBeValidationError(t *testing.T) {
+	// given
+	svc := NewEventService(nil, nil, nil, nil)
+	evt := &Event{ID: "evt-cdc-1", Type: EventTypeComponentDataChanged, Data: map[string]interface{}{"changedFields": map[string]interface{}{}}}
+
+	// when
+	err := svc.executeComponentDataChanged(context.Background(), evt)
+
+	// then
+	assert.ErrorIs(t, err, ErrValidation)
+}
+
+func TestExecuteComponentDataChanged_MissingChangedFields_ShouldBeValidationError(t *testing.T) {
+	// given
+	svc := NewEventService(nil, nil, nil, nil)
+	evt := &Event{ID: "evt-cdc-2", Type: EventTypeComponentDataChanged, Data: map[string]interface{}{"componentId": "comp-1"}}
+
+	// when
+	err := svc.executeComponentDataChanged(context.Background(), evt)
+
+	// then
+	assert.ErrorIs(t, err, ErrValidation)
+}
+
+func TestExecuteReminderChanged_DueAtOverflowingInt64_ShouldBeValidationError(t *testing.T) {
+	// given
+	svc := NewEventService(nil, nil, nil, nil)
+	svc.SetReminderStore(&fakeReminderStore{})
+	data := reminderChangedEventData()
+	data["dueAt"] = 1e300
+	evt := &Event{ID: "evt-rc-overflow", Type: EventTypeReminderChanged, Data: data}
+
+	// when
+	err := svc.executeReminderChanged(context.Background(), evt)
+
+	// then
+	assert.ErrorIs(t, err, ErrValidation)
 }
