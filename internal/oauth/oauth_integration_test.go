@@ -6,11 +6,14 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/x509"
 	"database/sql"
 	"encoding/base64"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -535,4 +538,48 @@ func TestOAuthToken_IssueTokensServerError_ShouldKeepCodeUsable_Integration(t *t
 	f.svc.store.mu.Lock()
 	defer f.svc.store.mu.Unlock()
 	assert.False(t, f.svc.store.codes[hashCode(code)].used)
+}
+
+func TestAuthorize_ShouldRefuseHTTPSLoopbackClientID_WhenSSRFGuardIsActive_Integration(t *testing.T) {
+	// given
+	f := newFixture(t, nil)
+	var hits atomic.Int32
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		_ = json.NewEncoder(w).Encode(goodDoc(f.clientID))
+	}))
+	t.Cleanup(srv.Close)
+	pool := x509.NewCertPool()
+	pool.AddCert(srv.Certificate())
+	f.clientID = srv.URL + "/client.json"
+	f.svc.fetcher = &metadataFetcher{client: newSafeClient(isPublicAddr, pool)}
+	_, challenge := pkcePair()
+
+	// when
+	ctx := f.authorize(challenge, nil)
+
+	// then
+	assert.Equal(t, fasthttp.StatusBadRequest, ctx.Response.StatusCode(), string(ctx.Response.Body()))
+	assert.Zero(t, hits.Load())
+}
+
+func TestAuthorize_ShouldRefuseHTTPLoopbackClientID_WithProductionFetcher_Integration(t *testing.T) {
+	// given
+	f := newFixture(t, nil)
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		_ = json.NewEncoder(w).Encode(goodDoc(f.clientID))
+	}))
+	t.Cleanup(srv.Close)
+	f.clientID = srv.URL + "/client.json"
+	f.svc.fetcher = newMetadataFetcher()
+	_, challenge := pkcePair()
+
+	// when
+	ctx := f.authorize(challenge, nil)
+
+	// then
+	assert.Equal(t, fasthttp.StatusBadRequest, ctx.Response.StatusCode(), string(ctx.Response.Body()))
+	assert.Zero(t, hits.Load())
 }
