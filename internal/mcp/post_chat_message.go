@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/google/uuid"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -114,7 +113,7 @@ func addPostChatMessage(s *sdk.Server, d Deps) {
 		if text == "" {
 			return nil, postChatOut{}, fmt.Errorf("text is required")
 		}
-		if utf8.RuneCountInString(text) > maxChatTextLen {
+		if utf16Len(text) > maxChatTextLen {
 			return nil, postChatOut{}, fmt.Errorf("text is longer than %d characters", maxChatTextLen)
 		}
 		app, err := d.Apps.GetApplication(in.AppID, u)

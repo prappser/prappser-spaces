@@ -124,7 +124,7 @@ func cleanTitle(raw string) (string, error) {
 	if title == "" {
 		return "", errors.New("title is required")
 	}
-	if len(utf16.Encode([]rune(title))) > maxChecklistTitleUnits {
+	if utf16Len(title) > maxChecklistTitleUnits {
 		return "", fmt.Errorf("title is longer than %d characters", maxChecklistTitleUnits)
 	}
 	return title, nil
@@ -135,12 +135,20 @@ func flagOff(data map[string]any, name string) bool {
 	return ok && !v
 }
 
-func validationResult(err error) (*sdk.CallToolResult, bool) {
+func utf16Len(s string) int {
+	return len(utf16.Encode([]rune(s)))
+}
+
+func fieldsResult(what string, fields []component.FieldError) *sdk.CallToolResult {
+	return errorResult(map[string]any{"note": untrustedNote, "error": what, "untrusted": map[string]any{"fields": fields}})
+}
+
+func validationResult(err error, what string) (*sdk.CallToolResult, bool) {
 	var ve component.ValidationErrors
 	if !errors.As(err, &ve) {
 		return nil, false
 	}
-	return errorResult(map[string]any{"note": untrustedNote, "error": "invalid data", "untrusted": map[string]any{"fields": []component.FieldError(ve)}}), true
+	return fieldsResult(what, ve), true
 }
 
 type checklistTarget struct {
@@ -175,7 +183,7 @@ func (t checklistTarget) privileged() bool {
 func writeItem(ctx context.Context, d Deps, u *user.User, appID string, t checklistTarget, itemID string, value map[string]any) (*sdk.CallToolResult, checklistItemOut, error) {
 	key := itemKeyPrefix + itemID
 	if err := d.Validator.ValidateComponentData(checklistComponentName, map[string]any{key: value}); err != nil {
-		if res, ok := validationResult(err); ok {
+		if res, ok := validationResult(err, "invalid data"); ok {
 			return res, checklistItemOut{}, nil
 		}
 		return nil, checklistItemOut{}, toolError(err)

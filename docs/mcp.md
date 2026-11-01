@@ -34,7 +34,18 @@ Everything under `untrusted` was written by app members. It comes with the note 
 
 Both checklist tools write only the one `item_<itemId>` key, so a concurrent edit by another member to a different item is never overwritten. The patch is checked against the Checklist schema before it is sent; a rejected patch comes back as an error listing the field paths under `untrusted`. Viewers cannot edit. Members (not owner or admin) are also bound by the checklist's `allowAddInUsage` (adding, renaming) and `allowToggleInUsage` (checking) settings. `componentId` is only needed when the app has several checklists; the error then lists them.
 
-Failures come back as tool errors with a short message. There are no delete tools. `create_app` is coming later.
+- `create_app {doc}`: creates a new app owned by the account from a TemplateDoc v1: `{name, description, icon, groups: [{name, index, components: [{type, index, data}]}]}`. Returns `{appId, name}`. The account's other devices get the new app through an `application_created` event.
+
+`create_app` checks the document in this order and creates nothing on a failure:
+
+1. At most 64 KiB as JSON, else "template is too large".
+2. The TemplateDoc schema (also the component data schemas). Chat messages, reactions, votes and expenses (`m_`, `react_`, `vote_`, `e_`, `s_` keys) and a checklist's legacy `items` list are not allowed.
+3. Name 1 to 64 characters after trimming, counted in UTF-16 units like the app. The schema requires `description`, but it is ignored and not stored.
+4. No references to people or files. These are rejected, not stripped: a checklist item's `assignedMemberId` or `attachmentIds`, images and videos in checklist details or Text, a Map marker's `createdBy` and any `otherUsers`, and any Files `items`.
+
+A rejected document comes back as an error listing the field paths under `untrusted`; an oversized document gets one field at path `""` with its byte count. Every app, group, component and member id is new; `index` values and component data (including `item_<id>` keys) are kept, and the description is ignored. The account is the only member, as owner. A non-owner account that already has its maximum number of apps gets the error "you have reached your app limit" with an empty field list. If the app is created but announcing it to the account's other devices fails, the result carries a `warning` and the call must not be retried, since a retry creates a second app. The new app is open to agents like any other (`agentReadEnabled` is on by default).
+
+Failures come back as tool errors with a short message. There are no delete tools.
 
 ## Agent access per app
 
@@ -46,7 +57,7 @@ When it is off, only the app owner's own agents can see the app. This blocks eve
 
 - Rate limits: 120 requests per minute per IP and 60 per minute per agent device, answered with 429 and `Retry-After`.
 - The IP limit runs before the token is checked. Behind a reverse proxy, keep `TRUST_PROXY` on (the default), as for the REST limits. Otherwise every client shares the proxy's IP, and requests with bad tokens can use up everyone's budget.
-- Request bodies over 64 KB get 413. fasthttp has already read the body by then, so this saves MCP processing, not memory.
+- Request bodies over 128 KiB get 413. fasthttp has already read the body by then, so this saves MCP processing, not memory.
 - Tool calls, their arguments and tokens are not logged. Unexpected errors are logged without them.
 - Agents do not update last-seen.
 - To cut an agent off, revoke its device. Its token stops working at once.

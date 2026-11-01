@@ -130,8 +130,8 @@ func TestValidationResult_ShouldWrapFieldsAsUntrusted(t *testing.T) {
 	err := component.ValidationErrors{{Path: "/item_a", Message: "bad"}}
 
 	// when
-	res, ok := validationResult(err)
-	_, other := validationResult(errors.New("boom"))
+	res, ok := validationResult(err, "invalid data")
+	_, other := validationResult(errors.New("boom"), "invalid data")
 
 	// then
 	require.True(t, ok)
