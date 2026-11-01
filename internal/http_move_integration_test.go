@@ -96,7 +96,7 @@ func newMoveFixture(t *testing.T) *moveFixture {
 		event.NewEventEndpoints(eventService), nil,
 		storage.NewEndpoints(storageService, appRepo, eventService, userRepo, "http://a.example"),
 		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
-		application.NewMoveEndpoints(application.NewMoveService(appRepo, eventService, storageService)))
+		application.NewMoveEndpoints(application.NewMoveService(appRepo, eventService, storageService)), nil)
 
 	f := &moveFixture{t: t, db: db, handler: handler, tokens: map[string]string{}, spy: spy, storageDir: storageDir,
 		purger: storage.NewStoragePurgeScheduler(appRepo, storageService)}

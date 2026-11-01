@@ -32,6 +32,7 @@ type Config struct {
 	// MaxAccounts caps accounts on the space, owner included; 0 means unlimited.
 	MaxAccounts int
 	MCPEnabled bool
+	AppURL string
 }
 
 type StorageConfig struct {
@@ -53,6 +54,7 @@ type StorageConfig struct {
 // Defaults
 const (
 	defaultPort                    = "4545"
+	defaultAppURL                  = "https://prappser.app"
 	defaultJWTExpirationHours      = 24
 	defaultChallengeTTLSec         = 300
 	defaultRegistrationTokenTTLSec = 10
@@ -136,6 +138,8 @@ func LoadConfig() (*Config, error) {
 
 	// External URL
 	config.ExternalURL = resolveExternalURL(envExternalURL, envHostingProvider)
+
+	config.AppURL = strings.TrimRight(getEnvOrDefault("APP_URL", defaultAppURL), "/")
 
 	// Allowed Origins
 	if envAllowedOrigins != "" {

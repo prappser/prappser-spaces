@@ -21,7 +21,7 @@ func newSpaceProfileRouteHandler(t *testing.T, role string) (fasthttp.RequestHan
 	assert.NoError(t, err)
 
 	endpoints := spaceprofile.NewSpaceProfileEndpoints(nil, nil, nil)
-	handler := NewRequestHandler(&Config{TrustProxyHeaders: true}, nil, nil, nil, userService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, endpoints, nil)
+	handler := NewRequestHandler(&Config{TrustProxyHeaders: true}, nil, nil, nil, userService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, endpoints, nil, nil)
 	return handler, token
 }
 

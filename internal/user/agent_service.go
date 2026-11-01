@@ -69,6 +69,14 @@ func hashRefreshToken(token string) string {
 	return hex.EncodeToString(sum[:])
 }
 
+func (as *AgentService) CanAddAgent(userPublicKey string) (bool, error) {
+	n, err := as.repo.countLiveAgents(userPublicKey, time.Now().Unix())
+	if err != nil {
+		return false, err
+	}
+	return n < maxLiveAgentsPerAccount, nil
+}
+
 func (as *AgentService) IssueTokens(userPublicKey, name string) (*AgentTokens, error) {
 	now := time.Now()
 	n, err := as.repo.countLiveAgents(userPublicKey, now.Unix())

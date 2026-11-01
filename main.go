@@ -35,6 +35,7 @@ import (
 	"github.com/prappser/prappser-spaces/internal/invitation"
 	"github.com/prappser/prappser-spaces/internal/keys"
 	"github.com/prappser/prappser-spaces/internal/mcp"
+	"github.com/prappser/prappser-spaces/internal/oauth"
 	"github.com/prappser/prappser-spaces/internal/profile"
 	"github.com/prappser/prappser-spaces/internal/push"
 	"github.com/prappser/prappser-spaces/internal/reminder"
@@ -257,7 +258,10 @@ func main() {
 
 	adminEndpoints := admin.NewAdminEndpoints(admin.NewRepository(db), admin.Limits{AccountQuotaBytes: config.Storage.AccountQuota, MaxAppsPerAccount: config.MaxAppsPerAccount})
 
-	requestHandler := internal.NewRequestHandler(config, userEndpoints, statusEndpoints, healthEndpoints, userService, appEndpoints, invitationEndpoints, eventEndpoints, setupEndpoints, storageEndpoints, wsHandler, spaceEndpoints, pushEndpoints, profileEndpoints, deviceEndpoints, passwordEndpoints, assertionEndpoints, ownerClaimEndpoints, keyEndpoints, accountEndpoints, adminEndpoints, registerEndpoints, spaceprofile.NewSpaceProfileEndpoints(spaceProfileRepository, storageRepo, eventService), moveEndpoints)
+	agentService := user.NewAgentService(db, userRepository, privateKey, publicKey, config.ExternalURL)
+	oauthEndpoints := oauth.NewEndpoints(oauth.NewService(agentService, userRepository, config.ExternalURL, config.AppURL), config.TrustProxyHeaders)
+
+	requestHandler := internal.NewRequestHandler(config, userEndpoints, statusEndpoints, healthEndpoints, userService, appEndpoints, invitationEndpoints, eventEndpoints, setupEndpoints, storageEndpoints, wsHandler, spaceEndpoints, pushEndpoints, profileEndpoints, deviceEndpoints, passwordEndpoints, assertionEndpoints, ownerClaimEndpoints, keyEndpoints, accountEndpoints, adminEndpoints, registerEndpoints, spaceprofile.NewSpaceProfileEndpoints(spaceProfileRepository, storageRepo, eventService), moveEndpoints, oauthEndpoints)
 
 	var handler fasthttp.RequestHandler = requestHandler
 	if config.MCPEnabled {
@@ -265,7 +269,7 @@ func main() {
 			Apps:              appService,
 			Invitations:       invitationService,
 			Events:            eventService,
-			Agents:            user.NewAgentService(db, userRepository, privateKey, publicKey, config.ExternalURL),
+			Agents:            agentService,
 			ExternalURL:       config.ExternalURL,
 			TrustProxyHeaders: config.TrustProxyHeaders,
 		})

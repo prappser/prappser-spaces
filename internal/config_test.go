@@ -178,3 +178,20 @@ func TestLoadConfig_MCPEnabledWithoutExternalURL_ShouldStayOff(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, config.MCPEnabled)
 }
+
+func TestLoadConfig_AppURL_ShouldDefaultAndTrimTrailingSlash(t *testing.T) {
+	// given
+	t.Setenv("MASTER_PASSWORD", "test")
+	t.Setenv("APP_URL", "")
+	defaultConfig, err := LoadConfig()
+	require.NoError(t, err)
+	t.Setenv("APP_URL", "https://app.example.com/")
+
+	// when
+	custom, err := LoadConfig()
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, "https://prappser.app", defaultConfig.AppURL)
+	assert.Equal(t, "https://app.example.com", custom.AppURL)
+}
