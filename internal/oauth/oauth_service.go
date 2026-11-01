@@ -309,7 +309,13 @@ func (s *Service) exchangeCode(p tokenParams) (*TokenResponse, error) {
 		log.Error().Err(err).Msg("[OAUTH] Failed to issue tokens")
 		return nil, newError(CodeServerError, "failed to issue tokens")
 	}
-	s.store.setCodeDevice(p.Code, tokens.DevicePublicKey)
+	if s.store.setCodeDevice(p.Code, tokens.DevicePublicKey) {
+		if err := s.users.RevokeDevice(tokens.DevicePublicKey, nowFunc().Unix()); err != nil {
+			log.Error().Err(err).Msg("[OAUTH] Failed to revoke device after code replay during issuance")
+		}
+		log.Warn().Msg("[OAUTH] Authorization code replayed during token issuance, device revoked")
+		return nil, newError(CodeInvalidGrant, "authorization code is invalid or expired")
+	}
 	return tokenResponse(tokens), nil
 }
 

@@ -237,10 +237,12 @@ func (s *store) unmarkCode(code string) {
 	}
 }
 
-func (s *store) setCodeDevice(code, deviceKey string) {
+func (s *store) setCodeDevice(code, deviceKey string) (reuseSeen bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if entry, ok := s.codes[hashCode(code)]; ok {
 		entry.deviceKey = deviceKey
+		return entry.reuseSeen
 	}
+	return false
 }

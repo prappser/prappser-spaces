@@ -523,6 +523,72 @@ func TestStore_UnmarkCode_ShouldNotReviveCodeAfterReuseWasSeen(t *testing.T) {
 	assert.True(t, reused3)
 }
 
+func TestStore_SetCodeDevice_ShouldReportReuseSeen(t *testing.T) {
+	// given
+	s := newStore()
+	replayed, err := s.addCode(&authCode{clientID: "c"})
+	require.NoError(t, err)
+	clean, err := s.addCode(&authCode{clientID: "c"})
+	require.NoError(t, err)
+	s.consumeCode(replayed)
+	s.consumeCode(replayed)
+	s.consumeCode(clean)
+
+	// when
+	reuseOnReplayed := s.setCodeDevice(replayed, "device")
+	reuseOnClean := s.setCodeDevice(clean, "device")
+
+	// then
+	assert.True(t, reuseOnReplayed)
+	assert.False(t, reuseOnClean)
+}
+
+func fillPending(t *testing.T, s *store, pairCount int) (oldest string) {
+	t.Helper()
+	for i := 0; i < maxPending; i++ {
+		p := &pendingRequest{clientID: "other", sourceIP: strconv.Itoa(i), expiresAt: time.Now().Add(time.Hour)}
+		if i < pairCount {
+			p.clientID, p.sourceIP = "a", "ip-a"
+			p.expiresAt = time.Now().Add(time.Hour + time.Duration(i)*time.Second)
+		}
+		id := "id-" + strconv.Itoa(i)
+		s.pending[id] = p
+		if i == 0 {
+			oldest = id
+		}
+	}
+	return oldest
+}
+
+func TestStore_AddPending_ShouldAdmitWhenFullAndPairAtCapByEvictingItsOldest(t *testing.T) {
+	// given
+	s := newStore()
+	oldest := fillPending(t, s, maxPendingPerClientIP)
+
+	// when
+	id, err := s.addPending(&pendingRequest{clientID: "a", sourceIP: "ip-a"})
+
+	// then
+	require.NoError(t, err)
+	assert.NotContains(t, s.pending, oldest)
+	assert.Contains(t, s.pending, id)
+	assert.Len(t, s.pending, maxPending)
+}
+
+func TestStore_AddPending_ShouldReturnStoreFullAndEvictNothingWhenPairBelowCap(t *testing.T) {
+	// given
+	s := newStore()
+	oldest := fillPending(t, s, maxPendingPerClientIP-1)
+
+	// when
+	_, err := s.addPending(&pendingRequest{clientID: "a", sourceIP: "ip-a"})
+
+	// then
+	assert.ErrorIs(t, err, ErrStoreFull)
+	assert.Contains(t, s.pending, oldest)
+	assert.Len(t, s.pending, maxPending)
+}
+
 func TestApprove_ExpiredRequest_ShouldReturnNotFoundWithoutTouchingAgents(t *testing.T) {
 	// given
 	svc := NewService(nil, nil, testIssuer, "https://app.test")

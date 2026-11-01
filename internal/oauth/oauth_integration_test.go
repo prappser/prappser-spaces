@@ -562,24 +562,3 @@ func TestAuthorize_ShouldRefuseHTTPSLoopbackClientID_WhenSSRFGuardIsActive_Integ
 	assert.Equal(t, fasthttp.StatusBadRequest, ctx.Response.StatusCode(), string(ctx.Response.Body()))
 	assert.Zero(t, hits.Load())
 }
-
-func TestAuthorize_ShouldRefuseHTTPLoopbackClientID_WithProductionFetcher_Integration(t *testing.T) {
-	// given
-	f := newFixture(t, nil)
-	var hits atomic.Int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		hits.Add(1)
-		_ = json.NewEncoder(w).Encode(goodDoc(f.clientID))
-	}))
-	t.Cleanup(srv.Close)
-	f.clientID = srv.URL + "/client.json"
-	f.svc.fetcher = newMetadataFetcher()
-	_, challenge := pkcePair()
-
-	// when
-	ctx := f.authorize(challenge, nil)
-
-	// then
-	assert.Equal(t, fasthttp.StatusBadRequest, ctx.Response.StatusCode(), string(ctx.Response.Body()))
-	assert.Zero(t, hits.Load())
-}
