@@ -1,0 +1,233 @@
+{
+  "schema": "https://prappser.app/schemas/component/poll.v1.schema.json",
+  "cases": [
+    {
+      "name": "minimal",
+      "data": {
+        "question": "Dinner?",
+        "options": []
+      },
+      "valid": true
+    },
+    {
+      "name": "created",
+      "data": {
+        "v": 1,
+        "question": "Dinner?",
+        "options": [
+          {
+            "id": "o1",
+            "label": "Pizza"
+          },
+          {
+            "id": "o2",
+            "label": "Sushi"
+          }
+        ],
+        "closed": false
+      },
+      "valid": true
+    },
+    {
+      "name": "full with votes",
+      "data": {
+        "v": 1,
+        "question": "Dinner?",
+        "options": [
+          {
+            "id": "o1",
+            "label": "Pizza"
+          },
+          {
+            "id": "o2",
+            "label": "Sushi"
+          }
+        ],
+        "closed": true,
+        "vote_pk-alice": "o1",
+        "vote_pk-bob": "o2",
+        "_title": "Title",
+        "_sectionBreak": true,
+        "_width": 480,
+        "_spaceAbove": 8,
+        "_spaceBelow": 8
+      },
+      "valid": true
+    },
+    {
+      "name": "vote tombstone",
+      "data": {
+        "question": "Dinner?",
+        "options": [
+          {
+            "id": "o1",
+            "label": "Pizza"
+          },
+          {
+            "id": "o2",
+            "label": "Sushi"
+          }
+        ],
+        "vote_pk-alice": ""
+      },
+      "valid": true
+    },
+    {
+      "name": "vote for a deleted option stays valid",
+      "data": {
+        "question": "Dinner?",
+        "options": [
+          {
+            "id": "o1",
+            "label": "Pizza"
+          },
+          {
+            "id": "o2",
+            "label": "Sushi"
+          }
+        ],
+        "vote_pk-alice": "gone"
+      },
+      "valid": true
+    },
+    {
+      "name": "missing question",
+      "data": {
+        "options": [
+          {
+            "id": "o1",
+            "label": "Pizza"
+          },
+          {
+            "id": "o2",
+            "label": "Sushi"
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "missing options",
+      "data": {
+        "question": "Dinner?"
+      },
+      "valid": false
+    },
+    {
+      "name": "version 2",
+      "data": {
+        "v": 2,
+        "question": "Dinner?",
+        "options": [
+          {
+            "id": "o1",
+            "label": "Pizza"
+          },
+          {
+            "id": "o2",
+            "label": "Sushi"
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "option missing label",
+      "data": {
+        "question": "Dinner?",
+        "options": [
+          {
+            "id": "o1"
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "option unknown key",
+      "data": {
+        "question": "Dinner?",
+        "options": [
+          {
+            "id": "o1",
+            "label": "x",
+            "votes": 3
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "closed is a string",
+      "data": {
+        "question": "Dinner?",
+        "options": [
+          {
+            "id": "o1",
+            "label": "Pizza"
+          },
+          {
+            "id": "o2",
+            "label": "Sushi"
+          }
+        ],
+        "closed": "no"
+      },
+      "valid": false
+    },
+    {
+      "name": "vote is a number",
+      "data": {
+        "question": "Dinner?",
+        "options": [
+          {
+            "id": "o1",
+            "label": "Pizza"
+          },
+          {
+            "id": "o2",
+            "label": "Sushi"
+          }
+        ],
+        "vote_pk-alice": 1
+      },
+      "valid": false
+    },
+    {
+      "name": "vote key without a member",
+      "data": {
+        "question": "Dinner?",
+        "options": [
+          {
+            "id": "o1",
+            "label": "Pizza"
+          },
+          {
+            "id": "o2",
+            "label": "Sushi"
+          }
+        ],
+        "vote_": "o1"
+      },
+      "valid": false
+    },
+    {
+      "name": "unknown top-level key",
+      "data": {
+        "question": "Dinner?",
+        "options": [
+          {
+            "id": "o1",
+            "label": "Pizza"
+          },
+          {
+            "id": "o2",
+            "label": "Sushi"
+          }
+        ],
+        "votes": {}
+      },
+      "valid": false
+    }
+  ]
+}

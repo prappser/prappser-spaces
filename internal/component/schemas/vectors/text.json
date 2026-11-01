@@ -1,0 +1,191 @@
+{
+  "schema": "https://prappser.app/schemas/component/text.v1.schema.json",
+  "cases": [
+    {
+      "name": "empty data",
+      "data": {},
+      "valid": true
+    },
+    {
+      "name": "minimal document",
+      "data": {
+        "document": [
+          {
+            "insert": "\n"
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "full",
+      "data": {
+        "document": [
+          {
+            "insert": "Bring "
+          },
+          {
+            "insert": "passport",
+            "attributes": {
+              "bold": true,
+              "link": "https://example.com"
+            }
+          },
+          {
+            "insert": "\n",
+            "attributes": {
+              "header": 2
+            }
+          },
+          {
+            "insert": {
+              "image": "https://example.com/a.png"
+            }
+          },
+          {
+            "insert": "\n",
+            "attributes": {
+              "list": "bullet"
+            }
+          }
+        ],
+        "text": "",
+        "_title": "Title",
+        "_sectionBreak": true,
+        "_width": 480,
+        "_spaceAbove": 8,
+        "_spaceBelow": 8
+      },
+      "valid": true
+    },
+    {
+      "name": "legacy plain text only",
+      "data": {
+        "text": "hello"
+      },
+      "valid": true
+    },
+    {
+      "name": "legacy AppFlowy document object",
+      "data": {
+        "document": {
+          "document": {
+            "children": []
+          }
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "title tombstone",
+      "data": {
+        "_title": ""
+      },
+      "valid": true
+    },
+    {
+      "name": "unknown layout key is allowed",
+      "data": {
+        "_future": [
+          1,
+          2
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "document is a string",
+      "data": {
+        "document": "hello"
+      },
+      "valid": false
+    },
+    {
+      "name": "op without insert",
+      "data": {
+        "document": [
+          {
+            "attributes": {
+              "bold": true
+            }
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "op with retain",
+      "data": {
+        "document": [
+          {
+            "retain": 3
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "op with unknown key",
+      "data": {
+        "document": [
+          {
+            "insert": "x",
+            "extra": 1
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "insert is a number",
+      "data": {
+        "document": [
+          {
+            "insert": 5
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "attributes is a list",
+      "data": {
+        "document": [
+          {
+            "insert": "x",
+            "attributes": []
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "text is a number",
+      "data": {
+        "text": 5
+      },
+      "valid": false
+    },
+    {
+      "name": "unknown top-level key",
+      "data": {
+        "title": "x"
+      },
+      "valid": false
+    },
+    {
+      "name": "_title is a number",
+      "data": {
+        "_title": 5
+      },
+      "valid": false
+    },
+    {
+      "name": "_sectionBreak is a string",
+      "data": {
+        "_sectionBreak": "yes"
+      },
+      "valid": false
+    }
+  ]
+}

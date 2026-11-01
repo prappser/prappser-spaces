@@ -1,0 +1,506 @@
+{
+  "schema": "https://prappser.app/schemas/component/chat.v1.schema.json",
+  "cases": [
+    {
+      "name": "empty data",
+      "data": {},
+      "valid": true
+    },
+    {
+      "name": "created",
+      "data": {
+        "v": 1
+      },
+      "valid": true
+    },
+    {
+      "name": "full",
+      "data": {
+        "v": 1,
+        "m_01234567-89ab-7def-8123-456789abcdef": "{\"v\":1,\"sender\":\"pk-alice\",\"ts\":1760000000000,\"body\":\"hi\"}",
+        "m_11234567-89ab-7def-8123-456789abcdef": "{\"v\":1,\"sender\":\"pk-alice\",\"ts\":1760000000001,\"body\":\"photo.jpg\",\"attachments\":[{\"id\":\"01234567-89ab-7def-8123-456789abcdef\",\"name\":\"photo.jpg\",\"mime\":\"image/jpeg\",\"w\":800,\"h\":600},{\"id\":\"11234567-89ab-7def-8123-456789abcdef\",\"name\":\"a.pdf\",\"mime\":\"application/pdf\"}],\"bodyFallback\":true}",
+        "react_m_01234567-89ab-7def-8123-456789abcdef_pk-bob": "👍",
+        "_title": "Team",
+        "_sectionBreak": false
+      },
+      "valid": true
+    },
+    {
+      "name": "reaction tombstone",
+      "data": {
+        "v": 1,
+        "react_m_01234567-89ab-7def-8123-456789abcdef_pk-bob": ""
+      },
+      "valid": true
+    },
+    {
+      "name": "future non-JSON message value",
+      "data": {
+        "m_01234567-89ab-7def-8123-456789abcdef": "enc1:AAAA"
+      },
+      "valid": true
+    },
+    {
+      "name": "message tombstone value",
+      "data": {
+        "m_01234567-89ab-7def-8123-456789abcdef": ""
+      },
+      "valid": true
+    },
+    {
+      "name": "version 2",
+      "data": {
+        "v": 2
+      },
+      "valid": false
+    },
+    {
+      "name": "message key is not a uuid",
+      "data": {
+        "m_1": "{\"v\":1,\"sender\":\"pk-alice\",\"ts\":1760000000000,\"body\":\"hi\"}"
+      },
+      "valid": false
+    },
+    {
+      "name": "message key with uppercase uuid",
+      "data": {
+        "m_01234567-89AB-7DEF-8123-456789ABCDEF": "{\"v\":1,\"sender\":\"pk-alice\",\"ts\":1760000000000,\"body\":\"hi\"}"
+      },
+      "valid": false
+    },
+    {
+      "name": "message value is an object",
+      "data": {
+        "m_01234567-89ab-7def-8123-456789abcdef": {
+          "v": 1,
+          "sender": "pk-alice",
+          "ts": 1760000000000,
+          "body": "hi"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "reaction value is a number",
+      "data": {
+        "react_m_01234567-89ab-7def-8123-456789abcdef_pk-bob": 1
+      },
+      "valid": false
+    },
+    {
+      "name": "reaction without a member",
+      "data": {
+        "react_m_01234567-89ab-7def-8123-456789abcdef_": "x"
+      },
+      "valid": false
+    },
+    {
+      "name": "reaction on a non-message key",
+      "data": {
+        "react_x_pk-bob": "x"
+      },
+      "valid": false
+    },
+    {
+      "name": "unknown top-level key",
+      "data": {
+        "messages": []
+      },
+      "valid": false
+    },
+    {
+      "name": "message minimal",
+      "schema": "https://prappser.app/schemas/component/chat.v1.schema.json#/$defs/message",
+      "data": {
+        "v": 1,
+        "sender": "pk-alice",
+        "ts": 1760000000000,
+        "body": "hi"
+      },
+      "valid": true
+    },
+    {
+      "name": "message full",
+      "schema": "https://prappser.app/schemas/component/chat.v1.schema.json#/$defs/message",
+      "data": {
+        "v": 1,
+        "sender": "pk-alice",
+        "ts": 1760000000001,
+        "body": "photo.jpg",
+        "attachments": [
+          {
+            "id": "01234567-89ab-7def-8123-456789abcdef",
+            "name": "photo.jpg",
+            "mime": "image/jpeg",
+            "w": 800,
+            "h": 600
+          },
+          {
+            "id": "11234567-89ab-7def-8123-456789abcdef",
+            "name": "a.pdf",
+            "mime": "application/pdf"
+          }
+        ],
+        "bodyFallback": true
+      },
+      "valid": true
+    },
+    {
+      "name": "message missing sender",
+      "schema": "https://prappser.app/schemas/component/chat.v1.schema.json#/$defs/message",
+      "data": {
+        "v": 1,
+        "ts": 1,
+        "body": "x"
+      },
+      "valid": false
+    },
+    {
+      "name": "message missing body",
+      "schema": "https://prappser.app/schemas/component/chat.v1.schema.json#/$defs/message",
+      "data": {
+        "v": 1,
+        "sender": "pk-alice",
+        "ts": 1
+      },
+      "valid": false
+    },
+    {
+      "name": "message ts is a string",
+      "schema": "https://prappser.app/schemas/component/chat.v1.schema.json#/$defs/message",
+      "data": {
+        "v": 1,
+        "sender": "pk-alice",
+        "ts": "1",
+        "body": "hi"
+      },
+      "valid": false
+    },
+    {
+      "name": "message version 2",
+      "schema": "https://prappser.app/schemas/component/chat.v1.schema.json#/$defs/message",
+      "data": {
+        "v": 2,
+        "sender": "pk-alice",
+        "ts": 1760000000000,
+        "body": "hi"
+      },
+      "valid": false
+    },
+    {
+      "name": "message unknown key",
+      "schema": "https://prappser.app/schemas/component/chat.v1.schema.json#/$defs/message",
+      "data": {
+        "v": 1,
+        "sender": "pk-alice",
+        "ts": 1760000000000,
+        "body": "hi",
+        "edited": true
+      },
+      "valid": false
+    },
+    {
+      "name": "message bodyFallback is a string",
+      "schema": "https://prappser.app/schemas/component/chat.v1.schema.json#/$defs/message",
+      "data": {
+        "v": 1,
+        "sender": "pk-alice",
+        "ts": 1760000000000,
+        "body": "hi",
+        "bodyFallback": "yes"
+      },
+      "valid": false
+    },
+    {
+      "name": "message with 10 attachments",
+      "schema": "https://prappser.app/schemas/component/chat.v1.schema.json#/$defs/message",
+      "data": {
+        "v": 1,
+        "sender": "pk-alice",
+        "ts": 1760000000000,
+        "body": "hi",
+        "attachments": [
+          {
+            "id": "00000000-89ab-7def-8123-456789abcdef",
+            "name": "photo.jpg",
+            "mime": "image/jpeg",
+            "w": 800,
+            "h": 600
+          },
+          {
+            "id": "00000001-89ab-7def-8123-456789abcdef",
+            "name": "photo.jpg",
+            "mime": "image/jpeg",
+            "w": 800,
+            "h": 600
+          },
+          {
+            "id": "00000002-89ab-7def-8123-456789abcdef",
+            "name": "photo.jpg",
+            "mime": "image/jpeg",
+            "w": 800,
+            "h": 600
+          },
+          {
+            "id": "00000003-89ab-7def-8123-456789abcdef",
+            "name": "photo.jpg",
+            "mime": "image/jpeg",
+            "w": 800,
+            "h": 600
+          },
+          {
+            "id": "00000004-89ab-7def-8123-456789abcdef",
+            "name": "photo.jpg",
+            "mime": "image/jpeg",
+            "w": 800,
+            "h": 600
+          },
+          {
+            "id": "00000005-89ab-7def-8123-456789abcdef",
+            "name": "photo.jpg",
+            "mime": "image/jpeg",
+            "w": 800,
+            "h": 600
+          },
+          {
+            "id": "00000006-89ab-7def-8123-456789abcdef",
+            "name": "photo.jpg",
+            "mime": "image/jpeg",
+            "w": 800,
+            "h": 600
+          },
+          {
+            "id": "00000007-89ab-7def-8123-456789abcdef",
+            "name": "photo.jpg",
+            "mime": "image/jpeg",
+            "w": 800,
+            "h": 600
+          },
+          {
+            "id": "00000008-89ab-7def-8123-456789abcdef",
+            "name": "photo.jpg",
+            "mime": "image/jpeg",
+            "w": 800,
+            "h": 600
+          },
+          {
+            "id": "00000009-89ab-7def-8123-456789abcdef",
+            "name": "photo.jpg",
+            "mime": "image/jpeg",
+            "w": 800,
+            "h": 600
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "message with 11 attachments",
+      "schema": "https://prappser.app/schemas/component/chat.v1.schema.json#/$defs/message",
+      "data": {
+        "v": 1,
+        "sender": "pk-alice",
+        "ts": 1760000000000,
+        "body": "hi",
+        "attachments": [
+          {
+            "id": "00000000-89ab-7def-8123-456789abcdef",
+            "name": "photo.jpg",
+            "mime": "image/jpeg",
+            "w": 800,
+            "h": 600
+          },
+          {
+            "id": "00000001-89ab-7def-8123-456789abcdef",
+            "name": "photo.jpg",
+            "mime": "image/jpeg",
+            "w": 800,
+            "h": 600
+          },
+          {
+            "id": "00000002-89ab-7def-8123-456789abcdef",
+            "name": "photo.jpg",
+            "mime": "image/jpeg",
+            "w": 800,
+            "h": 600
+          },
+          {
+            "id": "00000003-89ab-7def-8123-456789abcdef",
+            "name": "photo.jpg",
+            "mime": "image/jpeg",
+            "w": 800,
+            "h": 600
+          },
+          {
+            "id": "00000004-89ab-7def-8123-456789abcdef",
+            "name": "photo.jpg",
+            "mime": "image/jpeg",
+            "w": 800,
+            "h": 600
+          },
+          {
+            "id": "00000005-89ab-7def-8123-456789abcdef",
+            "name": "photo.jpg",
+            "mime": "image/jpeg",
+            "w": 800,
+            "h": 600
+          },
+          {
+            "id": "00000006-89ab-7def-8123-456789abcdef",
+            "name": "photo.jpg",
+            "mime": "image/jpeg",
+            "w": 800,
+            "h": 600
+          },
+          {
+            "id": "00000007-89ab-7def-8123-456789abcdef",
+            "name": "photo.jpg",
+            "mime": "image/jpeg",
+            "w": 800,
+            "h": 600
+          },
+          {
+            "id": "00000008-89ab-7def-8123-456789abcdef",
+            "name": "photo.jpg",
+            "mime": "image/jpeg",
+            "w": 800,
+            "h": 600
+          },
+          {
+            "id": "00000009-89ab-7def-8123-456789abcdef",
+            "name": "photo.jpg",
+            "mime": "image/jpeg",
+            "w": 800,
+            "h": 600
+          },
+          {
+            "id": "00000010-89ab-7def-8123-456789abcdef",
+            "name": "photo.jpg",
+            "mime": "image/jpeg",
+            "w": 800,
+            "h": 600
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "attachment id is not a uuid",
+      "schema": "https://prappser.app/schemas/component/chat.v1.schema.json#/$defs/message",
+      "data": {
+        "v": 1,
+        "sender": "pk-alice",
+        "ts": 1760000000000,
+        "body": "hi",
+        "attachments": [
+          {
+            "id": "a1",
+            "name": "photo.jpg",
+            "mime": "image/jpeg",
+            "w": 800,
+            "h": 600
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "attachment bad mime",
+      "schema": "https://prappser.app/schemas/component/chat.v1.schema.json#/$defs/message",
+      "data": {
+        "v": 1,
+        "sender": "pk-alice",
+        "ts": 1760000000000,
+        "body": "hi",
+        "attachments": [
+          {
+            "id": "01234567-89ab-7def-8123-456789abcdef",
+            "name": "photo.jpg",
+            "mime": "jpeg",
+            "w": 800,
+            "h": 600
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "attachment missing name",
+      "schema": "https://prappser.app/schemas/component/chat.v1.schema.json#/$defs/message",
+      "data": {
+        "v": 1,
+        "sender": "pk-alice",
+        "ts": 1760000000000,
+        "body": "hi",
+        "attachments": [
+          {
+            "id": "01234567-89ab-7def-8123-456789abcdef",
+            "mime": "image/png"
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "attachment width zero",
+      "schema": "https://prappser.app/schemas/component/chat.v1.schema.json#/$defs/message",
+      "data": {
+        "v": 1,
+        "sender": "pk-alice",
+        "ts": 1760000000000,
+        "body": "hi",
+        "attachments": [
+          {
+            "id": "01234567-89ab-7def-8123-456789abcdef",
+            "name": "photo.jpg",
+            "mime": "image/jpeg",
+            "w": 0,
+            "h": 600
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "attachment height over 20000",
+      "schema": "https://prappser.app/schemas/component/chat.v1.schema.json#/$defs/message",
+      "data": {
+        "v": 1,
+        "sender": "pk-alice",
+        "ts": 1760000000000,
+        "body": "hi",
+        "attachments": [
+          {
+            "id": "01234567-89ab-7def-8123-456789abcdef",
+            "name": "photo.jpg",
+            "mime": "image/jpeg",
+            "w": 800,
+            "h": 20001
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "attachment unknown key",
+      "schema": "https://prappser.app/schemas/component/chat.v1.schema.json#/$defs/message",
+      "data": {
+        "v": 1,
+        "sender": "pk-alice",
+        "ts": 1760000000000,
+        "body": "hi",
+        "attachments": [
+          {
+            "id": "01234567-89ab-7def-8123-456789abcdef",
+            "name": "photo.jpg",
+            "mime": "image/jpeg",
+            "w": 800,
+            "h": 600,
+            "url": "x"
+          }
+        ]
+      },
+      "valid": false
+    }
+  ]
+}

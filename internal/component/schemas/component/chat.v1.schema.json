@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://prappser.app/schemas/component/chat.v1.schema.json",
+  "title": "Chat component data",
+  "description": "Chat. One m_<uuid> key per message, one react_<messageKey>_<publicKey> key per member and message.",
+  "type": "object",
+  "properties": {
+    "v": {
+      "const": 1,
+      "description": "Wire format version. Absent means 1.",
+      "x-merge": "single"
+    },
+    "_title": {
+      "type": "string",
+      "description": "Panel title. '' clears it (tombstone).",
+      "x-merge": "single"
+    },
+    "_sectionBreak": {
+      "type": "boolean",
+      "x-merge": "single"
+    },
+    "_width": {
+      "type": "number",
+      "x-merge": "single"
+    },
+    "_spaceAbove": {
+      "type": "number",
+      "x-merge": "single"
+    },
+    "_spaceBelow": {
+      "type": "number",
+      "x-merge": "single"
+    }
+  },
+  "patternProperties": {
+    "^m_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$": {
+      "type": "string",
+      "description": "JSON-encoded message, see $defs/message. Annotation only: '' and future non-JSON values are also stored here.",
+      "contentMediaType": "application/json",
+      "x-merge": "per-entry"
+    },
+    "^react_m_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}_.+$": {
+      "type": "string",
+      "description": "An emoji. '' removes the reaction (tombstone).",
+      "x-merge": "per-member"
+    },
+    "^_": {
+      "description": "Layout and UI keys. Any value.",
+      "x-merge": "single"
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "message": {
+      "type": "object",
+      "properties": {
+        "v": {
+          "const": 1
+        },
+        "sender": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ts": {
+          "type": "integer",
+          "description": "Epoch ms."
+        },
+        "body": {
+          "type": "string"
+        },
+        "attachments": {
+          "type": "array",
+          "maxItems": 10,
+          "items": {
+            "$ref": "#/$defs/attachment"
+          }
+        },
+        "bodyFallback": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "v",
+        "sender",
+        "ts",
+        "body"
+      ],
+      "additionalProperties": false
+    },
+    "attachment": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+        },
+        "name": {
+          "type": "string"
+        },
+        "mime": {
+          "type": "string",
+          "maxLength": 100,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9.+-]*/[a-zA-Z0-9][a-zA-Z0-9.+-]*$"
+        },
+        "w": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20000
+        },
+        "h": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20000
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "mime"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

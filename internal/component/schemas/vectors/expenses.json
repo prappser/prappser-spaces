@@ -1,0 +1,232 @@
+{
+  "schema": "https://prappser.app/schemas/component/expenses.v1.schema.json",
+  "cases": [
+    {
+      "name": "empty data",
+      "data": {},
+      "valid": true
+    },
+    {
+      "name": "created",
+      "data": {
+        "v": 1
+      },
+      "valid": true
+    },
+    {
+      "name": "full",
+      "data": {
+        "v": 1,
+        "e_01234567-89ab-7def-8123-456789abcdef": "{\"what\":\"Dinner\",\"payer\":\"pk-alice\",\"amount\":4250}",
+        "e_11234567-89ab-7def-8123-456789abcdef": "{\"what\":\"Dinner\",\"payer\":\"pk-alice\",\"amount\":4250,\"with\":[\"pk-alice\",\"pk-bob\"]}",
+        "s_01234567-89ab-7def-8123-456789abcdef": "{\"from\":\"pk-bob\",\"to\":\"pk-alice\",\"amount\":1000}",
+        "_title": "Title",
+        "_sectionBreak": true,
+        "_width": 480,
+        "_spaceAbove": 8,
+        "_spaceBelow": 8
+      },
+      "valid": true
+    },
+    {
+      "name": "deleted expense and settlement tombstones",
+      "data": {
+        "v": 1,
+        "e_01234567-89ab-7def-8123-456789abcdef": "",
+        "s_01234567-89ab-7def-8123-456789abcdef": ""
+      },
+      "valid": true
+    },
+    {
+      "name": "version 2",
+      "data": {
+        "v": 2
+      },
+      "valid": false
+    },
+    {
+      "name": "expense key is not a uuid",
+      "data": {
+        "e_1": "{\"what\":\"Dinner\",\"payer\":\"pk-alice\",\"amount\":4250}"
+      },
+      "valid": false
+    },
+    {
+      "name": "settlement key is not a uuid",
+      "data": {
+        "s_1": "{\"from\":\"pk-bob\",\"to\":\"pk-alice\",\"amount\":1000}"
+      },
+      "valid": false
+    },
+    {
+      "name": "expense value is an object",
+      "data": {
+        "e_01234567-89ab-7def-8123-456789abcdef": {
+          "what": "Dinner",
+          "payer": "pk-alice",
+          "amount": 4250
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "settlement value is a number",
+      "data": {
+        "s_01234567-89ab-7def-8123-456789abcdef": 5
+      },
+      "valid": false
+    },
+    {
+      "name": "unknown top-level key",
+      "data": {
+        "expenses": []
+      },
+      "valid": false
+    },
+    {
+      "name": "expense minimal",
+      "schema": "https://prappser.app/schemas/component/expenses.v1.schema.json#/$defs/expense",
+      "data": {
+        "what": "Dinner",
+        "payer": "pk-alice",
+        "amount": 4250
+      },
+      "valid": true
+    },
+    {
+      "name": "expense with participants",
+      "schema": "https://prappser.app/schemas/component/expenses.v1.schema.json#/$defs/expense",
+      "data": {
+        "what": "Dinner",
+        "payer": "pk-alice",
+        "amount": 4250,
+        "with": [
+          "pk-alice",
+          "pk-bob"
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "expense zero amount",
+      "schema": "https://prappser.app/schemas/component/expenses.v1.schema.json#/$defs/expense",
+      "data": {
+        "what": "Dinner",
+        "payer": "pk-alice",
+        "amount": 0
+      },
+      "valid": true
+    },
+    {
+      "name": "expense negative amount",
+      "schema": "https://prappser.app/schemas/component/expenses.v1.schema.json#/$defs/expense",
+      "data": {
+        "what": "Dinner",
+        "payer": "pk-alice",
+        "amount": -1
+      },
+      "valid": false
+    },
+    {
+      "name": "expense fractional amount",
+      "schema": "https://prappser.app/schemas/component/expenses.v1.schema.json#/$defs/expense",
+      "data": {
+        "what": "Dinner",
+        "payer": "pk-alice",
+        "amount": 12.5
+      },
+      "valid": false
+    },
+    {
+      "name": "expense amount is a string",
+      "schema": "https://prappser.app/schemas/component/expenses.v1.schema.json#/$defs/expense",
+      "data": {
+        "what": "Dinner",
+        "payer": "pk-alice",
+        "amount": "42"
+      },
+      "valid": false
+    },
+    {
+      "name": "expense missing payer",
+      "schema": "https://prappser.app/schemas/component/expenses.v1.schema.json#/$defs/expense",
+      "data": {
+        "what": "x",
+        "amount": 1
+      },
+      "valid": false
+    },
+    {
+      "name": "expense with is not a list",
+      "schema": "https://prappser.app/schemas/component/expenses.v1.schema.json#/$defs/expense",
+      "data": {
+        "what": "Dinner",
+        "payer": "pk-alice",
+        "amount": 4250,
+        "with": "pk-alice"
+      },
+      "valid": false
+    },
+    {
+      "name": "expense unknown key",
+      "schema": "https://prappser.app/schemas/component/expenses.v1.schema.json#/$defs/expense",
+      "data": {
+        "what": "Dinner",
+        "payer": "pk-alice",
+        "amount": 4250,
+        "currency": "EUR"
+      },
+      "valid": false
+    },
+    {
+      "name": "settlement valid",
+      "schema": "https://prappser.app/schemas/component/expenses.v1.schema.json#/$defs/settlement",
+      "data": {
+        "from": "pk-bob",
+        "to": "pk-alice",
+        "amount": 1000
+      },
+      "valid": true
+    },
+    {
+      "name": "settlement zero amount",
+      "schema": "https://prappser.app/schemas/component/expenses.v1.schema.json#/$defs/settlement",
+      "data": {
+        "from": "pk-bob",
+        "to": "pk-alice",
+        "amount": 0
+      },
+      "valid": false
+    },
+    {
+      "name": "settlement missing to",
+      "schema": "https://prappser.app/schemas/component/expenses.v1.schema.json#/$defs/settlement",
+      "data": {
+        "from": "pk-alice",
+        "amount": 1
+      },
+      "valid": false
+    },
+    {
+      "name": "settlement unknown key",
+      "schema": "https://prappser.app/schemas/component/expenses.v1.schema.json#/$defs/settlement",
+      "data": {
+        "from": "pk-bob",
+        "to": "pk-alice",
+        "amount": 1000,
+        "note": "x"
+      },
+      "valid": false
+    },
+    {
+      "name": "settlement from equals to is not caught here",
+      "schema": "https://prappser.app/schemas/component/expenses.v1.schema.json#/$defs/settlement",
+      "data": {
+        "from": "pk-bob",
+        "to": "pk-bob",
+        "amount": 1000
+      },
+      "valid": true
+    }
+  ]
+}

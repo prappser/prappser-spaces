@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://prappser.app/schemas/component/common.v1.schema.json",
+  "title": "Shared definitions",
+  "description": "Definitions referenced by several component schemas. Not a component type.",
+  "$defs": {
+    "quillOp": {
+      "type": "object",
+      "description": "One Quill delta insert op. Attributes are open-ended Quill attributes.",
+      "properties": {
+        "insert": {
+          "type": [
+            "string",
+            "object"
+          ]
+        },
+        "attributes": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "insert"
+      ],
+      "additionalProperties": false
+    },
+    "quillOps": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/quillOp"
+      }
+    }
+  }
+}

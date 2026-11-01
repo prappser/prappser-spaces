@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://prappser.app/schemas/component/text.v1.schema.json",
+  "title": "Text component data",
+  "description": "Rich text. 'document' is a Quill delta (array of ops); 'text' and the AppFlowy object form of 'document' are legacy but still read.",
+  "type": "object",
+  "properties": {
+    "document": {
+      "description": "Whole document, replaced as one value (last writer wins).",
+      "anyOf": [
+        {
+          "$ref": "https://prappser.app/schemas/component/common.v1.schema.json#/$defs/quillOps"
+        },
+        {
+          "type": "object",
+          "description": "Legacy AppFlowy form."
+        }
+      ],
+      "x-merge": "single"
+    },
+    "text": {
+      "type": "string",
+      "description": "Legacy plain text.",
+      "x-merge": "single"
+    },
+    "_title": {
+      "type": "string",
+      "description": "Panel title. '' clears it (tombstone).",
+      "x-merge": "single"
+    },
+    "_sectionBreak": {
+      "type": "boolean",
+      "x-merge": "single"
+    },
+    "_width": {
+      "type": "number",
+      "x-merge": "single"
+    },
+    "_spaceAbove": {
+      "type": "number",
+      "x-merge": "single"
+    },
+    "_spaceBelow": {
+      "type": "number",
+      "x-merge": "single"
+    }
+  },
+  "patternProperties": {
+    "^_": {
+      "description": "Layout and UI keys. Any value.",
+      "x-merge": "single"
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,228 @@
+{
+  "schema": "https://prappser.app/schemas/component/map.v1.schema.json",
+  "cases": [
+    {
+      "name": "minimal",
+      "data": {
+        "centerLatitude": 51.505,
+        "centerLongitude": -0.09
+      },
+      "valid": true
+    },
+    {
+      "name": "seeded",
+      "data": {
+        "centerLatitude": 51.505,
+        "centerLongitude": -0.09,
+        "zoom": 13.5,
+        "markers": [],
+        "allowAddMarkerInUsage": false
+      },
+      "valid": true
+    },
+    {
+      "name": "full",
+      "data": {
+        "centerLatitude": 51.505,
+        "centerLongitude": -0.09,
+        "zoom": 12.5,
+        "markers": [
+          {
+            "id": "k1",
+            "latitude": 51.5,
+            "longitude": -0.1,
+            "title": "Start"
+          },
+          {
+            "id": "k2",
+            "latitude": 52.2,
+            "longitude": 21.01,
+            "title": "Hotel",
+            "description": "Near the station",
+            "color": "teal",
+            "type": "waypoint",
+            "createdBy": "pk-alice",
+            "createdAtMs": 1760000000000
+          }
+        ],
+        "allowAddMarkerInUsage": true,
+        "routeEnabled": true,
+        "routeMarkerIds": [
+          "k1",
+          "k2"
+        ],
+        "routeColor": "purple",
+        "routeStrokeWidth": 4.5,
+        "showRouteDistance": false,
+        "trackUserLocation": false,
+        "useUserLocationInRoute": false,
+        "_title": "Title",
+        "_sectionBreak": true,
+        "_width": 480,
+        "_spaceAbove": 8,
+        "_spaceBelow": 8
+      },
+      "valid": true
+    },
+    {
+      "name": "legacy otherUsers",
+      "data": {
+        "centerLatitude": 1.5,
+        "centerLongitude": 2.5,
+        "otherUsers": [
+          {
+            "userId": "u1",
+            "displayName": "Ann",
+            "latitude": 1.5,
+            "longitude": 2.5,
+            "lastUpdated": "2026-01-01T10:00:00.000Z"
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "missing centerLongitude",
+      "data": {
+        "centerLatitude": 1.5
+      },
+      "valid": false
+    },
+    {
+      "name": "centerLatitude is a string",
+      "data": {
+        "centerLatitude": "1.5",
+        "centerLongitude": 2.5
+      },
+      "valid": false
+    },
+    {
+      "name": "marker missing title",
+      "data": {
+        "centerLatitude": 1.5,
+        "centerLongitude": 2.5,
+        "markers": [
+          {
+            "id": "k1",
+            "latitude": 1.5,
+            "longitude": 2.5
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "marker bad color",
+      "data": {
+        "centerLatitude": 1.5,
+        "centerLongitude": 2.5,
+        "markers": [
+          {
+            "id": "k1",
+            "latitude": 51.5,
+            "longitude": -0.1,
+            "title": "Start",
+            "color": "magenta"
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "marker bad type",
+      "data": {
+        "centerLatitude": 1.5,
+        "centerLongitude": 2.5,
+        "markers": [
+          {
+            "id": "k1",
+            "latitude": 51.5,
+            "longitude": -0.1,
+            "title": "Start",
+            "type": "finish"
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "marker negative createdAtMs",
+      "data": {
+        "centerLatitude": 1.5,
+        "centerLongitude": 2.5,
+        "markers": [
+          {
+            "id": "k1",
+            "latitude": 51.5,
+            "longitude": -0.1,
+            "title": "Start",
+            "createdAtMs": -1
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "marker unknown key",
+      "data": {
+        "centerLatitude": 1.5,
+        "centerLongitude": 2.5,
+        "markers": [
+          {
+            "id": "k1",
+            "latitude": 51.5,
+            "longitude": -0.1,
+            "title": "Start",
+            "icon": "pin"
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "bad routeColor",
+      "data": {
+        "centerLatitude": 1.5,
+        "centerLongitude": 2.5,
+        "routeColor": "black"
+      },
+      "valid": false
+    },
+    {
+      "name": "routeMarkerIds not strings",
+      "data": {
+        "centerLatitude": 1.5,
+        "centerLongitude": 2.5,
+        "routeMarkerIds": [
+          1
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "otherUsers entry missing lastUpdated",
+      "data": {
+        "centerLatitude": 1.5,
+        "centerLongitude": 2.5,
+        "otherUsers": [
+          {
+            "userId": "u1",
+            "displayName": "Ann",
+            "latitude": 1.5,
+            "longitude": 2.5
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "unknown top-level key",
+      "data": {
+        "centerLatitude": 1.5,
+        "centerLongitude": 2.5,
+        "marker": []
+      },
+      "valid": false
+    }
+  ]
+}

@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://prappser.app/schemas/component/countdown.v1.schema.json",
+  "title": "Countdown component data",
+  "description": "Countdown to an instant.",
+  "type": "object",
+  "properties": {
+    "v": {
+      "const": 1,
+      "description": "Wire format version. Absent means 1.",
+      "x-merge": "single"
+    },
+    "targetAt": {
+      "type": "integer",
+      "description": "Epoch ms. Cannot be cleared once set.",
+      "x-merge": "single"
+    },
+    "what": {
+      "type": "string",
+      "x-merge": "single"
+    },
+    "style": {
+      "enum": [
+        "ember",
+        "amber",
+        "punch",
+        "lagoon",
+        "iris",
+        "fern",
+        "dusk",
+        "slate"
+      ],
+      "x-merge": "single"
+    },
+    "emoji": {
+      "type": "string",
+      "x-merge": "single"
+    },
+    "precision": {
+      "enum": [
+        "auto",
+        "days",
+        "hours",
+        "minutes",
+        "seconds"
+      ],
+      "x-merge": "single"
+    },
+    "size": {
+      "enum": [
+        "small",
+        "medium",
+        "large"
+      ],
+      "x-merge": "single"
+    },
+    "runEditable": {
+      "type": "boolean",
+      "x-merge": "single"
+    },
+    "customColor": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 4294967295,
+      "description": "ARGB. null clears it (tombstone).",
+      "x-merge": "single"
+    },
+    "_title": {
+      "type": "string",
+      "description": "Panel title. '' clears it (tombstone).",
+      "x-merge": "single"
+    },
+    "_sectionBreak": {
+      "type": "boolean",
+      "x-merge": "single"
+    },
+    "_width": {
+      "type": "number",
+      "x-merge": "single"
+    },
+    "_spaceAbove": {
+      "type": "number",
+      "x-merge": "single"
+    },
+    "_spaceBelow": {
+      "type": "number",
+      "x-merge": "single"
+    }
+  },
+  "patternProperties": {
+    "^_": {
+      "description": "Layout and UI keys. Any value.",
+      "x-merge": "single"
+    }
+  },
+  "additionalProperties": false
+}
