@@ -49,6 +49,15 @@ type checklistItemOut struct {
 	Sequence int64  `json:"sequence"`
 }
 
+func findItem(data map[string]any, id string) map[string]any {
+	for _, it := range readChecklist(data) {
+		if it.id == id {
+			return it.value
+		}
+	}
+	return nil
+}
+
 func readChecklist(data map[string]any) []checklistItem {
 	byID := map[string]checklistItem{}
 	if list, ok := data["items"].([]any); ok {
@@ -242,14 +251,7 @@ func addUpdateChecklistItem(s *sdk.Server, d Deps) {
 				return nil, checklistItemOut{}, errors.New("this checklist does not allow checking items")
 			}
 		}
-		var value map[string]any
-		for _, it := range readChecklist(t.comp.Data) {
-			if it.id == in.ItemID {
-				value = it.value
-				break
-			}
-		}
-		if value == nil {
+		if findItem(t.comp.Data, in.ItemID) == nil {
 			return nil, checklistItemOut{}, errors.New("item not found")
 		}
 		fresh, err := d.Apps.GetApplication(in.AppID, u)
@@ -260,7 +262,8 @@ func addUpdateChecklistItem(s *sdk.Server, d Deps) {
 		if err != nil {
 			return nil, checklistItemOut{}, err
 		}
-		if v, ok := freshComp.Data[itemKeyPrefix+in.ItemID].(string); ok && v == "" {
+		value := findItem(freshComp.Data, in.ItemID)
+		if value == nil {
 			return nil, checklistItemOut{}, errors.New("item was deleted")
 		}
 		t.comp = freshComp
