@@ -33,6 +33,7 @@ type EventsMessage struct {
 type BroadcastMessage struct {
 	ApplicationID string
 	Event         *event.Event
+	Recipients    map[string]bool
 }
 
 type UserBroadcastMessage struct {

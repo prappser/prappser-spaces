@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/prappser/prappser-spaces/internal/application"
 )
 
 // ErrCursorNotFound means the client's sinceEventID no longer exists (its row
@@ -161,7 +163,7 @@ func (r *EventRepository) GetSince(userPublicKey string, sinceEventID string, li
 			         e.type, e.creator_public_key, e.version, e.data
 			  FROM events e
 			  INNER JOIN members m ON e.application_id = m.application_id
-			  WHERE m.public_key = $1 AND e.ordinal > $2)
+			  WHERE m.public_key = $1 AND e.ordinal > $2 AND ` + application.ActiveMemberPredicate + `)
 			 UNION ALL
 			 (SELECT e.ordinal, e.id, e.created_at, e.application_id, e.sequence_number,
 			         e.type, e.creator_public_key, e.version, e.data

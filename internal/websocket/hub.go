@@ -3,6 +3,7 @@ package websocket
 import (
 	"sync"
 
+	"github.com/prappser/prappser-spaces/internal/application"
 	"github.com/prappser/prappser-spaces/internal/event"
 	"github.com/rs/zerolog/log"
 )
@@ -16,10 +17,12 @@ type Hub struct {
 	broadcast     chan *BroadcastMessage
 	userBroadcast chan *UserBroadcastMessage
 	mu            sync.RWMutex
+	appRepo       application.ApplicationRepository
 }
 
-func NewHub() *Hub {
+func NewHub(appRepo application.ApplicationRepository) *Hub {
 	return &Hub{
+		appRepo:       appRepo,
 		clients:       make(map[*Client]bool),
 		byUser:        make(map[string][]*Client),
 		byApp:         make(map[string][]*Client),
@@ -141,8 +144,12 @@ func (h *Hub) Unsubscribe(client *Client, applicationID string) {
 
 func (h *Hub) broadcastToApp(msg *BroadcastMessage) {
 	h.mu.RLock()
-	clients := make([]*Client, len(h.byApp[msg.ApplicationID]))
-	copy(clients, h.byApp[msg.ApplicationID])
+	var clients []*Client
+	for _, c := range h.byApp[msg.ApplicationID] {
+		if msg.Recipients[c.user.PublicKey] {
+			clients = append(clients, c)
+		}
+	}
 	h.mu.RUnlock()
 
 	if len(clients) == 0 {
@@ -218,9 +225,30 @@ func (h *Hub) Unregister(client *Client) {
 }
 
 func (h *Hub) BroadcastToApplication(applicationID string, ev *event.Event) {
+	members, err := h.appRepo.GetMembersByApplicationID(applicationID)
+	if err != nil {
+		log.Warn().
+			Err(err).
+			Str("applicationId", applicationID).
+			Msg("[WS] Failed to load members, dropping broadcast")
+		return
+	}
+
+	recipients := make(map[string]bool, len(members)+1)
+	for _, m := range members {
+		recipients[m.PublicKey] = true
+	}
+	if ev.Type == event.EventTypeMemberRemoved {
+		// the member row is already deleted, but the removed client needs its own member_removed
+		if key, ok := ev.Data["memberPublicKey"].(string); ok && key != "" {
+			recipients[key] = true
+		}
+	}
+
 	h.broadcast <- &BroadcastMessage{
 		ApplicationID: applicationID,
 		Event:         ev,
+		Recipients:    recipients,
 	}
 }
 
