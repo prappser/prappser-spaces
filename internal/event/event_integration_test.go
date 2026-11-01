@@ -129,7 +129,7 @@ func seedRoleApp(t *testing.T, db *sql.DB, prefix string) *application.Repositor
 func TestAcceptEvent_MemberRoleChanged_AdminPromotesMemberPersistsRole(t *testing.T) {
 	db := testdb.Connect(t, "event")
 	defer db.Close()
-	prefix := "test-admin91-promote-"
+	prefix := "test-role-promote-"
 	appRepo := seedRoleApp(t, db, prefix)
 	service := NewEventService(NewEventRepository(db), appRepo, nil, nil)
 	evt := &Event{
@@ -160,7 +160,7 @@ func TestAcceptEvent_MemberRoleChanged_AdminPromotesMemberPersistsRole(t *testin
 func TestAcceptEvent_DemotedAdminInFlightEvent_RejectedAndNotPersisted(t *testing.T) {
 	db := testdb.Connect(t, "event")
 	defer db.Close()
-	prefix := "test-admin91-demoted-"
+	prefix := "test-role-demoted-"
 	appRepo := seedRoleApp(t, db, prefix)
 	service := NewEventService(NewEventRepository(db), appRepo, nil, nil)
 	inFlight := &Event{
@@ -208,7 +208,7 @@ func TestAcceptEvent_DemotedAdminInFlightEvent_RejectedAndNotPersisted(t *testin
 func TestAcceptEvent_ExpiredAdmin_RejectedAndNotPersisted(t *testing.T) {
 	db := testdb.Connect(t, "event")
 	defer db.Close()
-	prefix := "test-admin91-expired-"
+	prefix := "test-role-expired-"
 	appRepo := seedRoleApp(t, db, prefix)
 	service := NewEventService(NewEventRepository(db), appRepo, nil, nil)
 	if _, err := db.Exec("UPDATE members SET membership_expires_at = $1 WHERE application_id = $2 AND public_key = $3", time.Now().Add(-time.Hour).Unix(), prefix+"app", prefix+"admin"); err != nil {
@@ -239,6 +239,52 @@ func TestAcceptEvent_ExpiredAdmin_RejectedAndNotPersisted(t *testing.T) {
 	}
 	var events int
 	if err := db.QueryRow("SELECT COUNT(*) FROM events WHERE id = $1", evt.ID).Scan(&events); err != nil {
+		t.Fatalf("failed to count events: %v", err)
+	}
+	if events != 0 {
+		t.Fatalf("expected rejected event not to be persisted, got %d rows", events)
+	}
+}
+
+func TestAcceptEvent_RemovedAdmin_RejectedAndNotPersisted(t *testing.T) {
+	db := testdb.Connect(t, "event")
+	defer db.Close()
+	prefix := "test-role-removed-"
+	appRepo := seedRoleApp(t, db, prefix)
+	service := NewEventService(NewEventRepository(db), appRepo, nil, nil)
+	removal := &Event{
+		ID:               prefix + "admin-removal",
+		Type:             EventTypeMemberRemoved,
+		CreatorPublicKey: prefix + "owner",
+		Version:          1,
+		CreatedAt:        time.Now().Unix(),
+		Data:             map[string]interface{}{"applicationId": prefix + "app", "memberPublicKey": prefix + "admin"},
+	}
+	afterRemoval := &Event{
+		ID:               prefix + "member-removal",
+		Type:             EventTypeMemberRemoved,
+		CreatorPublicKey: prefix + "admin",
+		Version:          1,
+		CreatedAt:        time.Now().Unix(),
+		Data:             map[string]interface{}{"applicationId": prefix + "app", "memberPublicKey": prefix + "member"},
+	}
+	if _, err := service.AcceptEvent(context.Background(), removal, &user.User{PublicKey: prefix + "owner"}); err != nil {
+		t.Fatalf("owner removal of admin failed: %v", err)
+	}
+
+	_, err := service.AcceptEvent(context.Background(), afterRemoval, &user.User{PublicKey: prefix + "admin"})
+
+	if !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("expected ErrUnauthorized for the removed admin's event, got: %v", err)
+	}
+	var members, events int
+	if err := db.QueryRow("SELECT COUNT(*) FROM members WHERE application_id = $1 AND public_key = $2", prefix+"app", prefix+"member").Scan(&members); err != nil {
+		t.Fatalf("failed to count members: %v", err)
+	}
+	if members != 1 {
+		t.Fatalf("expected target member to remain, got %d rows", members)
+	}
+	if err := db.QueryRow("SELECT COUNT(*) FROM events WHERE id = $1", afterRemoval.ID).Scan(&events); err != nil {
 		t.Fatalf("failed to count events: %v", err)
 	}
 	if events != 0 {

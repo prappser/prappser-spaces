@@ -20,8 +20,7 @@ func (f *moveFixture) setUpGuest(appRole string) {
 	f.t.Helper()
 	f.setUp()
 	f.makeGuest(moveMemberPK)
-	_, err := f.db.Exec(`UPDATE members SET role=$1 WHERE public_key=$2 AND application_id=$3`, appRole, moveMemberPK, moveAppID)
-	require.NoError(f.t, err)
+	f.setMemberRole(moveMemberPK, appRole)
 }
 
 func (f *moveFixture) inviteID() string {
@@ -139,4 +138,18 @@ func TestCreateInvite_ShouldReturn403ForGuestNonMember(t *testing.T) {
 	// then
 	assert.Equal(t, fasthttp.StatusForbidden, ctx.Response.StatusCode())
 	assert.Equal(t, "forbidden", string(ctx.Response.Body()))
+}
+
+func TestCreateInvite_ShouldReturn403AfterGuestAppAdminDemoted(t *testing.T) {
+	// given
+	f := newMoveFixture(t)
+	f.setUpGuest("admin")
+	require.Equal(t, fasthttp.StatusCreated, f.createInvite(moveMemberPK).Response.StatusCode())
+
+	// when
+	f.setMemberRole(moveMemberPK, "member")
+	ctx := f.createInvite(moveMemberPK)
+
+	// then
+	assert.Equal(t, fasthttp.StatusForbidden, ctx.Response.StatusCode())
 }

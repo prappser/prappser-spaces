@@ -2,6 +2,7 @@ package event
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/prappser/prappser-spaces/internal/application"
@@ -140,6 +141,19 @@ func TestAuthorizeEvent_MemberRoleChanged_ShouldRejectOwnRoleChange(t *testing.T
 	// then
 	if !errors.Is(err, ErrUnauthorized) {
 		t.Fatalf("Expected ErrUnauthorized for changing own role, got: %v", err)
+	}
+}
+
+func TestAuthorizeEvent_MemberRoleChanged_ShouldRejectOwnerChangingOwnRole(t *testing.T) {
+	// when
+	err := authorizeRoleChange("owner-pk", "owner-pk")
+
+	// then
+	if !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("Expected ErrUnauthorized for owner changing own role, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "cannot change own role") {
+		t.Fatalf("Expected the self-change guard to reject, got: %v", err)
 	}
 }
 

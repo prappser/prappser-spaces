@@ -44,11 +44,12 @@ func AuthorizeEvent(event *Event, submitter *user.User, app *application.Applica
 		return fmt.Errorf("%w: user is not a member of this application", ErrUnauthorized)
 	}
 
-	canManage := member.Role == application.MemberRoleOwner || member.Role == application.MemberRoleAdmin
+	isOwner := member.Role == application.MemberRoleOwner
+	canManage := isOwner || member.Role == application.MemberRoleAdmin
 
 	switch event.Type {
 	case EventTypeApplicationDeleted:
-		if member.Role != application.MemberRoleOwner {
+		if !isOwner {
 			return fmt.Errorf("%w: only owner can delete application", ErrUnauthorized)
 		}
 

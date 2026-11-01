@@ -944,6 +944,23 @@ func TestAuthorizeAppRole_PlainMember_RejectedForOwnerOrAdminCheck(t *testing.T)
 	assert.ErrorIs(t, err, ErrNotAppAuthorized)
 }
 
+func TestAuthorizeAppRole_ExpiredAdmin_Rejected(t *testing.T) {
+	// given
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	assert.NoError(t, err)
+	expired := time.Now().Add(-time.Hour).Unix()
+	appRepo := application.NewMemoryRepository()
+	assert.NoError(t, appRepo.RegisterApplication(&application.Application{ID: "app-1", Name: "Test App"}))
+	assert.NoError(t, appRepo.CreateMember(&application.Member{ID: "m-admin", ApplicationID: "app-1", PublicKey: "admin-pk", Role: application.MemberRoleAdmin, MembershipExpiresAt: &expired}))
+	svc := NewInvitationService(&fakeInvitationRepo{}, priv, pub, appRepo, nil, &fakeUserRepo{}, fakeEventService{}, "space-key")
+
+	// when
+	err = svc.AuthorizeAppRole("app-1", "admin-pk", application.MemberRoleOwner, application.MemberRoleAdmin)
+
+	// then
+	assert.ErrorIs(t, err, ErrNotAppAuthorized)
+}
+
 // capturingEventService records the last event passed to ProduceEvent, for
 // TestRevokeInvitation_ProducesInviteRevokedEvent (#125) to assert on.
 type capturingEventService struct {
