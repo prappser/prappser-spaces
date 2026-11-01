@@ -12,6 +12,8 @@ import (
 	"strings"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
+	"golang.org/x/text/language"
+	"golang.org/x/text/message"
 )
 
 //go:embed schemas/component/*.schema.json schemas/template/*.schema.json
@@ -27,6 +29,29 @@ const (
 	templateSchema   = "https://prappser.app/schemas/template/template-doc.v1.schema.json"
 )
 
+type FieldError struct {
+	Path    string `json:"path"`
+	Message string `json:"message"`
+}
+
+type ValidationErrors []FieldError
+
+func (e ValidationErrors) Error() string {
+	parts := make([]string, len(e))
+	for i, f := range e {
+		parts[i] = fmt.Sprintf("at %q: %s", f.Path, f.Message)
+	}
+	return ErrInvalidData.Error() + ": " + strings.Join(parts, "; ")
+}
+
+func (e ValidationErrors) Unwrap() error { return ErrInvalidData }
+
+type denyLoader struct{}
+
+func (denyLoader) Load(url string) (any, error) {
+	return nil, fmt.Errorf("external schema %q is not allowed", url)
+}
+
 type patternMerge struct {
 	re   *regexp.Regexp
 	mode string
@@ -37,6 +62,7 @@ type mergeRules struct {
 	patterns []patternMerge
 }
 
+// Build once, safe for concurrent use.
 type Validator struct {
 	compiler     *jsonschema.Compiler
 	components   map[string]*jsonschema.Schema
@@ -53,6 +79,10 @@ type componentSchema struct {
 var mergeModes = map[string]bool{"single": true, "per-entry": true, "per-member": true}
 
 func NewValidator() (*Validator, error) {
+	return newValidator(schemaFS)
+}
+
+func newValidator(fsys fs.FS) (*Validator, error) {
 	v := &Validator{
 		compiler:     jsonschema.NewCompiler(),
 		components:   map[string]*jsonschema.Schema{},
@@ -60,14 +90,16 @@ func NewValidator() (*Validator, error) {
 		merge:        map[string]mergeRules{},
 	}
 
+	v.compiler.UseLoader(denyLoader{})
+
 	var pending []componentSchema
 	for _, dir := range []string{"schemas/component", "schemas/template"} {
-		files, err := fs.Glob(schemaFS, dir+"/*.schema.json")
+		files, err := fs.Glob(fsys, dir+"/*.schema.json")
 		if err != nil {
 			return nil, fmt.Errorf("failed to list schemas in %s: %w", dir, err)
 		}
 		for _, file := range files {
-			raw, err := schemaFS.ReadFile(file)
+			raw, err := fs.ReadFile(fsys, file)
 			if err != nil {
 				return nil, fmt.Errorf("failed to read schema %s: %w", file, err)
 			}
@@ -179,12 +211,47 @@ func (v *Validator) ValidateTemplateDoc(doc map[string]any) error {
 }
 
 func validate(sch *jsonschema.Schema, data map[string]any) error {
-	if err := sch.Validate(data); err != nil {
+	err := sch.Validate(data)
+	if err == nil {
+		return nil
+	}
+	var verr *jsonschema.ValidationError
+	if !errors.As(err, &verr) {
 		return fmt.Errorf("%w: %w", ErrInvalidData, err)
 	}
-	return nil
+	var out ValidationErrors
+	collectLeaves(verr, message.NewPrinter(language.English), &out)
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Path != out[j].Path {
+			return out[i].Path < out[j].Path
+		}
+		return out[i].Message < out[j].Message
+	})
+	return out
 }
 
+func collectLeaves(e *jsonschema.ValidationError, p *message.Printer, out *ValidationErrors) {
+	if len(e.Causes) == 0 {
+		*out = append(*out, FieldError{Path: jsonPointer(e.InstanceLocation), Message: e.ErrorKind.LocalizedString(p)})
+		return
+	}
+	for _, c := range e.Causes {
+		collectLeaves(c, p, out)
+	}
+}
+
+var pointerEscaper = strings.NewReplacer("~", "~0", "/", "~1")
+
+func jsonPointer(loc []string) string {
+	var sb strings.Builder
+	for _, t := range loc {
+		sb.WriteByte('/')
+		sb.WriteString(pointerEscaper.Replace(t))
+	}
+	return sb.String()
+}
+
+// MergeMode resolves a key: exact properties win, then the first matching pattern (in sorted pattern order).
 func (v *Validator) MergeMode(componentType, key string) (string, bool) {
 	rules, ok := v.merge[componentType]
 	if !ok {

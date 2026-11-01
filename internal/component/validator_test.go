@@ -5,11 +5,13 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -23,7 +25,7 @@ type vectorFile struct {
 		Name   string `json:"name"`
 		Schema string `json:"schema"`
 		Data   any    `json:"data"`
-		Valid  bool   `json:"valid"`
+		Valid  *bool  `json:"valid"`
 	} `json:"cases"`
 }
 
@@ -34,10 +36,17 @@ func loadVectors(t *testing.T) map[string]vectorFile {
 	require.NotEmpty(t, files)
 	out := map[string]vectorFile{}
 	for _, f := range files {
-		raw, err := os.ReadFile(f)
+		fh, err := os.Open(f)
 		require.NoError(t, err)
+		dec := json.NewDecoder(fh)
+		dec.DisallowUnknownFields()
 		var vf vectorFile
-		require.NoError(t, json.Unmarshal(raw, &vf), f)
+		require.NoError(t, dec.Decode(&vf), f)
+		require.NoError(t, fh.Close())
+		require.NotEmpty(t, vf.Cases, f)
+		for _, c := range vf.Cases {
+			require.NotNil(t, c.Valid, "%s: %s", f, c.Name)
+		}
 		out[filepath.Base(f)] = vf
 	}
 	return out
@@ -65,6 +74,9 @@ func TestSchemaCopy_ShouldMatchManifest(t *testing.T) {
 	defer f.Close()
 	sc := bufio.NewScanner(f)
 	for sc.Scan() {
+		if strings.HasPrefix(sc.Text(), "# ") {
+			continue
+		}
 		sum, name, ok := strings.Cut(sc.Text(), "  ")
 		require.True(t, ok, "malformed manifest line %q; %s", sc.Text(), hint)
 		manifest[name] = sum
@@ -99,7 +111,19 @@ func TestVectors_ShouldMatchExpectedValidity(t *testing.T) {
 	vectors := loadVectors(t)
 	total := 0
 
+	for name := range v.components {
+		assert.Contains(t, vectors, strings.ToLower(name)+".json")
+	}
+	assert.Contains(t, vectors, "template-doc.json")
+
 	for file, vf := range vectors {
+		name := strings.TrimSuffix(file, ".json")
+		wantID := templateSchema
+		if file != "template-doc.json" {
+			name = strings.ToUpper(name[:1]) + name[1:]
+			wantID = v.componentIDs[name]
+		}
+		assert.Equal(t, wantID, vf.Schema, file)
 		for _, c := range vf.Cases {
 			// when
 			var err error
@@ -108,8 +132,7 @@ func TestVectors_ShouldMatchExpectedValidity(t *testing.T) {
 			case c.Schema == "" && isObject && file == "template-doc.json":
 				err = v.ValidateTemplateDoc(data)
 			case c.Schema == "" && isObject:
-				name := strings.TrimSuffix(file, ".json")
-				err = v.ValidateComponentData(strings.ToUpper(name[:1])+name[1:], data)
+				err = v.ValidateComponentData(name, data)
 			default:
 				loc := vf.Schema
 				if c.Schema != "" {
@@ -121,7 +144,7 @@ func TestVectors_ShouldMatchExpectedValidity(t *testing.T) {
 			}
 
 			// then
-			assert.Equal(t, c.Valid, err == nil, "%s: %s: %v", file, c.Name, err)
+			assert.Equal(t, *c.Valid, err == nil, "%s: %s: %v", file, c.Name, err)
 			total++
 		}
 	}
@@ -247,6 +270,7 @@ func TestMergeMode_ShouldResolveKeys(t *testing.T) {
 	single, singleOK := v.MergeMode("Chat", "_title")
 	_, unknownKeyOK := v.MergeMode("Chat", "nope")
 	_, unknownTypeOK := v.MergeMode("Nope", "m_"+id)
+	poll, pollOK := v.MergeMode("Poll", "vote_pk-alice")
 	_, lowerTypeOK := v.MergeMode("chat", "_title")
 	_, commonOK := v.MergeMode("Common", "_title")
 
@@ -259,6 +283,46 @@ func TestMergeMode_ShouldResolveKeys(t *testing.T) {
 	assert.Equal(t, "single", single)
 	assert.False(t, unknownKeyOK)
 	assert.False(t, unknownTypeOK)
+	assert.True(t, pollOK)
+	assert.Equal(t, "per-member", poll)
 	assert.False(t, lowerTypeOK)
 	assert.False(t, commonOK)
+}
+
+func TestValidateComponentData_ShouldReportFieldErrors(t *testing.T) {
+	// given
+	v, err := NewValidator()
+	require.NoError(t, err)
+	data := map[string]any{
+		"items": []any{map[string]any{"id": "a", "title": "t"}},
+		"bogus": float64(1),
+	}
+
+	// when
+	err = v.ValidateComponentData("Checklist", data)
+
+	// then
+	var verrs ValidationErrors
+	require.True(t, errors.As(err, &verrs))
+	assert.ErrorIs(t, err, ErrInvalidData)
+	byPath := map[string]string{}
+	for _, f := range verrs {
+		byPath[f.Path] = f.Message
+	}
+	assert.Contains(t, byPath["/items/0"], "checked")
+	assert.Contains(t, byPath[""], "bogus")
+}
+
+func TestNewValidator_ShouldRejectExternalRef(t *testing.T) {
+	// given
+	fsys := fstest.MapFS{
+		"schemas/template/template-doc.v1.schema.json": {Data: []byte(
+			`{"$id":"` + templateSchema + `","$ref":"file:///etc/passwd"}`)},
+	}
+
+	// when
+	_, err := newValidator(fsys)
+
+	// then
+	assert.ErrorContains(t, err, "not allowed")
 }
