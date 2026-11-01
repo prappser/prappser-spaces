@@ -285,6 +285,7 @@ func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, status
 			} else {
 				ctx.Error("Not Found", fasthttp.StatusNotFound)
 			}
+		// Authorized by app role (owner or admin) in the invitation service, not by space role.
 		case strings.HasPrefix(path, "/applications/") && strings.Contains(path, "/invites"):
 			parts := strings.Split(path, "/")
 			if len(parts) >= 4 && parts[3] == "invites" {
@@ -294,9 +295,9 @@ func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, status
 					method := string(ctx.Method())
 					switch method {
 					case "POST":
-						authMiddleware.RequireRole(invitationEndpoints.CreateInvite, user.RoleOwner, user.RoleUser)(ctx)
+						authMiddleware.RequireAuth(invitationEndpoints.CreateInvite)(ctx)
 					case "GET":
-						authMiddleware.RequireRole(invitationEndpoints.ListInvites, user.RoleOwner, user.RoleUser)(ctx)
+						authMiddleware.RequireAuth(invitationEndpoints.ListInvites)(ctx)
 					default:
 						ctx.Error("Method Not Allowed", fasthttp.StatusMethodNotAllowed)
 					}
@@ -304,7 +305,7 @@ func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, status
 					ctx.SetUserValue("inviteID", parts[4])
 					method := string(ctx.Method())
 					if method == "DELETE" {
-						authMiddleware.RequireRole(invitationEndpoints.RevokeInvite, user.RoleOwner, user.RoleUser)(ctx)
+						authMiddleware.RequireAuth(invitationEndpoints.RevokeInvite)(ctx)
 					} else {
 						ctx.Error("Method Not Allowed", fasthttp.StatusMethodNotAllowed)
 					}
