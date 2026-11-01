@@ -40,7 +40,9 @@ When it is off, only the app owner's own agents can see the app. This blocks eve
 
 ## Privacy and limits
 
-- Rate limits: 120 requests per minute per IP and 60 per minute per agent device, answered with 429 and `Retry-After`. Request bodies over 64 KB get 413.
+- Rate limits: 120 requests per minute per IP and 60 per minute per agent device, answered with 429 and `Retry-After`.
+- The IP limit runs before the token is checked. Behind a reverse proxy, keep `TRUST_PROXY` on (the default), as for the REST limits. Otherwise every client shares the proxy's IP, and requests with bad tokens can use up everyone's budget.
+- Request bodies over 64 KB get 413. fasthttp has already read the body by then, so this saves MCP processing, not memory.
 - Tool calls, their arguments and tokens are not logged. Unexpected errors are logged without them.
 - Agents do not update last-seen.
 - To cut an agent off, revoke its device. Its token stops working at once.
