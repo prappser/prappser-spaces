@@ -17,7 +17,7 @@ git -C "$app" archive "$ref" schemas | tar -x -C "$tmp"
 if [ -d internal/component/schemas ]; then
   mv internal/component/schemas "$tmp/old"
 fi
-mv "$tmp/schemas" internal/component/schemas
+mv "$tmp/schemas" internal/component/schemas || { [ ! -d "$tmp/old" ] || mv "$tmp/old" internal/component/schemas; exit 1; }
 
 {
   echo "# prappser-app $sha"

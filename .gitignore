@@ -4,6 +4,7 @@ files/prappser.db
 .serena
 prappser-spaces
 pkg
+internal/component/.schemas-sync.*
 __debug*
 .claude/*
 !.claude/skills
