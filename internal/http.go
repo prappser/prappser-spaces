@@ -13,6 +13,7 @@ import (
 	"github.com/prappser/prappser-spaces/internal/invitation"
 	"github.com/prappser/prappser-spaces/internal/keys"
 	"github.com/prappser/prappser-spaces/internal/middleware"
+	"github.com/prappser/prappser-spaces/internal/oauth"
 	"github.com/prappser/prappser-spaces/internal/profile"
 	"github.com/prappser/prappser-spaces/internal/push"
 	"github.com/prappser/prappser-spaces/internal/setup"
@@ -92,13 +93,14 @@ func enrollUsernameKey(ctx *fasthttp.RequestCtx) string {
 	return strings.ToLower(username)
 }
 
-func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, statusEndpoints *status.StatusEndpoints, healthEndpoints *health.HealthEndpoints, userService *user.UserService, appEndpoints *application.ApplicationEndpoints, invitationEndpoints *invitation.InvitationEndpoints, eventEndpoints *event.EventEndpoints, setupEndpoints *setup.SetupEndpoints, storageEndpoints *storage.Endpoints, wsHandler *websocket.Handler, spaceEndpoints *space.SpaceEndpoints, pushEndpoints *push.PushEndpoints, profileEndpoints *profile.ProfileEndpoints, deviceEndpoints *user.DeviceEndpoints, passwordEndpoints *user.PasswordEndpoints, assertionEndpoints *user.AssertionEndpoints, ownerClaimEndpoints *user.OwnerClaimEndpoints, keyEndpoints *keys.KeyEndpoints, accountEndpoints *profile.AccountEndpoints, adminEndpoints *admin.AdminEndpoints, registerEndpoints *user.RegisterEndpoints, spaceProfileEndpoints *spaceprofile.SpaceProfileEndpoints, moveEndpoints *application.MoveEndpoints) fasthttp.RequestHandler {
+func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, statusEndpoints *status.StatusEndpoints, healthEndpoints *health.HealthEndpoints, userService *user.UserService, appEndpoints *application.ApplicationEndpoints, invitationEndpoints *invitation.InvitationEndpoints, eventEndpoints *event.EventEndpoints, setupEndpoints *setup.SetupEndpoints, storageEndpoints *storage.Endpoints, wsHandler *websocket.Handler, spaceEndpoints *space.SpaceEndpoints, pushEndpoints *push.PushEndpoints, profileEndpoints *profile.ProfileEndpoints, deviceEndpoints *user.DeviceEndpoints, passwordEndpoints *user.PasswordEndpoints, assertionEndpoints *user.AssertionEndpoints, ownerClaimEndpoints *user.OwnerClaimEndpoints, keyEndpoints *keys.KeyEndpoints, accountEndpoints *profile.AccountEndpoints, adminEndpoints *admin.AdminEndpoints, registerEndpoints *user.RegisterEndpoints, spaceProfileEndpoints *spaceprofile.SpaceProfileEndpoints, moveEndpoints *application.MoveEndpoints, oauthEndpoints *oauth.Endpoints) fasthttp.RequestHandler {
 	authMiddleware := middleware.NewAuthMiddleware(userService)
 	corsMiddleware := middleware.NewCORSMiddleware(config.AllowedOrigins)
 	ipRateLimiter := middleware.NewRateLimiter(ipRateLimitPerMinute, time.Minute, config.TrustProxyHeaders)
 	identifierRateLimiter := middleware.NewRateLimiter(identifierRateLimitPerMinute, time.Minute, config.TrustProxyHeaders)
 	passwordRateLimiter := middleware.NewRateLimiter(passwordEnrollLimit, passwordEnrollWindow, config.TrustProxyHeaders)
 	registerRateLimiter := middleware.NewRateLimiter(registerLimit, registerWindow, config.TrustProxyHeaders)
+	oauthRouter := newOAuthRouter(config, oauthEndpoints, authMiddleware, ipRateLimiter)
 
 	handler := func(ctx *fasthttp.RequestCtx) {
 		path := string(ctx.Path())
@@ -262,6 +264,9 @@ func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, status
 			} else {
 				ctx.Error("Method Not Allowed", fasthttp.StatusMethodNotAllowed)
 			}
+
+		case isOAuthPath(path):
+			oauthRouter(ctx)
 
 		case path == "/health":
 			healthEndpoints.Health(ctx)

@@ -70,7 +70,7 @@ func newTestRequestHandler(t *testing.T) fasthttp.RequestHandler {
 	assert.NoError(t, err)
 	userEndpoints := user.NewEndpoints(noopUserRepository{}, user.Config{ChallengeTTLSec: 300}, priv, pub, nil, nil)
 	cfg := &Config{TrustProxyHeaders: true}
-	return NewRequestHandler(cfg, userEndpoints, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	return NewRequestHandler(cfg, userEndpoints, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 }
 
 func newAuthRouteRequestCtx(path string) *fasthttp.RequestCtx {
@@ -176,7 +176,7 @@ func TestSpacePublicKey_ShouldReturn405OnPost(t *testing.T) {
 func TestRateLimiting_RegisterIsCappedPerIPIncludingRefusals(t *testing.T) {
 	// given
 	registerEndpoints := user.NewRegisterEndpoints(noopUserRepository{}, []byte("k"), false, 0)
-	handler := NewRequestHandler(&Config{TrustProxyHeaders: true}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, registerEndpoints, nil, nil)
+	handler := NewRequestHandler(&Config{TrustProxyHeaders: true}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, registerEndpoints, nil, nil, nil)
 
 	// when / then
 	for i := 0; i < registerLimit; i++ {

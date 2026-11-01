@@ -315,3 +315,24 @@ func TestAgentService_ValidateAccessToken_TrailingSlashExternalURL_ShouldUseClea
 	assert.Equal(t, jwt.ClaimStrings{agentTestURL + "/mcp"}, aud)
 	assert.NoError(t, validateErr)
 }
+
+func TestAgentService_CanAddAgent_ShouldReportRoomUntilLimit_Integration(t *testing.T) {
+	// given
+	db := getTestDB(t)
+	defer db.Close()
+	svc, _ := newAgentTestService(t, db, "test-agent-canadd-user")
+	before, errBefore := svc.CanAddAgent("test-agent-canadd-user")
+	for i := 0; i < maxLiveAgentsPerAccount; i++ {
+		_, err := svc.IssueTokens("test-agent-canadd-user", "")
+		assert.NoError(t, err)
+	}
+
+	// when
+	after, errAfter := svc.CanAddAgent("test-agent-canadd-user")
+
+	// then
+	assert.NoError(t, errBefore)
+	assert.NoError(t, errAfter)
+	assert.True(t, before)
+	assert.False(t, after)
+}
