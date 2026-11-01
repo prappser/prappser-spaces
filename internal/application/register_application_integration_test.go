@@ -115,3 +115,63 @@ func TestApplicationService_RegisterApplication_ShouldRejectReRegisterByOtherCal
 	assert.NoError(t, err)
 	assert.Equal(t, "Original", got.Name)
 }
+
+func TestRepository_AgentReadEnabled_ShouldDefaultTrueAndRoundTrip_Integration(t *testing.T) {
+	// given
+	db := testdb.Connect(t, "application")
+	defer db.Close()
+	repo := NewRepository(db)
+	appID := uuid.NewString()
+	owner := "agent-read-" + appID
+	testdb.InsertTestUser(t, db, owner)
+	assert.NoError(t, repo.RegisterApplication(newRegisterPayload(appID, "Agent Read", owner)))
+	defaulted, err := repo.GetApplicationByID(appID)
+	assert.NoError(t, err)
+
+	// when
+	err = repo.SetAgentReadEnabled(appID, false)
+
+	// then
+	assert.True(t, defaulted.AgentReadEnabled)
+	assert.NoError(t, err)
+	byID, err := repo.GetApplicationByID(appID)
+	assert.NoError(t, err)
+	assert.False(t, byID.AgentReadEnabled)
+	list, err := repo.GetApplicationsByMemberPublicKey(owner)
+	assert.NoError(t, err)
+	assert.Len(t, list, 1)
+	assert.False(t, list[0].AgentReadEnabled)
+}
+
+func TestRepository_RegisterApplication_ShouldKeepAgentReadDisabledOnReRegister_Integration(t *testing.T) {
+	// given
+	db := testdb.Connect(t, "application")
+	defer db.Close()
+	repo := NewRepository(db)
+	appID := uuid.NewString()
+	owner := "agent-read-rereg-" + appID
+	testdb.InsertTestUser(t, db, owner)
+	assert.NoError(t, repo.RegisterApplication(newRegisterPayload(appID, "Agent Read", owner)))
+	assert.NoError(t, repo.SetAgentReadEnabled(appID, false))
+
+	// when
+	err := repo.RegisterApplication(newRegisterPayload(appID, "Agent Read", owner))
+
+	// then
+	assert.NoError(t, err)
+	got, err := repo.GetApplicationByID(appID)
+	assert.NoError(t, err)
+	assert.False(t, got.AgentReadEnabled)
+}
+
+func TestRepository_SetAgentReadEnabled_ShouldReturnNotFoundForUnknownApp_Integration(t *testing.T) {
+	// given
+	db := testdb.Connect(t, "application")
+	defer db.Close()
+
+	// when
+	err := NewRepository(db).SetAgentReadEnabled(uuid.NewString(), false)
+
+	// then
+	assert.ErrorIs(t, err, ErrNotFound)
+}

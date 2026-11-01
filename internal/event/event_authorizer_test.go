@@ -294,3 +294,28 @@ func TestAuthorizeEvent_ApplicationDeleted_ShouldRejectAdmin(t *testing.T) {
 		t.Fatalf("Expected ErrUnauthorized for admin deleting the app, got: %v", err)
 	}
 }
+
+func TestAuthorizeEvent_ShouldDenyAgentWhenAgentAccessOff(t *testing.T) {
+	// given
+	app := &application.Application{ID: "app-1", AgentReadEnabled: false, Members: []application.Member{
+		{PublicKey: "owner-pk", Role: application.MemberRoleOwner},
+		{PublicKey: "admin-pk", Role: application.MemberRoleAdmin},
+	}}
+	evt := &Event{Type: EventTypeApplicationDataChanged, Data: map[string]interface{}{}}
+
+	// when
+	adminAgentErr := AuthorizeEvent(evt, &user.User{PublicKey: "admin-pk", Agent: true}, app)
+	ownerAgentErr := AuthorizeEvent(evt, &user.User{PublicKey: "owner-pk", Agent: true}, app)
+	adminHumanErr := AuthorizeEvent(evt, &user.User{PublicKey: "admin-pk"}, app)
+
+	// then
+	if !errors.Is(adminAgentErr, ErrUnauthorized) {
+		t.Fatalf("Expected ErrUnauthorized for a non-owner agent, got: %v", adminAgentErr)
+	}
+	if ownerAgentErr != nil {
+		t.Fatalf("Expected the owner's agent to pass, got: %v", ownerAgentErr)
+	}
+	if adminHumanErr != nil {
+		t.Fatalf("Expected a human admin to pass, got: %v", adminHumanErr)
+	}
+}

@@ -351,6 +351,18 @@ func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, status
 			default:
 				ctx.Error("Not Found", fasthttp.StatusNotFound)
 			}
+		case strings.HasPrefix(path, "/applications/") && strings.HasSuffix(path, "/agent-read"):
+			parts := strings.Split(path, "/")
+			if len(parts) == 4 && parts[3] == "agent-read" {
+				ctx.SetUserValue("appID", parts[2])
+				if string(ctx.Method()) == "PUT" {
+					authMiddleware.RequireAuth(appEndpoints.SetAgentRead)(ctx)
+				} else {
+					ctx.Error("Method Not Allowed", fasthttp.StatusMethodNotAllowed)
+				}
+			} else {
+				ctx.Error("Not Found", fasthttp.StatusNotFound)
+			}
 		case strings.HasPrefix(path, "/applications/"):
 			parts := strings.Split(path, "/")
 			if len(parts) == 3 {

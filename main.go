@@ -34,6 +34,7 @@ import (
 	"github.com/prappser/prappser-spaces/internal/health"
 	"github.com/prappser/prappser-spaces/internal/invitation"
 	"github.com/prappser/prappser-spaces/internal/keys"
+	"github.com/prappser/prappser-spaces/internal/mcp"
 	"github.com/prappser/prappser-spaces/internal/profile"
 	"github.com/prappser/prappser-spaces/internal/push"
 	"github.com/prappser/prappser-spaces/internal/reminder"
@@ -258,10 +259,22 @@ func main() {
 
 	requestHandler := internal.NewRequestHandler(config, userEndpoints, statusEndpoints, healthEndpoints, userService, appEndpoints, invitationEndpoints, eventEndpoints, setupEndpoints, storageEndpoints, wsHandler, spaceEndpoints, pushEndpoints, profileEndpoints, deviceEndpoints, passwordEndpoints, assertionEndpoints, ownerClaimEndpoints, keyEndpoints, accountEndpoints, adminEndpoints, registerEndpoints, spaceprofile.NewSpaceProfileEndpoints(spaceProfileRepository, storageRepo, eventService), moveEndpoints)
 
+	var handler fasthttp.RequestHandler = requestHandler
+	if config.MCPEnabled {
+		handler = mcp.Mount(handler, mcp.Deps{
+			Apps:        appService,
+			Invitations: invitationService,
+			Events:      eventService,
+			Agents:      user.NewAgentService(db, userRepository, privateKey, publicKey, config.ExternalURL),
+			ExternalURL: config.ExternalURL,
+		})
+		log.Info().Msg("MCP endpoint enabled")
+	}
+
 	serverAddr := fmt.Sprintf(":%s", config.Port)
 	log.Info().Str("addr", serverAddr).Msg("Starting HTTP server")
 	server := &fasthttp.Server{
-		Handler:            requestHandler,
+		Handler: handler,
 		// A low file cap must not also cap event and text bodies.
 		MaxRequestBodySize: int(max(config.Storage.MaxFileSize, 50*1024*1024)),
 	}

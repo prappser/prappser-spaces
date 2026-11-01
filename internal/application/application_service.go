@@ -25,6 +25,8 @@ type Event struct {
 var (
 	ErrAppLimitReached = errors.New("app limit reached")
 	ErrOwnerNotCaller  = errors.New("application owner must be the caller")
+	ErrAgentReadOff    = errors.New("agent access is off for this application")
+	ErrNotMember       = errors.New("unauthorized: not a member of this application")
 )
 
 type ApplicationService struct {
@@ -149,7 +151,10 @@ func (s *ApplicationService) GetApplication(appID string, requestingUser *user.U
 		return nil, fmt.Errorf("failed to check membership: %w", err)
 	}
 	if !isMember {
-		return nil, fmt.Errorf("unauthorized: not a member of this application")
+		return nil, ErrNotMember
+	}
+	if !app.AgentAllowed(requestingUser) {
+		return nil, ErrAgentReadOff
 	}
 
 	return app, nil
@@ -170,14 +175,42 @@ func (s *ApplicationService) GetApplicationState(appID string, requestingUser *u
 		return nil, fmt.Errorf("failed to check membership: %w", err)
 	}
 	if !isMember {
-		return nil, fmt.Errorf("unauthorized: not a member of this application")
+		return nil, ErrNotMember
 	}
 
 	return state, nil
 }
 
-func (s *ApplicationService) ListApplications(memberPublicKey string) ([]*Application, error) {
-	return s.appRepo.GetApplicationsByMemberPublicKey(memberPublicKey)
+func (s *ApplicationService) ListApplications(caller *user.User) ([]*Application, error) {
+	apps, err := s.appRepo.GetApplicationsByMemberPublicKey(caller.PublicKey)
+	if err != nil {
+		return nil, err
+	}
+	allowed := apps[:0]
+	for _, app := range apps {
+		if app.AgentAllowed(caller) {
+			allowed = append(allowed, app)
+		}
+	}
+	return allowed, nil
+}
+
+func (s *ApplicationService) SetAgentRead(appID string, caller *user.User, enabled bool) error {
+	if err := s.appRepo.MoveGuard(appID, caller.PublicKey, true); err != nil {
+		return err
+	}
+	app, err := s.appRepo.GetApplicationByID(appID)
+	if err != nil {
+		return err
+	}
+	ownerPublicKey, err := app.GetOwnerPublicKey()
+	if err != nil {
+		return fmt.Errorf("failed to get owner: %w", err)
+	}
+	if ownerPublicKey != caller.PublicKey {
+		return ErrNotApplicationOwner
+	}
+	return s.appRepo.SetAgentReadEnabled(appID, enabled)
 }
 
 func (s *ApplicationService) DeleteApplication(appID string, requestingUser *user.User) error {

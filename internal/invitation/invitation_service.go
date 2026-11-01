@@ -145,6 +145,15 @@ func (s *InvitationService) CreateInvitation(caller *user.User, opts CreateInvit
 	if err := s.AuthorizeAppRole(opts.ApplicationID, caller.PublicKey, application.MemberRoleOwner, application.MemberRoleAdmin); err != nil {
 		return nil, err
 	}
+	if caller.Agent {
+		app, err := s.appRepo.GetApplicationByID(opts.ApplicationID)
+		if err != nil {
+			return nil, err
+		}
+		if !app.AgentAllowed(caller) {
+			return nil, ErrNotAppAuthorized
+		}
+	}
 	if err := s.appRepo.MoveGuard(opts.ApplicationID, caller.PublicKey, true); err != nil {
 		return nil, err
 	}
@@ -252,7 +261,7 @@ func (s *InvitationService) CreateInvitation(caller *user.User, opts CreateInvit
 	}
 
 	// Build response - use HTTPS PWA URL for sharing
-	pwaURL := "https://prappser-app.netlify.app"
+	pwaURL := "https://prappser.app"
 	response := &InvitationResponse{
 		ID:             invite.ID,
 		Token:          token,

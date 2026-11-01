@@ -31,6 +31,10 @@ func (r *MemoryRepository) RegisterApplication(app *Application) error {
 	stored := *app
 	stored.Members = nil
 	stored.ComponentGroups = nil
+	stored.AgentReadEnabled = true
+	if existing, ok := r.applications[app.ID]; ok {
+		stored.AgentReadEnabled = existing.AgentReadEnabled
+	}
 
 	members := make([]*Member, 0, len(app.Members))
 	for _, m := range app.Members {
@@ -147,6 +151,15 @@ func (r *MemoryRepository) UpdateApplicationTimestamp(id string) error {
 	}
 
 	app.UpdateTimestamp()
+	return nil
+}
+
+func (r *MemoryRepository) SetAgentReadEnabled(appID string, enabled bool) error {
+	app, exists := r.applications[appID]
+	if !exists || app.DeletedAt != nil {
+		return fmt.Errorf("application %w", ErrNotFound)
+	}
+	app.AgentReadEnabled = enabled
 	return nil
 }
 
