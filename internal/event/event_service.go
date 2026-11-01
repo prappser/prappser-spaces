@@ -79,16 +79,20 @@ func (s *EventService) AcceptEvent(ctx context.Context, event *Event, submitter 
 	}
 	log.Debug().Str("eventId", event.ID).Msg("[EVENT] Validation passed")
 
+	if !IsUserScoped(event.Type) {
+		appID, ok := event.Data["applicationId"].(string)
+		if !ok || appID == "" {
+			return nil, fmt.Errorf("%w: applicationId not found in event data", ErrValidation)
+		}
+		event.ApplicationID = appID
+	}
+
 	// A retry must not be re-authorized against the state its first attempt changed.
 	existing, err := s.repo.GetByID(event.ID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check for duplicate event: %w", err)
 	}
-	dupAppID, _ := event.Data["applicationId"].(string)
-	if IsUserScoped(event.Type) {
-		dupAppID = event.ApplicationID
-	}
-	if existing != nil && existing.ApplicationID == dupAppID && existing.CreatorPublicKey == submitter.PublicKey && existing.Type == event.Type {
+	if isRetryOf(existing, event.ApplicationID, submitter.PublicKey, event.Type) {
 		log.Debug().Str("eventId", event.ID).Msg("[EVENT] Duplicate, returning stored event")
 		return existing, nil
 	}
@@ -98,23 +102,15 @@ func (s *EventService) AcceptEvent(ctx context.Context, event *Event, submitter 
 		return s.acceptUserScopedEvent(ctx, event, submitter)
 	}
 
-	appID, ok := event.Data["applicationId"].(string)
-	if !ok || appID == "" {
-		return nil, fmt.Errorf("%w: applicationId not found in event data", ErrValidation)
-	}
-
-	// Set ApplicationID field from data
-	event.ApplicationID = appID
-
 	// Set space ID from submitter's JWT claims
 	event.SpaceID = submitter.SpaceID
 
 	// ponytail: the guard isn't atomic with the insert, so an event racing CompleteMove can land on the tombstone (hidden, purged with it); row-lock if that matters.
-	if err := s.appRepo.MoveGuard(appID, submitter.PublicKey, true); err != nil {
+	if err := s.appRepo.MoveGuard(event.ApplicationID, submitter.PublicKey, true); err != nil {
 		return nil, err
 	}
 
-	app, err := s.appRepo.GetApplicationByID(appID)
+	app, err := s.appRepo.GetApplicationByID(event.ApplicationID)
 	if errors.Is(err, application.ErrNotFound) {
 		return nil, fmt.Errorf("%w: %w", ErrUnappliable, err)
 	}
@@ -270,35 +266,54 @@ func (s *EventService) produceUserScopedEvent(ctx context.Context, event *Event)
 	return stored, nil
 }
 
+// applyErr marks err ErrUnappliable only when no retry can succeed.
 func applyErr(err error) error {
-	if err == nil || errors.Is(err, ErrUnappliable) {
+	if err == nil || errors.Is(err, ErrUnappliable) || isTransient(err) {
 		return err
 	}
+	if errors.Is(err, ErrValidation) || isDataErr(err) {
+		return fmt.Errorf("%w: %w", ErrUnappliable, err)
+	}
+	return err
+}
+
+func isTransient(err error) bool {
 	var netErr net.Error
 	if errors.Is(err, driver.ErrBadConn) || errors.Is(err, sql.ErrConnDone) ||
 		errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || errors.As(err, &netErr) ||
 		errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return err
+		return true
 	}
-	unappliable := errors.Is(err, ErrValidation)
 	var pqErr *pq.Error
-	if errors.As(err, &pqErr) {
-		switch pqErr.Code.Class() {
-		case "08", "53", "57":
-			return err
+	if !errors.As(err, &pqErr) {
+		return false
+	}
+	switch pqErr.Code.Class() {
+	case "08", "53", "57":
+		return true
+	}
+	switch pqErr.Code {
+	case "40001", "40P01", "55P03":
+		return true
+	}
+	return false
+}
+
+func isDataErr(err error) bool {
+	var pqErr *pq.Error
+	if !errors.As(err, &pqErr) {
+		return false
+	}
+	switch pqErr.Code.Class() {
+	case "22", "23":
 		// A duplicate events_pkey stays retryable: the retry dedupes.
-		case "22", "23":
-			unappliable = unappliable || pqErr.Code != "23505" || pqErr.Constraint != "events_pkey"
-		}
-		switch pqErr.Code {
-		case "40001", "40P01", "55P03":
-			return err
-		}
+		return pqErr.Code != "23505" || pqErr.Constraint != "events_pkey"
 	}
-	if !unappliable {
-		return err
-	}
-	return fmt.Errorf("%w: %w", ErrUnappliable, err)
+	return false
+}
+
+func isRetryOf(stored *Event, appID, creator string, t EventType) bool {
+	return stored != nil && stored.ApplicationID == appID && stored.CreatorPublicKey == creator && stored.Type == t
 }
 
 func (s *EventService) persistAndApply(ctx context.Context, event *Event, sequenced bool) (stored *Event, dup bool, err error) {
@@ -345,11 +360,11 @@ func (s *EventService) persistAndApply(ctx context.Context, event *Event, sequen
 	if err != nil {
 		return nil, false, fmt.Errorf("failed to check for duplicate event: %w", err)
 	}
+	if isRetryOf(existing, event.ApplicationID, event.CreatorPublicKey, event.Type) {
+		log.Debug().Str("eventId", event.ID).Msg("[EVENT] Duplicate, returning stored event")
+		return existing, true, nil
+	}
 	if existing != nil {
-		if existing.ApplicationID == event.ApplicationID && existing.CreatorPublicKey == event.CreatorPublicKey && existing.Type == event.Type {
-			log.Debug().Str("eventId", event.ID).Msg("[EVENT] Duplicate, returning stored event")
-			return existing, true, nil
-		}
 		return nil, false, fmt.Errorf("%w: event id %s is already used by another event", ErrUnappliable, event.ID)
 	}
 
@@ -423,8 +438,7 @@ func (s *EventService) broadcastEvent(event *Event) {
 	}
 
 	// Fetch members once and share between the deletion fanout and push fanout.
-	// A failed fetch is non-fatal: log a warning, skip the member-dependent paths,
-	// and still deliver the app-channel WebSocket broadcast above.
+	// A failed fetch is non-fatal: log a warning and skip the member-dependent paths.
 	var members []*application.Member
 	if event.ApplicationID != "" && (isUserChannelFanout(event.Type) || s.pusher != nil) {
 		var err error

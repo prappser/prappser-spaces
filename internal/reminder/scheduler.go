@@ -248,22 +248,24 @@ func (s *Scheduler) processRow(ctx context.Context, tx *sql.Tx, row dueRow, now 
 	if !isWithinGrace(now, row.fireAt) {
 		log.Debug().Str("ruleId", row.ruleID).Int("offsetIndex", row.offsetIndex).
 			Msg("[REMINDER] Grace window exceeded, skipping without push")
-		_, err := tx.ExecContext(ctx, `UPDATE reminder SET state = 'skipped' WHERE rule_id = $1 AND offset_index = $2`,
-			row.ruleID, row.offsetIndex)
-		return err
+		return markSkipped(ctx, tx, row)
 	}
 
 	if err := s.fire(ctx, row); errors.Is(err, event.ErrUnappliable) {
 		log.Warn().Err(err).Str("ruleId", row.ruleID).Int("offsetIndex", row.offsetIndex).
 			Msg("[REMINDER] Event can never apply, skipping without push")
-		_, err := tx.ExecContext(ctx, `UPDATE reminder SET state = 'skipped' WHERE rule_id = $1 AND offset_index = $2`,
-			row.ruleID, row.offsetIndex)
-		return err
+		return markSkipped(ctx, tx, row)
 	} else if err != nil {
 		return fmt.Errorf("fire: %w", err)
 	}
 
 	return s.advance(ctx, tx, row)
+}
+
+func markSkipped(ctx context.Context, tx *sql.Tx, row dueRow) error {
+	_, err := tx.ExecContext(ctx, `UPDATE reminder SET state = 'skipped' WHERE rule_id = $1 AND offset_index = $2`,
+		row.ruleID, row.offsetIndex)
+	return err
 }
 
 // fire produces the reminder_fired event. It runs outside the row's own SQL
