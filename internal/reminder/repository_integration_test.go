@@ -5,11 +5,13 @@ package reminder
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"testing"
 	"time"
 
 	_ "github.com/lib/pq"
 
+	"github.com/prappser/prappser-spaces/internal/application"
 	"github.com/prappser/prappser-spaces/internal/event"
 	"github.com/prappser/prappser-spaces/internal/testdb"
 )
@@ -261,5 +263,32 @@ func TestApplyRuleChange_Integration_StalePendingCannotResurrectCancelledRule(t 
 	states := rowStates(t, db, "rule-resurrect")
 	if len(states) != 1 || states[tombstoneOffsetIndex] != "cancelled" {
 		t.Fatalf("expected the rule to remain cancelled with only its tombstone, got %v", states)
+	}
+}
+
+func TestProduceEvent_ReminderTitleWithNulByte_ShouldRejectAsUnappliable(t *testing.T) {
+	// given
+	db, componentID := getTestDB(t)
+	defer db.Close()
+	service := event.NewEventService(event.NewEventRepository(db), application.NewRepository(db), nil, nil)
+	service.SetReminderStore(NewRepository(db))
+	evt := &event.Event{
+		ID: "nul-title-evt", Type: event.EventTypeReminderChanged, CreatorPublicKey: "pk-1", Version: 1,
+		Data: map[string]interface{}{
+			"version": 1, "id": "nul-title-rule", "applicationId": "test-app-1", "componentId": componentID,
+			"targetKey": "item:1", "title": "bad\x00title", "dueAt": int64(1700000000), "tz": "UTC",
+			"offsets": []interface{}{"PT0S"}, "state": "pending", "rev": int64(1),
+		},
+	}
+
+	// when
+	_, err := service.ProduceEvent(context.Background(), evt)
+
+	// then
+	if !errors.Is(err, event.ErrUnappliable) {
+		t.Fatalf("Expected ErrUnappliable, got: %v", err)
+	}
+	if states := rowStates(t, db, "nul-title-rule"); len(states) != 0 {
+		t.Fatalf("Expected no reminder rows, got %v", states)
 	}
 }

@@ -3,8 +3,11 @@ package event
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"time"
 
 	"github.com/google/uuid"
@@ -81,7 +84,11 @@ func (s *EventService) AcceptEvent(ctx context.Context, event *Event, submitter 
 	if err != nil {
 		return nil, fmt.Errorf("failed to check for duplicate event: %w", err)
 	}
-	if existing != nil && existing.CreatorPublicKey == submitter.PublicKey && existing.Type == event.Type {
+	dupAppID, _ := event.Data["applicationId"].(string)
+	if IsUserScoped(event.Type) {
+		dupAppID = event.ApplicationID
+	}
+	if existing != nil && existing.ApplicationID == dupAppID && existing.CreatorPublicKey == submitter.PublicKey && existing.Type == event.Type {
 		log.Debug().Str("eventId", event.ID).Msg("[EVENT] Duplicate, returning stored event")
 		return existing, nil
 	}
@@ -263,12 +270,39 @@ func (s *EventService) produceUserScopedEvent(ctx context.Context, event *Event)
 	return stored, nil
 }
 
+func applyErr(err error, executed bool) error {
+	if err == nil || errors.Is(err, ErrUnappliable) {
+		return err
+	}
+	var netErr net.Error
+	if errors.Is(err, driver.ErrBadConn) || errors.Is(err, sql.ErrConnDone) ||
+		errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || errors.As(err, &netErr) {
+		return err
+	}
+	unappliable := executed
+	var pqErr *pq.Error
+	if errors.As(err, &pqErr) {
+		switch pqErr.Code.Class() {
+		case "08", "53", "57":
+			return err
+		// A duplicate events_pkey stays retryable: the retry dedupes.
+		case "22", "23":
+			unappliable = unappliable || pqErr.Code != "23505" || pqErr.Constraint != "events_pkey"
+		}
+		switch pqErr.Code {
+		case "40001", "40P01", "55P03":
+			return err
+		}
+	}
+	if !unappliable {
+		return err
+	}
+	return fmt.Errorf("%w: %w", ErrUnappliable, err)
+}
+
 func (s *EventService) persistAndApply(ctx context.Context, event *Event, sequenced bool) (stored *Event, dup bool, err error) {
 	defer func() {
-		var pqErr *pq.Error
-		if errors.As(err, &pqErr) && pqErr.Code == "23503" {
-			err = fmt.Errorf("%w: %w", ErrUnappliable, err)
-		}
+		err = applyErr(err, false)
 		if err != nil {
 			log.Debug().Str("eventId", event.ID).Err(err).Msg("[EVENT] Rejected, nothing persisted")
 		}
@@ -342,7 +376,7 @@ func (s *EventService) persistAndApply(ctx context.Context, event *Event, sequen
 	}
 
 	if err := txs.executeEvent(ctx, event); err != nil {
-		return nil, false, fmt.Errorf("execution failed: %w", err)
+		return nil, false, applyErr(fmt.Errorf("execution failed: %w", err), true)
 	}
 	log.Debug().
 		Str("eventId", event.ID).
@@ -882,7 +916,11 @@ func (s *EventService) executeApplicationAfterEditModeChanged(ctx context.Contex
 				if name == "" {
 					name = group.Name
 				}
-				err = s.appRepo.UpdateComponentGroup(entityID, name, getInt(data, "index"))
+				index := group.Index
+				if n, ok := numberValue(data["index"]); ok {
+					index = int(n)
+				}
+				err = s.appRepo.UpdateComponentGroup(entityID, name, index)
 			}
 		default:
 			err = fmt.Errorf("%w: unknown change type %q", ErrValidation, changeType)

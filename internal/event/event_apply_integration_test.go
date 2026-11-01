@@ -498,3 +498,117 @@ func TestProduceEvent_SoftDeletedApplication_ShouldRejectWithoutPersisting(t *te
 	assert.Equal(t, 0, countEvents(t, db, "id = $1", evt.ID))
 	assert.Contains(t, componentData(t, db, prefix+"comp"), "original")
 }
+
+func TestAcceptEvent_ApplicationNameWithNulByte_ShouldRejectAsUnappliable(t *testing.T) {
+	// given
+	db := connectApply(t)
+	prefix := "apply-nul-name-"
+	appRepo := seedRoleApp(t, db, prefix)
+	service := NewEventService(NewEventRepository(db), appRepo, nil, nil)
+	evt := &Event{
+		ID: prefix + "evt", Type: EventTypeApplicationDataChanged, CreatorPublicKey: prefix + "owner", Version: 1,
+		Data: map[string]interface{}{"applicationId": prefix + "app", "name": "bad\x00name"},
+	}
+
+	// when
+	_, err := service.AcceptEvent(context.Background(), evt, &user.User{PublicKey: prefix + "owner"})
+
+	// then
+	assert.ErrorIs(t, err, ErrUnappliable)
+	assert.Equal(t, 0, countEvents(t, db, "id = $1", evt.ID))
+}
+
+type notNullViolatingReminderStore struct{ db *sql.DB }
+
+func (s notNullViolatingReminderStore) ApplyRuleChange(ctx context.Context, data *ReminderChangedData) error {
+	_, err := s.db.ExecContext(ctx, `INSERT INTO reminder (rule_id) VALUES ($1)`, data.ID)
+	return err
+}
+
+func TestProduceEvent_ConstraintViolationDuringExecute_ShouldRejectAsUnappliable(t *testing.T) {
+	// given
+	db := connectApply(t)
+	prefix := "apply-23502-"
+	appRepo := seedRoleApp(t, db, prefix)
+	service := NewEventService(NewEventRepository(db), appRepo, nil, nil)
+	service.SetReminderStore(notNullViolatingReminderStore{db: db})
+	data := reminderChangedEventData()
+	data["id"] = prefix + "rule"
+	data["applicationId"] = prefix + "app"
+	data["offsets"] = []interface{}{"PT0S"}
+	evt := &Event{ID: prefix + "evt", Type: EventTypeReminderChanged, CreatorPublicKey: prefix + "owner", Version: 1, Data: data}
+
+	// when
+	_, err := service.ProduceEvent(context.Background(), evt)
+
+	// then
+	assert.ErrorIs(t, err, ErrUnappliable)
+	assert.Equal(t, 0, countEvents(t, db, "id = $1", evt.ID))
+}
+
+func TestAcceptEvent_EditModeComponentAddedWithOtherGroup_ShouldMoveComponent(t *testing.T) {
+	// given
+	db := connectApply(t)
+	prefix := "apply-move-group-"
+	appRepo := seedRoleApp(t, db, prefix)
+	seedComponent(t, appRepo, prefix+"app", prefix+"comp")
+	require.NoError(t, appRepo.CreateComponentGroup(&application.ComponentGroup{ID: prefix + "group-2", ApplicationID: prefix + "app", Name: "G2", Index: 1}))
+	service := NewEventService(NewEventRepository(db), appRepo, nil, nil)
+
+	// when
+	_, err := service.AcceptEvent(context.Background(), editModeEvent(prefix+"evt", prefix+"app", prefix+"owner",
+		map[string]interface{}{"changeType": "component_added", "entityType": "component", "entityId": prefix + "comp", "data": map[string]interface{}{
+			"id": prefix + "comp", "componentGroupId": prefix + "group-2", "applicationId": prefix + "app", "name": "C", "index": 0,
+		}},
+	), &user.User{PublicKey: prefix + "owner"})
+
+	// then
+	require.NoError(t, err)
+	comp, err := appRepo.GetComponentByID(prefix + "comp")
+	require.NoError(t, err)
+	assert.Equal(t, prefix+"group-2", comp.ComponentGroupID)
+}
+
+func TestAcceptEvent_ReusedIDForOtherApp_ShouldRejectWithoutTouchingIt(t *testing.T) {
+	// given
+	db := connectApply(t)
+	appRepo := seedRoleApp(t, db, "apply-reuse-a-")
+	seedRoleApp(t, db, "apply-reuse-b-")
+	seedComponent(t, appRepo, "apply-reuse-a-app", "apply-reuse-a-comp")
+	seedComponent(t, appRepo, "apply-reuse-b-app", "apply-reuse-b-comp")
+	creator := "apply-reuse-a-member"
+	require.NoError(t, appRepo.CreateMember(&application.Member{ID: "apply-reuse-b-extra-id", ApplicationID: "apply-reuse-b-app", Role: application.MemberRoleMember, PublicKey: creator}))
+	service := NewEventService(NewEventRepository(db), appRepo, nil, nil)
+	submitter := &user.User{PublicKey: creator}
+	ctx := context.Background()
+	_, err := service.AcceptEvent(ctx, componentDataEvent("apply-reuse-evt", "apply-reuse-a-app", creator, "apply-reuse-a-comp", "first"), submitter)
+	require.NoError(t, err)
+
+	// when
+	_, err = service.AcceptEvent(ctx, componentDataEvent("apply-reuse-evt", "apply-reuse-b-app", creator, "apply-reuse-b-comp", "second"), submitter)
+
+	// then
+	assert.ErrorIs(t, err, ErrUnappliable)
+	assert.Contains(t, componentData(t, db, "apply-reuse-b-comp"), "original")
+}
+
+func TestAcceptEvent_ComponentGroupChangedWithOnlyName_ShouldKeepIndex(t *testing.T) {
+	// given
+	db := connectApply(t)
+	prefix := "apply-group-name-"
+	appRepo := seedRoleApp(t, db, prefix)
+	require.NoError(t, appRepo.CreateComponentGroup(&application.ComponentGroup{ID: prefix + "group", ApplicationID: prefix + "app", Name: "Old", Index: 3}))
+	service := NewEventService(NewEventRepository(db), appRepo, nil, nil)
+
+	// when
+	_, err := service.AcceptEvent(context.Background(), editModeEvent(prefix+"evt", prefix+"app", prefix+"owner",
+		map[string]interface{}{"changeType": "component_group_changed", "entityType": "component_group", "entityId": prefix + "group", "data": map[string]interface{}{"name": "New"}},
+	), &user.User{PublicKey: prefix + "owner"})
+
+	// then
+	require.NoError(t, err)
+	group, err := appRepo.GetComponentGroupByID(prefix + "group")
+	require.NoError(t, err)
+	assert.Equal(t, "New", group.Name)
+	assert.Equal(t, 3, group.Index)
+}

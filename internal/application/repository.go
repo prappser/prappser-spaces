@@ -265,6 +265,7 @@ func upsertComponent(e dbtx, component *Component) error {
 	query := `INSERT INTO components (id, component_group_id, application_id, name, data, index_order)
 			  VALUES ($1, $2, $3, $4, $5, $6)
 			  ON CONFLICT (id) DO UPDATE SET
+			    component_group_id = EXCLUDED.component_group_id,
 			    name = EXCLUDED.name,
 			    data = EXCLUDED.data,
 			    index_order = EXCLUDED.index_order`
