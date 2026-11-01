@@ -285,7 +285,7 @@ func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, status
 			} else {
 				ctx.Error("Not Found", fasthttp.StatusNotFound)
 			}
-		// #320: authorized by app role (owner or admin) in the invitation service, not by space role.
+		// Authorized by app role (owner or admin) in the invitation service, not by space role.
 		case strings.HasPrefix(path, "/applications/") && strings.Contains(path, "/invites"):
 			parts := strings.Split(path, "/")
 			if len(parts) >= 4 && parts[3] == "invites" {
