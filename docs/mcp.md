@@ -2,9 +2,9 @@
 
 The space can serve an MCP endpoint so an AI agent (for example Claude Code) can work in your apps. It acts as one of your accounts, with that account's permissions.
 
-## Turn it on
+## On by default
 
-Set `MCP_ENABLED=true` and `EXTERNAL_URL` (the public URL of the space). Without `EXTERNAL_URL`, MCP stays off. `/health` reports `mcpEnabled`.
+MCP is on by default. `MCP_ENABLED=false` turns it off. `EXTERNAL_URL` (the public URL of the space) is still required: without it MCP stays off and startup logs a warning. `/health` reports `mcpEnabled`.
 
 ## Connect
 

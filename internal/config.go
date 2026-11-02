@@ -229,15 +229,17 @@ func LoadConfig() (*Config, error) {
 		}
 	}
 
+	config.MCPEnabled = true
 	if v := os.Getenv("MCP_ENABLED"); v != "" {
 		if b, err := strconv.ParseBool(v); err == nil {
 			config.MCPEnabled = b
 		} else {
+			config.MCPEnabled = false
 			log.Warn().Str("var", "MCP_ENABLED").Str("value", v).Msg("invalid value, MCP disabled")
 		}
 	}
 	if config.MCPEnabled && config.ExternalURL == "" {
-		log.Warn().Msg("MCP_ENABLED requires EXTERNAL_URL, MCP disabled")
+		log.Warn().Msg("MCP disabled: EXTERNAL_URL is not set (agents need the space's public URL); set EXTERNAL_URL, or MCP_ENABLED=false to silence this")
 		config.MCPEnabled = false
 	}
 
