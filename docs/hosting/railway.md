@@ -70,7 +70,8 @@ domain.
 Set the same variables listed in the main
 [Configuration table](../../README.md#configuration):
 `DATABASE_URL`, `PORT`, `EXTERNAL_URL`, `ALLOWED_ORIGINS`, `LOG_LEVEL`,
-`STORAGE_TYPE`, `STORAGE_PATH`. A persistent volume at the path set by
+`STORAGE_TYPE`, `STORAGE_PATH`. MCP is on once `EXTERNAL_URL` is set;
+`MCP_ENABLED=false` turns it off. A persistent volume at the path set by
 `STORAGE_PATH` (`/app/storage` if left at its default) is mandatory. It holds
 the space's identity key, so without it the space loses its identity on
 redeploy and every login breaks. Uploaded files are lost too.

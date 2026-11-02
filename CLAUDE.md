@@ -37,7 +37,7 @@ docker compose up -d && go test -tags=integration ./internal/... .  # Integratio
 | `OPEN_REGISTRATION` | No | `false` | `true` = anyone can create a `user` account with username + password via `POST /users/register`; capped by `MAX_ACCOUNTS`, 5 attempts/hour per IP |
 | `MAX_ACCOUNTS` | No | `0` | Max accounts on the space, owner included; `0` = off. Full space refuses new accounts |
 | `APP_URL` | No | `https://prappser.app` | Prappser web app URL; the OAuth consent screen lives at `{APP_URL}/#/oauth/consent`. Self-hosters add it to `ALLOWED_ORIGINS` |
-| `MCP_ENABLED` | No | `false` | `true` = agents can connect over MCP; requires `EXTERNAL_URL`; reported on `/health` as `mcpEnabled` |
+| `MCP_ENABLED` | No | `true` | On by default, `false` turns MCP off; needs `EXTERNAL_URL` (without it MCP stays off and startup logs a warning); reported on `/health` as `mcpEnabled` |
 | `SPACE_IDENTITY_IMPORT` | No | — | Import-only; `PRAPSPACE1...` blob from `POST /space/identity/export`, set during a hosting move (see `docs/hosting/selfhost.md`) |
 | `SPACE_IDENTITY_IMPORT_PASSPHRASE` | No | — | Passphrase that decrypts `SPACE_IDENTITY_IMPORT` |
 

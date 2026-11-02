@@ -1,8 +1,11 @@
 package internal
 
 import (
+	"bytes"
 	"testing"
 
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -128,9 +131,33 @@ func TestLoadConfig_StoragePathSet_ShouldMarkExplicit(t *testing.T) {
 	assert.Equal(t, "/data", config.Storage.LocalPath)
 }
 
-func TestLoadConfig_MCPEnabledUnset_ShouldDefaultToOff(t *testing.T) {
+func captureLog(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	orig := log.Logger
+	log.Logger = zerolog.New(&buf)
+	t.Cleanup(func() { log.Logger = orig })
+	return &buf
+}
+
+func TestLoadConfig_MCPEnabledUnset_ShouldDefaultToOn(t *testing.T) {
 	// given
 	t.Setenv("MCP_ENABLED", "")
+	t.Setenv("EXTERNAL_URL", "https://space.example.com")
+
+	// when
+	config, err := LoadConfig()
+
+	// then
+	require.NoError(t, err)
+	assert.True(t, config.MCPEnabled)
+}
+
+func TestLoadConfig_MCPEnabledFalse_ShouldDisable(t *testing.T) {
+	// given
+	logs := captureLog(t)
+	t.Setenv("MCP_ENABLED", "false")
+	t.Setenv("EXTERNAL_URL", "https://space.example.com")
 
 	// when
 	config, err := LoadConfig()
@@ -138,6 +165,22 @@ func TestLoadConfig_MCPEnabledUnset_ShouldDefaultToOff(t *testing.T) {
 	// then
 	require.NoError(t, err)
 	assert.False(t, config.MCPEnabled)
+	assert.NotContains(t, logs.String(), "MCP")
+}
+
+func TestLoadConfig_MCPEnabledUnsetWithoutExternalURL_ShouldStayOff(t *testing.T) {
+	// given
+	logs := captureLog(t)
+	t.Setenv("MCP_ENABLED", "")
+	t.Setenv("EXTERNAL_URL", "")
+
+	// when
+	config, err := LoadConfig()
+
+	// then
+	require.NoError(t, err)
+	assert.False(t, config.MCPEnabled)
+	assert.Contains(t, logs.String(), "MCP disabled: EXTERNAL_URL is not set")
 }
 
 func TestLoadConfig_MCPEnabledTrue_ShouldEnable(t *testing.T) {
@@ -157,19 +200,6 @@ func TestLoadConfig_MCPEnabledInvalid_ShouldStayOff(t *testing.T) {
 	// given
 	t.Setenv("MCP_ENABLED", "maybe")
 	t.Setenv("EXTERNAL_URL", "https://space.example.com")
-
-	// when
-	config, err := LoadConfig()
-
-	// then
-	require.NoError(t, err)
-	assert.False(t, config.MCPEnabled)
-}
-
-func TestLoadConfig_MCPEnabledWithoutExternalURL_ShouldStayOff(t *testing.T) {
-	// given
-	t.Setenv("MCP_ENABLED", "true")
-	t.Setenv("EXTERNAL_URL", "")
 
 	// when
 	config, err := LoadConfig()
