@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -11,7 +12,7 @@ import (
 
 type createInviteIn struct {
 	AppID          string `json:"appId" jsonschema:"the app id from list_apps"`
-	Role           string `json:"role,omitempty" jsonschema:"admin, member or viewer; defaults to member"`
+	Role           string `json:"role,omitempty" jsonschema:"member or viewer; defaults to member"`
 	ExpiresInHours *int   `json:"expiresInHours,omitempty" jsonschema:"hours until the link expires"`
 	MaxUses        *int   `json:"maxUses,omitempty" jsonschema:"how many people may use the link"`
 }
@@ -29,6 +30,9 @@ func addCreateInvite(s *sdk.Server, d Deps) {
 		u, err := caller(req)
 		if err != nil {
 			return nil, createInviteOut{}, err
+		}
+		if in.Role != "" && in.Role != "member" && in.Role != "viewer" {
+			return nil, createInviteOut{}, errors.New("agents can only create member or viewer invites")
 		}
 		inv, err := d.Invitations.CreateInvitation(u, invitation.CreateInvitationOptions{
 			ApplicationID:  in.AppID,
