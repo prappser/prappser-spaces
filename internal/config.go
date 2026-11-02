@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/prappser/prappser-spaces/internal/middleware"
 	"github.com/prappser/prappser-spaces/internal/user"
 	"github.com/rs/zerolog/log"
 )
@@ -19,6 +20,9 @@ type Config struct {
 	AllowedOrigins    []string
 	MasterPassword    string
 	TrustProxyHeaders bool
+	ClientIPHeader    string
+	OriginSecret      string
+	clientIP          middleware.ClientIPResolver
 	// IdentityImport/IdentityImportPassphrase (SPACE_IDENTITY_IMPORT /
 	// SPACE_IDENTITY_IMPORT_PASSPHRASE) are optional, import-only: set both
 	IdentityImport           string
@@ -183,6 +187,13 @@ func LoadConfig() (*Config, error) {
 	// for local dev / direct exposure where the header is attacker-controlled.
 	config.TrustProxyHeaders = os.Getenv("TRUST_PROXY") != "false"
 
+	// Optional header carrying the real client IP, set by a fronting proxy
+	// (e.g. CF-Connecting-IP). Empty = off. See middleware.NewClientIPResolver.
+	config.ClientIPHeader = strings.TrimSpace(os.Getenv("CLIENT_IP_HEADER"))
+	// Optional shared secret the fronting proxy must send; see
+	// middleware.RequireOriginSecret. Empty = off.
+	config.OriginSecret = strings.TrimSpace(os.Getenv("ORIGIN_SECRET"))
+
 	// Optional, import-only hosting-move vars - see Config.IdentityImport doc.
 	config.IdentityImport = os.Getenv("SPACE_IDENTITY_IMPORT")
 	config.IdentityImportPassphrase = os.Getenv("SPACE_IDENTITY_IMPORT_PASSPHRASE")
@@ -262,4 +273,13 @@ func LoadConfig() (*Config, error) {
 	}
 
 	return config, nil
+}
+
+// ClientIP returns the process-wide client-IP resolver, built once by
+// LoadConfig; configs built by hand (tests) get one built on first use.
+func (c *Config) ClientIP() middleware.ClientIPResolver {
+	if c.clientIP == nil {
+		c.clientIP = middleware.NewClientIPResolver(c.ClientIPHeader, c.TrustProxyHeaders)
+	}
+	return c.clientIP
 }

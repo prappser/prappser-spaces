@@ -27,7 +27,7 @@ func mcpCtx(body string) *fasthttp.RequestCtx {
 
 func TestMount_ShouldRateLimitByIP(t *testing.T) {
 	// given
-	handler := Mount(func(*fasthttp.RequestCtx) {}, Deps{ExternalURL: "https://space.example"})
+	handler := Mount(func(*fasthttp.RequestCtx) {}, Deps{ExternalURL: "https://space.example", ClientIP: middleware.NewClientIPResolver("", false)})
 	for i := 0; i < ipLimitPerMinute; i++ {
 		ctx := mcpCtx("{}")
 		handler(ctx)
@@ -45,7 +45,7 @@ func TestMount_ShouldRateLimitByIP(t *testing.T) {
 
 func TestMount_ShouldRejectBodyOverLimit(t *testing.T) {
 	// given
-	handler := Mount(func(*fasthttp.RequestCtx) {}, Deps{ExternalURL: "https://space.example"})
+	handler := Mount(func(*fasthttp.RequestCtx) {}, Deps{ExternalURL: "https://space.example", ClientIP: middleware.NewClientIPResolver("", false)})
 	declared := mcpCtx("")
 	declared.Request.Header.SetContentLength(maxBodyBytes + 1)
 	chunked := mcpCtx(strings.Repeat("a", maxBodyBytes+1))
@@ -64,7 +64,7 @@ func TestMount_ShouldRejectBodyOverLimit(t *testing.T) {
 
 func TestLimitByDevice_ShouldLimitPerDeviceAndSendRetryAfter(t *testing.T) {
 	// given
-	rl := middleware.NewRateLimiter(2, time.Minute, false)
+	rl := middleware.NewRateLimiter(2, time.Minute, middleware.NewClientIPResolver("", false))
 	verifier := func(_ context.Context, token string, _ *http.Request) (*auth.TokenInfo, error) {
 		u := &user.User{PublicKey: "same-account", DevicePublicKey: token}
 		return &auth.TokenInfo{Scopes: []string{scopeMCP}, UserID: u.PublicKey, Extra: map[string]any{"user": u}}, nil

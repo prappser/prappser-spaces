@@ -46,10 +46,13 @@ func limitByDevice(rl *middleware.RateLimiter, next http.Handler) http.Handler {
 }
 
 func Mount(next fasthttp.RequestHandler, d Deps) fasthttp.RequestHandler {
+	if d.ClientIP == nil {
+		d.ClientIP = middleware.NewClientIPResolver("", false)
+	}
 	base := strings.TrimRight(d.ExternalURL, "/")
 	server := newServer(d)
-	ipLimiter := middleware.NewRateLimiter(ipLimitPerMinute, time.Minute, d.TrustProxyHeaders)
-	deviceLimiter := middleware.NewRateLimiter(deviceLimitPerMinute, time.Minute, d.TrustProxyHeaders)
+	ipLimiter := middleware.NewRateLimiter(ipLimitPerMinute, time.Minute, d.ClientIP)
+	deviceLimiter := middleware.NewRateLimiter(deviceLimitPerMinute, time.Minute, d.ClientIP)
 
 	verifier := func(_ context.Context, token string, _ *http.Request) (*auth.TokenInfo, error) {
 		u, err := d.Agents.ValidateAccessToken(token)

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/goccy/go-json"
+	"github.com/prappser/prappser-spaces/internal/middleware"
 	"github.com/prappser/prappser-spaces/internal/oauth"
 	"github.com/prappser/prappser-spaces/internal/testdb"
 	"github.com/prappser/prappser-spaces/internal/user"
@@ -52,7 +53,7 @@ func TestOAuthRoutes_FullFlow_ShouldIssueValidAgentToken_Integration(t *testing.
 	svc := oauth.NewService(agents, users, issuer, "https://app.test")
 	svc.TestOnlyDisableSSRFGuard(pool)
 	cfg := &Config{TrustProxyHeaders: true, MCPEnabled: true, ExternalURL: issuer}
-	handler := NewRequestHandler(cfg, nil, nil, nil, userSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, oauth.NewEndpoints(svc, true))
+	handler := NewRequestHandler(cfg, nil, nil, nil, userSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, oauth.NewEndpoints(svc, middleware.NewClientIPResolver("", true)))
 
 	pk := "oauth-http-" + rand.Text()
 	require.NoError(t, users.CreateUser(&user.User{PublicKey: pk, Username: pk, Role: user.RoleUser, CreatedAt: time.Now().Unix()}))

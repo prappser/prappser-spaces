@@ -26,6 +26,7 @@ import (
 	"github.com/prappser/prappser-spaces/internal/component"
 	"github.com/prappser/prappser-spaces/internal/event"
 	"github.com/prappser/prappser-spaces/internal/invitation"
+	"github.com/prappser/prappser-spaces/internal/middleware"
 	"github.com/prappser/prappser-spaces/internal/testdb"
 	"github.com/prappser/prappser-spaces/internal/user"
 )
@@ -97,7 +98,7 @@ func newEnvWithAppLimit(t *testing.T, maxApps int) *env {
 	require.NoError(t, err)
 
 	next := func(ctx *fasthttp.RequestCtx) { ctx.Error("fallthrough", fasthttp.StatusNotFound) }
-	srv := &fasthttp.Server{Handler: Mount(next, Deps{Apps: apps, Invitations: invites, Events: events, Agents: agents, Validator: validator, ExternalURL: base})}
+	srv := &fasthttp.Server{Handler: Mount(next, Deps{Apps: apps, Invitations: invites, Events: events, Agents: agents, Validator: validator, ExternalURL: base, ClientIP: middleware.NewClientIPResolver("", false)})}
 	go srv.Serve(ln)
 	t.Cleanup(func() { srv.Shutdown() })
 	return &env{t: t, db: db, base: base, apps: apps, agents: agents, userRepo: userRepo, bc: bc, events: events}

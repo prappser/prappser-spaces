@@ -21,9 +21,9 @@ func isOAuthPath(path string) bool {
 		strings.HasPrefix(path, "/oauth/requests/")
 }
 
-func newOAuthRouter(config *Config, endpoints *oauth.Endpoints, authMiddleware *middleware.AuthMiddleware, ipRateLimiter *middleware.RateLimiter) fasthttp.RequestHandler {
-	authorizeRateLimiter := middleware.NewRateLimiter(oauthAuthorizeRateLimitPerMinute, time.Minute, config.TrustProxyHeaders)
-	tokenRateLimiter := middleware.NewRateLimiter(oauthTokenRateLimitPerMinute, time.Minute, config.TrustProxyHeaders)
+func newOAuthRouter(config *Config, endpoints *oauth.Endpoints, authMiddleware *middleware.AuthMiddleware, ipRateLimiter *middleware.RateLimiter, clientIP middleware.ClientIPResolver) fasthttp.RequestHandler {
+	authorizeRateLimiter := middleware.NewRateLimiter(oauthAuthorizeRateLimitPerMinute, time.Minute, clientIP)
+	tokenRateLimiter := middleware.NewRateLimiter(oauthTokenRateLimitPerMinute, time.Minute, clientIP)
 
 	notFound := func(ctx *fasthttp.RequestCtx) {
 		ctx.Error("Not Found", fasthttp.StatusNotFound)

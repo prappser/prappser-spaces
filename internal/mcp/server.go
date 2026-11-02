@@ -10,6 +10,7 @@ import (
 	"github.com/prappser/prappser-spaces/internal/component"
 	"github.com/prappser/prappser-spaces/internal/event"
 	"github.com/prappser/prappser-spaces/internal/invitation"
+	"github.com/prappser/prappser-spaces/internal/middleware"
 	"github.com/prappser/prappser-spaces/internal/user"
 )
 
@@ -22,13 +23,13 @@ const (
 )
 
 type Deps struct {
-	Apps              *application.ApplicationService
-	Invitations       *invitation.InvitationService
-	Events            *event.EventService
-	Agents            *user.AgentService
-	Validator         *component.Validator
-	ExternalURL       string
-	TrustProxyHeaders bool
+	Apps        *application.ApplicationService
+	Invitations *invitation.InvitationService
+	Events      *event.EventService
+	Agents      *user.AgentService
+	Validator   *component.Validator
+	ExternalURL string
+	ClientIP    middleware.ClientIPResolver
 }
 
 func newServer(d Deps) *sdk.Server {
