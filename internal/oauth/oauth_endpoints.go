@@ -14,12 +14,15 @@ import (
 const maxTokenBodyLen = 8 * 1024
 
 type Endpoints struct {
-	service           *Service
-	trustProxyHeaders bool
+	service  *Service
+	clientIP middleware.ClientIPResolver
 }
 
-func NewEndpoints(service *Service, trustProxyHeaders bool) *Endpoints {
-	return &Endpoints{service: service, trustProxyHeaders: trustProxyHeaders}
+func NewEndpoints(service *Service, clientIP middleware.ClientIPResolver) *Endpoints {
+	if clientIP == nil {
+		clientIP = middleware.NewClientIPResolver("", false)
+	}
+	return &Endpoints{service: service, clientIP: clientIP}
 }
 
 type serverMetadata struct {
@@ -63,7 +66,7 @@ func (oe *Endpoints) Authorize(ctx *fasthttp.RequestCtx) {
 		Scope:               string(q.Peek("scope")),
 		Resource:            string(q.Peek("resource")),
 		HasResource:         q.Has("resource"),
-		SourceIP:            middleware.ClientIP(ctx, oe.trustProxyHeaders),
+		SourceIP:            oe.clientIP(ctx),
 	}
 
 	consentURL, err := oe.service.Authorize(context.Background(), params)

@@ -59,7 +59,7 @@ func newFixture(t *testing.T, mutateDoc func(d map[string]any)) *fixture {
 	f.clientID = srv.URL + "/client.json"
 	f.svc = NewService(agents, users, testIssuer, "https://app.test")
 	f.svc.fetcher = fetcher
-	f.endpoints = NewEndpoints(f.svc, false)
+	f.endpoints = NewEndpoints(f.svc, middleware.NewClientIPResolver("", false))
 	return f
 }
 

@@ -36,6 +36,7 @@ import (
 	"github.com/prappser/prappser-spaces/internal/invitation"
 	"github.com/prappser/prappser-spaces/internal/keys"
 	"github.com/prappser/prappser-spaces/internal/mcp"
+	"github.com/prappser/prappser-spaces/internal/middleware"
 	"github.com/prappser/prappser-spaces/internal/oauth"
 	"github.com/prappser/prappser-spaces/internal/profile"
 	"github.com/prappser/prappser-spaces/internal/push"
@@ -260,7 +261,7 @@ func main() {
 	adminEndpoints := admin.NewAdminEndpoints(admin.NewRepository(db), admin.Limits{AccountQuotaBytes: config.Storage.AccountQuota, MaxAppsPerAccount: config.MaxAppsPerAccount})
 
 	agentService := user.NewAgentService(db, userRepository, privateKey, publicKey, config.ExternalURL)
-	oauthEndpoints := oauth.NewEndpoints(oauth.NewService(agentService, userRepository, config.ExternalURL, config.AppURL), config.TrustProxyHeaders)
+	oauthEndpoints := oauth.NewEndpoints(oauth.NewService(agentService, userRepository, config.ExternalURL, config.AppURL), config.ClientIP())
 
 	requestHandler := internal.NewRequestHandler(config, userEndpoints, statusEndpoints, healthEndpoints, userService, appEndpoints, invitationEndpoints, eventEndpoints, setupEndpoints, storageEndpoints, wsHandler, spaceEndpoints, pushEndpoints, profileEndpoints, deviceEndpoints, passwordEndpoints, assertionEndpoints, ownerClaimEndpoints, keyEndpoints, accountEndpoints, adminEndpoints, registerEndpoints, spaceprofile.NewSpaceProfileEndpoints(spaceProfileRepository, storageRepo, eventService), moveEndpoints, oauthEndpoints)
 
@@ -271,16 +272,22 @@ func main() {
 			log.Fatal().Err(err).Msg("Failed to load component schemas")
 		}
 		handler = mcp.Mount(handler, mcp.Deps{
-			Apps:              appService,
-			Invitations:       invitationService,
-			Events:            eventService,
-			Agents:            agentService,
-			Validator:         componentValidator,
-			ExternalURL:       config.ExternalURL,
-			TrustProxyHeaders: config.TrustProxyHeaders,
+			Apps:        appService,
+			Invitations: invitationService,
+			Events:      eventService,
+			Agents:      agentService,
+			Validator:   componentValidator,
+			ExternalURL: config.ExternalURL,
+			ClientIP:    config.ClientIP(),
 		})
 		log.Info().Msg("MCP endpoint enabled")
 	}
+
+	if config.ClientIPHeader != "" && config.OriginSecret == "" {
+		log.Warn().Str("header", config.ClientIPHeader).Msg("CLIENT_IP_HEADER is set without ORIGIN_SECRET: the header can be forged by requests that reach the origin directly")
+	}
+	// Outermost, so /mcp (mounted around NewRequestHandler) is covered too.
+	handler = middleware.RequireOriginSecret(config.OriginSecret, handler)
 
 	serverAddr := fmt.Sprintf(":%s", config.Port)
 	log.Info().Str("addr", serverAddr).Msg("Starting HTTP server")

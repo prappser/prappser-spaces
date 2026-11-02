@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/goccy/go-json"
+	"github.com/prappser/prappser-spaces/internal/middleware"
 	"github.com/prappser/prappser-spaces/internal/oauth"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -11,7 +12,7 @@ import (
 )
 
 func newOAuthTestHandler(mcpEnabled bool) fasthttp.RequestHandler {
-	endpoints := oauth.NewEndpoints(oauth.NewService(nil, nil, "https://space.test/", "https://app.test"), true)
+	endpoints := oauth.NewEndpoints(oauth.NewService(nil, nil, "https://space.test/", "https://app.test"), middleware.NewClientIPResolver("", true))
 	cfg := &Config{TrustProxyHeaders: true, MCPEnabled: mcpEnabled}
 	return NewRequestHandler(cfg, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, endpoints)
 }

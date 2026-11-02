@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"net"
 	"strconv"
 	"strings"
 	"sync"
@@ -16,11 +17,11 @@ import (
 // fine for the current single-instance deployment; move to a shared store
 // (e.g. Redis) if the service ever runs with more than one instance.
 type RateLimiter struct {
-	mu                sync.Mutex
-	limit             int
-	window            time.Duration
-	buckets           map[string]*rateLimitBucket
-	trustProxyHeaders bool
+	mu       sync.Mutex
+	limit    int
+	window   time.Duration
+	buckets  map[string]*rateLimitBucket
+	clientIP ClientIPResolver
 }
 
 type rateLimitBucket struct {
@@ -29,14 +30,16 @@ type rateLimitBucket struct {
 }
 
 // NewRateLimiter creates a rate limiter that allows up to limit requests per
-// key within the given window. trustProxyHeaders controls whether LimitByIP
-// (via ClientIP) trusts X-Forwarded-For - see ClientIP's doc comment.
-func NewRateLimiter(limit int, window time.Duration, trustProxyHeaders bool) *RateLimiter {
+// key within the given window. clientIP resolves the key LimitByIP uses.
+func NewRateLimiter(limit int, window time.Duration, clientIP ClientIPResolver) *RateLimiter {
+	if clientIP == nil {
+		clientIP = NewClientIPResolver("", false)
+	}
 	return &RateLimiter{
-		limit:             limit,
-		window:            window,
-		buckets:           make(map[string]*rateLimitBucket),
-		trustProxyHeaders: trustProxyHeaders,
+		limit:    limit,
+		window:   window,
+		buckets:  make(map[string]*rateLimitBucket),
+		clientIP: clientIP,
 	}
 }
 
@@ -76,7 +79,7 @@ func (rl *RateLimiter) prune(now time.Time) {
 // LimitByIP wraps handler with a rate limit keyed by the request's client IP.
 func (rl *RateLimiter) LimitByIP(handler fasthttp.RequestHandler) fasthttp.RequestHandler {
 	return func(ctx *fasthttp.RequestCtx) {
-		if allowed, retryAfter := rl.Allow(ClientIP(ctx, rl.trustProxyHeaders)); !allowed {
+		if allowed, retryAfter := rl.Allow(rl.clientIP(ctx)); !allowed {
 			writeTooManyRequests(ctx, retryAfter)
 			return
 		}
@@ -108,6 +111,26 @@ func writeTooManyRequests(ctx *fasthttp.RequestCtx, retryAfter time.Duration) {
 	// ctx.Error resets the response, so headers must be set after it, not before.
 	ctx.Error("Too Many Requests", fasthttp.StatusTooManyRequests)
 	ctx.Response.Header.Set("Retry-After", strconv.Itoa(seconds))
+}
+
+// ClientIPResolver returns the client IP of a request as a string.
+type ClientIPResolver func(ctx *fasthttp.RequestCtx) string
+
+// NewClientIPResolver builds the single client-IP resolver for the process.
+// If header is set and holds a valid IP, that wins; otherwise it falls back to
+// ClientIP(ctx, trustProxyHeaders). The header is only trustworthy if the
+// origin is reachable solely through the proxy that sets it (see
+// RequireOriginSecret); otherwise a direct client can forge it.
+func NewClientIPResolver(header string, trustProxyHeaders bool) ClientIPResolver {
+	return func(ctx *fasthttp.RequestCtx) string {
+		if header != "" {
+			raw := strings.TrimSpace(string(ctx.Request.Header.Peek(header)))
+			if ip := net.ParseIP(raw); ip != nil {
+				return ip.String()
+			}
+		}
+		return ClientIP(ctx, trustProxyHeaders)
+	}
 }
 
 // ClientIP returns the request's client IP. In production the server sits

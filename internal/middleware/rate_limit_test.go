@@ -10,7 +10,7 @@ import (
 
 func TestRateLimiter_AllowsUpToLimitThenBlocks(t *testing.T) {
 	// given
-	rl := NewRateLimiter(2, time.Minute, true)
+	rl := NewRateLimiter(2, time.Minute, NewClientIPResolver("", true))
 
 	// when
 	allowed1, _ := rl.Allow("key")
@@ -26,7 +26,7 @@ func TestRateLimiter_AllowsUpToLimitThenBlocks(t *testing.T) {
 
 func TestRateLimiter_IndependentKeysDoNotShareBudget(t *testing.T) {
 	// given
-	rl := NewRateLimiter(1, time.Minute, true)
+	rl := NewRateLimiter(1, time.Minute, NewClientIPResolver("", true))
 
 	// when
 	allowedA, _ := rl.Allow("a")
@@ -41,7 +41,7 @@ func TestRateLimiter_IndependentKeysDoNotShareBudget(t *testing.T) {
 
 func TestRateLimiter_WindowRollsOverAfterExpiry(t *testing.T) {
 	// given
-	rl := NewRateLimiter(1, 10*time.Millisecond, true)
+	rl := NewRateLimiter(1, 10*time.Millisecond, NewClientIPResolver("", true))
 	allowed1, _ := rl.Allow("key")
 	assert.True(t, allowed1)
 	blocked, _ := rl.Allow("key")
@@ -94,7 +94,7 @@ func TestClientIP_ShouldIgnoreForwardedForWhenProxyNotTrusted(t *testing.T) {
 
 func TestLimitByKey_ShouldSkipLimitingWhenKeyIsEmpty(t *testing.T) {
 	// given
-	rl := NewRateLimiter(0, time.Minute, true) // a limit of 0 would block any non-empty key
+	rl := NewRateLimiter(0, time.Minute, NewClientIPResolver("", true)) // a limit of 0 would block any non-empty key
 	called := false
 	handler := rl.LimitByKey(func(ctx *fasthttp.RequestCtx) {
 		called = true
@@ -113,7 +113,7 @@ func TestLimitByKey_ShouldSkipLimitingWhenKeyIsEmpty(t *testing.T) {
 
 func TestLimitByIP_ShouldReturn429WithRetryAfterWhenExceeded(t *testing.T) {
 	// given
-	rl := NewRateLimiter(1, time.Minute, true)
+	rl := NewRateLimiter(1, time.Minute, NewClientIPResolver("", true))
 	handler := rl.LimitByIP(func(ctx *fasthttp.RequestCtx) {})
 	ctx := &fasthttp.RequestCtx{}
 
@@ -131,7 +131,7 @@ func TestLimitByIP_ShouldNotBeBypassedBySpoofedForwardedForWhenProxyNotTrusted(t
 	// front (local dev / direct exposure). Without this, a client could send
 	// a fresh X-Forwarded-For value per request and get a fresh bucket every
 	// time, bypassing the limiter entirely.
-	rl := NewRateLimiter(1, time.Minute, false)
+	rl := NewRateLimiter(1, time.Minute, NewClientIPResolver("", false))
 	handler := rl.LimitByIP(func(ctx *fasthttp.RequestCtx) {})
 
 	firstCtx := &fasthttp.RequestCtx{}
@@ -147,4 +147,51 @@ func TestLimitByIP_ShouldNotBeBypassedBySpoofedForwardedForWhenProxyNotTrusted(t
 	// then - both requests share the same real connection IP, so the second
 	// is still blocked despite the different X-Forwarded-For value
 	assert.Equal(t, fasthttp.StatusTooManyRequests, secondCtx.Response.StatusCode())
+}
+
+func TestClientIPResolver(t *testing.T) {
+	tests := []struct {
+		name   string
+		header string
+		trust  bool
+		set    map[string]string
+		want   string // "" means ctx.RemoteIP()
+	}{
+		{"header set and valid", "CF-Connecting-IP", true, map[string]string{"CF-Connecting-IP": " 198.51.100.7 ", "X-Forwarded-For": "1.1.1.1, 10.0.0.5"}, "198.51.100.7"},
+		{"header set but absent falls back to XFF", "CF-Connecting-IP", true, map[string]string{"X-Forwarded-For": "1.1.1.1, 10.0.0.5"}, "10.0.0.5"},
+		{"header set but malformed falls back", "CF-Connecting-IP", true, map[string]string{"CF-Connecting-IP": "not-an-ip"}, ""},
+		{"unset, trust on uses last XFF", "", true, map[string]string{"X-Forwarded-For": "1.1.1.1, 10.0.0.5"}, "10.0.0.5"},
+		{"unset, trust off uses remote", "", false, map[string]string{"X-Forwarded-For": "1.1.1.1"}, ""},
+		{"unset ignores spoofed header", "", true, map[string]string{"CF-Connecting-IP": "6.6.6.6"}, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := &fasthttp.RequestCtx{}
+			for k, v := range tt.set {
+				ctx.Request.Header.Set(k, v)
+			}
+			want := tt.want
+			if want == "" {
+				want = ctx.RemoteIP().String()
+			}
+			assert.Equal(t, want, NewClientIPResolver(tt.header, tt.trust)(ctx))
+		})
+	}
+}
+
+func TestLimitByIP_ShouldBucketSeparatelyPerClientIPHeaderValue(t *testing.T) {
+	// given - every request shares one RemoteIP (the proxy); only the header differs
+	rl := NewRateLimiter(1, time.Minute, NewClientIPResolver("CF-Connecting-IP", true))
+	handler := rl.LimitByIP(func(ctx *fasthttp.RequestCtx) { ctx.SetStatusCode(fasthttp.StatusOK) })
+	call := func(ip string) int {
+		ctx := &fasthttp.RequestCtx{}
+		ctx.Request.Header.Set("CF-Connecting-IP", ip)
+		handler(ctx)
+		return ctx.Response.StatusCode()
+	}
+
+	// when / then
+	assert.Equal(t, fasthttp.StatusOK, call("198.51.100.1"))
+	assert.Equal(t, fasthttp.StatusOK, call("198.51.100.2"))
+	assert.Equal(t, fasthttp.StatusTooManyRequests, call("198.51.100.1"))
 }
