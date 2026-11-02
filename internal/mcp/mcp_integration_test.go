@@ -318,6 +318,24 @@ func TestMCP_CreateInvite_ShouldRejectPlainMember(t *testing.T) {
 	assert.Contains(t, errText(res), "only the app owner or an admin can invite")
 }
 
+func TestMCP_CreateInvite_ShouldRejectAdminRoleAndCreateNothing(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner := e.account()
+	appID := e.app(owner, 0)
+	session, _ := e.connect(owner)
+
+	// when
+	res, _ := call(t, session, "create_invite", map[string]any{"appId": appID, "role": "admin"})
+
+	// then
+	assert.True(t, res.IsError)
+	assert.Contains(t, errText(res), "member or viewer")
+	var count int
+	require.NoError(t, e.db.QueryRow(`SELECT COUNT(*) FROM invitations WHERE application_id = $1`, appID).Scan(&count))
+	assert.Zero(t, count)
+}
+
 func TestMCP_AgentReadOff_ShouldHideAppFromMemberAgentButNotOwnerAgent(t *testing.T) {
 	// given
 	e := newEnv(t)
