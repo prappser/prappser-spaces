@@ -53,6 +53,9 @@ func (h *Handler) HandleFastHTTP(ctx *fasthttp.RequestCtx) {
 	}
 
 	err = upgrader.Upgrade(ctx, func(conn *websocket.Conn) {
+		// with KeepHijackedConns nothing else closes the conn if Unregister never closes send
+		defer conn.Close()
+
 		client := NewClient(h.hub, conn, authenticatedUser)
 		h.hub.Register(client)
 
