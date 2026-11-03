@@ -186,6 +186,8 @@ func LoadConfig() (*Config, error) {
 	// since production runs behind Railway's proxy; set TRUST_PROXY=false
 	// for local dev / direct exposure where the header is attacker-controlled.
 	config.TrustProxyHeaders = os.Getenv("TRUST_PROXY") != "false"
+	config.Users.ExternalURL = config.ExternalURL
+	config.Users.TrustProxyHeaders = config.TrustProxyHeaders
 
 	// Optional header carrying the real client IP, set by a fronting proxy
 	// (e.g. CF-Connecting-IP). Empty = off. See middleware.NewClientIPResolver.

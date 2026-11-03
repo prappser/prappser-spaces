@@ -42,7 +42,7 @@ The server starts on port `4545` by default and runs database migrations automat
 | `DATABASE_URL` | Yes | - | PostgreSQL connection string |
 | `MASTER_PASSWORD` | No | - | Legacy. Only used once to migrate an existing space's encrypted key from the database into the key file, and to allow rollback to an older image. New installs need no secret |
 | `PORT` | No | `4545` | HTTP listen port |
-| `EXTERNAL_URL` | No | `http://localhost:4545` | Public URL (used in invite links); overrides PORT |
+| `EXTERNAL_URL` | No | `http://localhost:4545` | Public URL (used in invite links); overrides PORT. Also the URL device logins are bound to (`aud`); when unset the request's `Host` header is used (`X-Forwarded-Host` is ignored), so set it if a proxy rewrites Host or the space is served under several hostnames |
 | `HOSTING_PROVIDER` | No | - | Set to `zeabur` for automatic URL resolution |
 | `ALLOWED_ORIGINS` | No | `https://prappser.app,http://localhost:*,https://localhost:*` | CORS origins (comma-separated) |
 | `LOG_LEVEL` | No | `info` | `debug`, `info`, `warn`, or `error` |
