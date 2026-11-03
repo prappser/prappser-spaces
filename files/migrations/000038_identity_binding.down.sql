@@ -1,0 +1,6 @@
+ALTER TABLE users ADD COLUMN IF NOT EXISTS issuer TEXT;
+UPDATE users SET issuer = public_key WHERE issuer IS NULL;
+ALTER TABLE users ALTER COLUMN issuer SET NOT NULL;
+ALTER TABLE users DROP COLUMN IF EXISTS identity_binding;
+ALTER TABLE users DROP COLUMN IF EXISTS binding_iat;
+ALTER TABLE users DROP COLUMN IF EXISTS binding_sub;

@@ -226,13 +226,10 @@ func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, status
 			} else {
 				ctx.Error("Method Not Allowed", fasthttp.StatusMethodNotAllowed)
 			}
-		// #116 Phase 5: /identity/rebind lets an authenticated account
-		// re-pin its own issuer via an account-key-signed JWS - see
-		// AssertionEndpoints.RebindIssuer.
-		case path == "/identity/rebind":
+		case path == "/identity/binding":
 			method := string(ctx.Method())
-			if method == "POST" {
-				ipRateLimiter.LimitByIP(authMiddleware.RequireAuth(assertionEndpoints.RebindIssuer))(ctx)
+			if method == "PUT" {
+				ipRateLimiter.LimitByIP(authMiddleware.RequireAuth(assertionEndpoints.PutBinding))(ctx)
 			} else {
 				ctx.Error("Method Not Allowed", fasthttp.StatusMethodNotAllowed)
 			}
@@ -240,8 +237,6 @@ func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, status
 		// #115: /space/identity/export lets the owner export this space's
 		// identity keypair for a hosting move - named under /space/... (this
 		// space instance itself) rather than /identity/... so it doesn't read
-		// as a sibling of /identity/rebind above, which is a different
-		// concern (re-pinning an account's issuer).
 		case path == "/space/identity/export":
 			method := string(ctx.Method())
 			if method == "POST" {

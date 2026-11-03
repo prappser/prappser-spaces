@@ -40,7 +40,7 @@ func newGuestTestRequestHandler(t *testing.T, guestPublicKey, appID string) (fas
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	assert.NoError(t, err)
 
-	guestUser := &user.User{PublicKey: guestPublicKey, Username: "guest-user", Role: user.RoleGuest, CreatedAt: time.Now().Unix(), Issuer: guestPublicKey}
+	guestUser := &user.User{PublicKey: guestPublicKey, Username: "guest-user", Role: user.RoleGuest, CreatedAt: time.Now().Unix()}
 	userService := user.NewUserService(guestUserRepository{u: guestUser}, nil, user.Config{JWTExpirationHours: 24}, priv, pub)
 
 	token, _, err := userService.GenerateJWT(guestUser, guestPublicKey)

@@ -78,7 +78,7 @@ func snapshotDevices(t *testing.T, db *sql.DB) []deviceSnapshot {
 func insertTestUserAndDevice(t *testing.T, db *sql.DB, publicKey, username string) {
 	t.Helper()
 	now := time.Now().Unix()
-	_, err := db.Exec(`INSERT INTO users (public_key, username, role, issuer, created_at) VALUES ($1, $2, 'user', $1, $3)`, publicKey, username, now)
+	_, err := db.Exec(`INSERT INTO users (public_key, username, role, created_at) VALUES ($1, $2, 'user', $3)`, publicKey, username, now)
 	assert.NoError(t, err)
 	_, err = db.Exec(`INSERT INTO user_devices (device_public_key, user_public_key, device_name, created_at) VALUES ($1, $1, NULL, $2)`, publicKey, now)
 	assert.NoError(t, err)

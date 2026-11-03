@@ -3,7 +3,7 @@ package user
 import (
 	"crypto/ed25519"
 	"crypto/rand"
-	"fmt"
+	"net/url"
 	"testing"
 
 	"github.com/goccy/go-json"
@@ -38,8 +38,9 @@ func (r *getChallengeTestRepo) UpdateAvatarStorageID(publicKey string, avatarSto
 	return nil
 }
 func (r *getChallengeTestRepo) UpdateUsername(publicKey, username string) error { return nil }
-func (r *getChallengeTestRepo) UpdateUserIssuer(publicKey, issuer string) error { return nil }
-func (r *getChallengeTestRepo) SetUserIssuer(publicKey, issuer string) error    { return nil }
+func (r *getChallengeTestRepo) AcceptBinding(_, _ string, _ int64, _, _ string) (string, string, bool, error) {
+	return "", "", false, nil
+}
 
 func (r *getChallengeTestRepo) EnsureDevice(devicePublicKey, userPublicKey string, deviceName *string, createdAt int64) error {
 	return nil
@@ -65,7 +66,7 @@ func (r *getChallengeTestRepo) RenameDevice(devicePublicKey, deviceName string) 
 func (r *getChallengeTestRepo) TouchDeviceLastSeen(devicePublicKey string, ts int64) error {
 	return nil
 }
-func (r *getChallengeTestRepo) SetPasswordCredentials(publicKey, passwordVerifier, handle, accountKeyBlob, userState string) error {
+func (r *getChallengeTestRepo) SetPasswordCredentials(publicKey, passwordVerifier, handle, accountKeyBlob, userState, ownKey string) error {
 	return nil
 }
 func (r *getChallengeTestRepo) GetPasswordCredential(username string) (string, string, error) {
@@ -78,7 +79,7 @@ func (r *getChallengeTestRepo) GetEscrow(publicKey string) (string, string, erro
 	return "", "", nil
 }
 func (r *getChallengeTestRepo) UpdateUserState(publicKey, userState string) error { return nil }
-func (r *getChallengeTestRepo) ClearEscrow(publicKey string) error                { return nil }
+func (r *getChallengeTestRepo) ClearEscrow(publicKey, ownKey string) error        { return nil }
 func (r *getChallengeTestRepo) ClaimOwner(publicKey, username, passwordVerifier, handle, accountKeyBlob, userState, devicePublicKey string, deviceName *string, createdAt int64) error {
 	return nil
 }
@@ -95,17 +96,15 @@ func newGetChallengeTestEndpoints(repo UserRepository) *UserEndpoints {
 
 func newChallengeRequestCtx(publicKey string) *fasthttp.RequestCtx {
 	ctx := &fasthttp.RequestCtx{}
-	ctx.Request.SetRequestURI(fmt.Sprintf("/users/challenge?publicKey=%s", publicKey))
+	ctx.Request.SetRequestURI("/users/challenge?publicKey=" + url.QueryEscape(publicKey))
 	return ctx
 }
 
-func TestGetChallenge_ShouldReturnAndStoreChallengeForExistingUser(t *testing.T) {
+func TestGetChallenge_ShouldReturnAndStoreChallengeForWellFormedKey(t *testing.T) {
 	// given
-	repo := &getChallengeTestRepo{users: map[string]*User{
-		"pk-1": {PublicKey: "pk-1", Username: "alice", Role: RoleUser},
-	}}
-	ep := newGetChallengeTestEndpoints(repo)
-	ctx := newChallengeRequestCtx("pk-1")
+	_, key := newTestKey(t)
+	ep := newGetChallengeTestEndpoints(&getChallengeTestRepo{})
+	ctx := newChallengeRequestCtx(key)
 
 	// when
 	ep.GetChallenge(ctx)
@@ -118,58 +117,21 @@ func TestGetChallenge_ShouldReturnAndStoreChallengeForExistingUser(t *testing.T)
 	assert.NotZero(t, resp.ExpiresAt)
 	assert.NotEmpty(t, resp.SpacePublicKey)
 
-	stored, ok := ep.challenges.get("pk-1")
+	stored, ok := ep.challenges.get(key)
 	assert.True(t, ok)
 	assert.Equal(t, resp.Challenge, stored.challenge)
 }
 
-// TestGetChallenge_ShouldReturn404ForUnknownDeviceWithoutStoringChallenge
-// covers the plan-directed behavior change from the pre-device-roster
-// decoy-response design: publicKey now names a DEVICE key rather than an
-// account key, and device keys are server-generated random 32-byte values,
-// not guessable identifiers like usernames - so returning 404 for an unknown
-// one doesn't reopen the account-enumeration oracle the old decoy avoided.
-func TestGetChallenge_ShouldReturn404ForUnknownDeviceWithoutStoringChallenge(t *testing.T) {
-	// given - no devices in the repo
-	repo := &getChallengeTestRepo{users: map[string]*User{}}
-	ep := newGetChallengeTestEndpoints(repo)
+func TestGetChallenge_ShouldReturn400ForMalformedKeyWithoutStoringChallenge(t *testing.T) {
+	// given
+	ep := newGetChallengeTestEndpoints(&getChallengeTestRepo{})
 	ctx := newChallengeRequestCtx("does-not-exist")
 
 	// when
 	ep.GetChallenge(ctx)
 
 	// then
-	assert.Equal(t, fasthttp.StatusNotFound, ctx.Response.StatusCode())
-
+	assert.Equal(t, fasthttp.StatusBadRequest, ctx.Response.StatusCode())
 	_, ok := ep.challenges.get("does-not-exist")
 	assert.False(t, ok)
-}
-
-func TestGetChallenge_ShouldReturn404ForRevokedDevice(t *testing.T) {
-	// given
-	repo := &getChallengeTestRepo{
-		users:   map[string]*User{"pk-1": {PublicKey: "pk-1", Username: "alice", Role: RoleUser}},
-		revoked: map[string]bool{"pk-1": true},
-	}
-	ep := newGetChallengeTestEndpoints(repo)
-	ctx := newChallengeRequestCtx("pk-1")
-
-	// when
-	ep.GetChallenge(ctx)
-
-	// then
-	assert.Equal(t, fasthttp.StatusNotFound, ctx.Response.StatusCode())
-}
-
-func TestGetChallenge_ShouldReturn500OnRepositoryError(t *testing.T) {
-	// given
-	repo := &getChallengeTestRepo{failWith: fmt.Errorf("db unavailable")}
-	ep := newGetChallengeTestEndpoints(repo)
-	ctx := newChallengeRequestCtx("pk-1")
-
-	// when
-	ep.GetChallenge(ctx)
-
-	// then
-	assert.Equal(t, fasthttp.StatusInternalServerError, ctx.Response.StatusCode())
 }

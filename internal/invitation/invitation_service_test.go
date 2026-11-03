@@ -61,8 +61,8 @@ func (r *fakeInvitationRepo) HasBeenUsedBy(inviteID, userPublicKey string) (bool
 }
 
 // fakeUserRepo is a minimal user.UserRepository fake that records
-// EnsureDevice/UpdateUserIssuer calls so tests can assert exactly which
-// device key Join registers and how it re-pins issuer, and lets tests
+// EnsureDevice calls so tests can assert exactly which
+// device key Join registers, and lets tests
 // control whether the account already exists, its device roster, and
 // whether CreateUser fails (to simulate the #111 create-race path).
 type fakeUserRepo struct {
@@ -80,12 +80,9 @@ type fakeUserRepo struct {
 		devicePublicKey string
 		userPublicKey   string
 	}
-	updateIssuerCalls []struct {
-		publicKey string
-		issuer    string
-	}
 	updateRoleCalls []string
 	updateRoleErr   error
+	storedBinding   string
 }
 
 func (r *fakeUserRepo) CreateUser(u *user.User) error {
@@ -116,20 +113,17 @@ func (r *fakeUserRepo) UpdateAvatarStorageID(publicKey string, avatarStorageID *
 }
 func (r *fakeUserRepo) UpdateUsername(publicKey, username string) error { return nil }
 
-// UpdateUserIssuer mirrors the real repository's SQL guard (WHERE issuer =
-// public_key): it only actually moves issuer when the account is currently
-// self-pinned.
-func (r *fakeUserRepo) UpdateUserIssuer(publicKey, issuer string) error {
-	r.updateIssuerCalls = append(r.updateIssuerCalls, struct {
-		publicKey string
-		issuer    string
-	}{publicKey, issuer})
-	if r.existingUser != nil && r.existingUser.PublicKey == publicKey && r.existingUser.Issuer == r.existingUser.PublicKey {
-		r.existingUser.Issuer = issuer
+func (r *fakeUserRepo) AcceptBinding(publicKey, binding string, iat int64, sub, _ string) (string, string, bool, error) {
+	u := r.existingUser
+	if u == nil || u.PublicKey != publicKey {
+		return "", "", false, nil
 	}
-	return nil
+	if u.BindingIat > iat || (u.BindingIat == iat && u.BindingSub >= sub) {
+		return r.storedBinding, u.BindingSub, false, nil
+	}
+	u.BindingIat, u.BindingSub, r.storedBinding = iat, sub, binding
+	return binding, sub, true, nil
 }
-func (r *fakeUserRepo) SetUserIssuer(publicKey, issuer string) error { return nil }
 func (r *fakeUserRepo) EnsureDevice(devicePublicKey, userPublicKey string, deviceName *string, createdAt int64) error {
 	r.ensureDeviceCalls = append(r.ensureDeviceCalls, struct {
 		devicePublicKey string
@@ -158,7 +152,7 @@ func (r *fakeUserRepo) ListDevices(userPublicKey string) ([]*user.Device, error)
 func (r *fakeUserRepo) RevokeDevice(devicePublicKey string, ts int64) error        { return nil }
 func (r *fakeUserRepo) RenameDevice(devicePublicKey, deviceName string) error      { return nil }
 func (r *fakeUserRepo) TouchDeviceLastSeen(devicePublicKey string, ts int64) error { return nil }
-func (r *fakeUserRepo) SetPasswordCredentials(publicKey, passwordVerifier, handle, accountKeyBlob, userState string) error {
+func (r *fakeUserRepo) SetPasswordCredentials(publicKey, passwordVerifier, handle, accountKeyBlob, userState, ownKey string) error {
 	return nil
 }
 func (r *fakeUserRepo) GetPasswordCredential(username string) (string, string, error) {
@@ -171,7 +165,7 @@ func (r *fakeUserRepo) GetEscrow(publicKey string) (string, string, error) {
 	return "", "", nil
 }
 func (r *fakeUserRepo) UpdateUserState(publicKey, userState string) error { return nil }
-func (r *fakeUserRepo) ClearEscrow(publicKey string) error                { return nil }
+func (r *fakeUserRepo) ClearEscrow(publicKey, ownKey string) error        { return nil }
 func (r *fakeUserRepo) ClaimOwner(publicKey, username, passwordVerifier, handle, accountKeyBlob, userState, devicePublicKey string, deviceName *string, createdAt int64) error {
 	return nil
 }
@@ -292,14 +286,14 @@ func TestJoin_ExistingAccount_ForeignDevicePublicKey_RejectedAsUnproven(t *testi
 	// - flipped from the pre-#110 behaviour where an attacker's own device
 	// key silently got attached to the victim's account.
 	invite := &Invitation{ID: "invite-1", ApplicationID: "app-1", Role: "member", CreatedAt: time.Now().Unix(), GrantsMembership: true}
-	userRepo := &fakeUserRepo{existingUser: &user.User{PublicKey: "victim-pk", Username: "victim", Issuer: "victim-pk"}}
+	userRepo := &fakeUserRepo{existingUser: &user.User{PublicKey: "victim-pk", Username: "victim"}}
 	svc, token, _ := newJoinTestService(t, invite, userRepo, "victim-pk")
 
 	_, attackerDevicePriv, attackerDeviceB64 := generateDeviceKey(t)
 	proof := buildJoinProof(t, attackerDevicePriv, "victim-pk", attackerDeviceB64, "victim", invite.ID, time.Now().Unix())
 
 	// when: caller presents the victim's account key plus an attacker-controlled device key
-	_, err := svc.Join(token, proof, "", "")
+	_, err := svc.Join(token, proof, "", "", "")
 
 	// then: rejected outright - no device row is ever touched
 	assert.ErrorIs(t, err, ErrAccountKeyNotProven)
@@ -319,7 +313,7 @@ func TestJoin_NewAccount_ForeignDevicePublicKey_RejectedAsUnproven(t *testing.T)
 	proof := buildJoinProof(t, devicePriv, "new-pk", deviceB64, "newuser", invite.ID, time.Now().Unix())
 
 	// when
-	_, err := svc.Join(token, proof, "", "")
+	_, err := svc.Join(token, proof, "", "", "")
 
 	// then
 	assert.ErrorIs(t, err, ErrAccountKeyNotProven)
@@ -344,7 +338,7 @@ func TestJoin_NewAccount_DevicePublicKeyEqualsAccountKey_Succeeds(t *testing.T) 
 	proof := buildJoinProof(t, acctPriv, acctB64, acctB64, "newuser2", invite.ID, time.Now().Unix())
 
 	// when
-	_, err = svc.Join(token, proof, "", "")
+	_, err = svc.Join(token, proof, "", "", "")
 
 	// then: device #1 == the account's own key
 	assert.NoError(t, err)
@@ -368,7 +362,7 @@ func TestJoin_NewAccount_WithDeviceName_StoresNormalizedName(t *testing.T) {
 	proof := buildJoinProof(t, acctPriv, acctB64, acctB64, "newuser3", invite.ID, time.Now().Unix())
 
 	// when
-	_, err = svc.Join(token, proof, "", "  My Laptop  ")
+	_, err = svc.Join(token, proof, "", "", "  My Laptop  ")
 
 	// then
 	assert.NoError(t, err)
@@ -391,7 +385,7 @@ func TestJoin_NewAccount_WithoutDeviceName_StoresNilName(t *testing.T) {
 	proof := buildJoinProof(t, acctPriv, acctB64, acctB64, "newuser4", invite.ID, time.Now().Unix())
 
 	// when
-	_, err = svc.Join(token, proof, "", "")
+	_, err = svc.Join(token, proof, "", "", "")
 
 	// then
 	assert.NoError(t, err)
@@ -400,9 +394,8 @@ func TestJoin_NewAccount_WithoutDeviceName_StoresNilName(t *testing.T) {
 
 // ---- #111: cross-space identity assertions on Join ----
 
-func TestJoin_FirstContact_WithAssertion_CreatesUserWithIssuerAndEnrollsDevice(t *testing.T) {
-	// given: no existing account, and a valid assertion from a vouching
-	// space (issuer) naming this account and device.
+func TestJoin_FirstContact_WithForeignIssuerAssertionAndNoBinding_Returns401(t *testing.T) {
+	// given: an assertion minted by a space (not the account key) and no binding
 	invite := &Invitation{ID: "invite-first-1", ApplicationID: "app-1", Role: "member", CreatedAt: time.Now().Unix(), GrantsMembership: true}
 	userRepo := &fakeUserRepo{}
 	svc, token, spaceKeyB64 := newJoinTestService(t, invite, userRepo, "new-account-pk")
@@ -416,15 +409,12 @@ func TestJoin_FirstContact_WithAssertion_CreatesUserWithIssuerAndEnrollsDevice(t
 	proof := buildJoinProof(t, devicePriv, "new-account-pk", deviceB64, "newbie", invite.ID, now)
 
 	// when
-	_, err = svc.Join(token, proof, assertion, "")
+	_, err = svc.Join(token, proof, assertion, "", "")
 
-	// then: the new account is pinned to the vouching space, and the
-	// presented device is enrolled.
-	assert.NoError(t, err)
-	assert.Equal(t, issuerB64, userRepo.existingUser.Issuer)
-	assert.Len(t, userRepo.ensureDeviceCalls, 1)
-	assert.Equal(t, deviceB64, userRepo.ensureDeviceCalls[0].devicePublicKey)
-	assert.Equal(t, "new-account-pk", userRepo.ensureDeviceCalls[0].userPublicKey)
+	// then: rejected before any write
+	assert.ErrorIs(t, err, user.ErrInvalidAssertion)
+	assert.Nil(t, userRepo.existingUser)
+	assert.Empty(t, userRepo.ensureDeviceCalls)
 }
 
 func TestJoin_FirstContact_SelfSignedAssertion_PinsOwnKey(t *testing.T) {
@@ -444,12 +434,12 @@ func TestJoin_FirstContact_SelfSignedAssertion_PinsOwnKey(t *testing.T) {
 	proof := buildJoinProof(t, accountPriv, accountB64, accountB64, "selfanchored", invite.ID, now)
 
 	// when
-	_, err = svc.Join(token, proof, assertion, "")
+	_, err = svc.Join(token, proof, assertion, "", "")
 
 	// then: issuer is pinned to the account's own key, indistinguishable
 	// from a plain self-registration.
 	assert.NoError(t, err)
-	assert.Equal(t, accountB64, userRepo.existingUser.Issuer)
+	assert.Equal(t, accountB64, userRepo.existingUser.PublicKey)
 }
 
 func TestJoin_WithAssertion_UserIDMismatch_Returns401(t *testing.T) {
@@ -468,13 +458,16 @@ func TestJoin_WithAssertion_UserIDMismatch_Returns401(t *testing.T) {
 	proof := buildJoinProof(t, devicePriv, "victim-pk-2", deviceB64, "victim", invite.ID, now)
 
 	// when
-	_, err = svc.Join(token, proof, assertion, "")
+	_, err = svc.Join(token, proof, assertion, "", "")
 
 	// then
 	assert.ErrorIs(t, err, user.ErrInvalidAssertion)
 }
 
 func TestJoin_FirstContact_WithAssertion_DeviceOwnedByDifferentAccount_Returns409(t *testing.T) {
+	issuerPub, issuerPriv, err := ed25519.GenerateKey(rand.Reader)
+	assert.NoError(t, err)
+	issuerB64 := base64.StdEncoding.EncodeToString(issuerPub)
 	// given: the presented device key is already registered to a DIFFERENT
 	// account (#111 G6).
 	_, devicePriv, deviceB64 := generateDeviceKey(t)
@@ -482,42 +475,39 @@ func TestJoin_FirstContact_WithAssertion_DeviceOwnedByDifferentAccount_Returns40
 	userRepo := &fakeUserRepo{devices: map[string]*user.Device{
 		deviceB64: {DevicePublicKey: deviceB64, UserPublicKey: "someone-else"},
 	}}
-	svc, token, spaceKeyB64 := newJoinTestService(t, invite, userRepo, "new-conflict-pk")
+	svc, token, spaceKeyB64 := newJoinTestService(t, invite, userRepo, issuerB64)
 
-	issuerPub, issuerPriv, err := ed25519.GenerateKey(rand.Reader)
-	assert.NoError(t, err)
-	issuerB64 := base64.StdEncoding.EncodeToString(issuerPub)
 	now := time.Now().Unix()
-	assertion := buildAssertionJWS(t, issuerPriv, issuerB64, "new-conflict-pk", spaceKeyB64, "newbie", deviceB64, now, now+120)
-	proof := buildJoinProof(t, devicePriv, "new-conflict-pk", deviceB64, "newbie", invite.ID, now)
+	assertion := buildAssertionJWS(t, issuerPriv, issuerB64, issuerB64, spaceKeyB64, "newbie", deviceB64, now, now+120)
+	proof := buildJoinProof(t, devicePriv, issuerB64, deviceB64, "newbie", invite.ID, now)
 
 	// when
-	_, err = svc.Join(token, proof, assertion, "")
+	_, err = svc.Join(token, proof, assertion, "", "")
 
 	// then
 	assert.ErrorIs(t, err, ErrDeviceConflict)
 }
 
 func TestJoin_FirstContact_WithAssertion_RevokedDevice_Returns409(t *testing.T) {
+	issuerPub, issuerPriv, err := ed25519.GenerateKey(rand.Reader)
+	assert.NoError(t, err)
+	issuerB64 := base64.StdEncoding.EncodeToString(issuerPub)
 	// given: the presented device key belongs to THIS account already, but
 	// has been revoked.
 	_, devicePriv, deviceB64 := generateDeviceKey(t)
 	revokedAt := time.Now().Unix()
 	invite := &Invitation{ID: "invite-revoked-1", ApplicationID: "app-1", Role: "member", CreatedAt: time.Now().Unix(), GrantsMembership: true}
 	userRepo := &fakeUserRepo{devices: map[string]*user.Device{
-		deviceB64: {DevicePublicKey: deviceB64, UserPublicKey: "new-revoked-pk", RevokedAt: &revokedAt},
+		deviceB64: {DevicePublicKey: deviceB64, UserPublicKey: issuerB64, RevokedAt: &revokedAt},
 	}}
-	svc, token, spaceKeyB64 := newJoinTestService(t, invite, userRepo, "new-revoked-pk")
+	svc, token, spaceKeyB64 := newJoinTestService(t, invite, userRepo, issuerB64)
 
-	issuerPub, issuerPriv, err := ed25519.GenerateKey(rand.Reader)
-	assert.NoError(t, err)
-	issuerB64 := base64.StdEncoding.EncodeToString(issuerPub)
 	now := time.Now().Unix()
-	assertion := buildAssertionJWS(t, issuerPriv, issuerB64, "new-revoked-pk", spaceKeyB64, "newbie", deviceB64, now, now+120)
-	proof := buildJoinProof(t, devicePriv, "new-revoked-pk", deviceB64, "newbie", invite.ID, now)
+	assertion := buildAssertionJWS(t, issuerPriv, issuerB64, issuerB64, spaceKeyB64, "newbie", deviceB64, now, now+120)
+	proof := buildJoinProof(t, devicePriv, issuerB64, deviceB64, "newbie", invite.ID, now)
 
 	// when
-	_, err = svc.Join(token, proof, assertion, "")
+	_, err = svc.Join(token, proof, assertion, "", "")
 
 	// then
 	assert.ErrorIs(t, err, ErrDeviceConflict)
@@ -534,102 +524,22 @@ func TestJoin_FirstContact_WithAssertion_CreateRaceConverges(t *testing.T) {
 
 	userRepo := &fakeUserRepo{
 		createUserErr: &pq.Error{Code: pqUniqueViolation},
-		raceWinner:    &user.User{PublicKey: "race-pk", Username: "racer", Issuer: issuerB64, Role: user.RoleGuest},
+		raceWinner:    &user.User{PublicKey: issuerB64, Username: "racer", Role: user.RoleGuest},
 	}
-	svc, token, spaceKeyB64 := newJoinTestService(t, invite, userRepo, "race-pk")
+	svc, token, spaceKeyB64 := newJoinTestService(t, invite, userRepo, issuerB64)
 
 	_, devicePriv, deviceB64 := generateDeviceKey(t)
 	now := time.Now().Unix()
-	assertion := buildAssertionJWS(t, issuerPriv, issuerB64, "race-pk", spaceKeyB64, "racer", deviceB64, now, now+120)
-	proof := buildJoinProof(t, devicePriv, "race-pk", deviceB64, "racer", invite.ID, now)
+	assertion := buildAssertionJWS(t, issuerPriv, issuerB64, issuerB64, spaceKeyB64, "racer", deviceB64, now, now+120)
+	proof := buildJoinProof(t, devicePriv, issuerB64, deviceB64, "racer", invite.ID, now)
 
 	// when
-	result, err := svc.Join(token, proof, assertion, "")
+	result, err := svc.Join(token, proof, assertion, "", "")
 
 	// then: the race is not surfaced as an error - Join converges on the row
 	// that won
 	assert.NoError(t, err)
 	assert.NotNil(t, result)
-}
-
-func TestJoin_KnownAccount_WithAssertion_AddsNoDevice(t *testing.T) {
-	// given: a known account already vouched by the SAME issuer presenting
-	// the assertion (so neither re-pin nor warn fires) - isolating the
-	// load-bearing claim that an assertion never adds a device to an
-	// already-known account (D5).
-	issuerPub, issuerPriv, err := ed25519.GenerateKey(rand.Reader)
-	assert.NoError(t, err)
-	issuerB64 := base64.StdEncoding.EncodeToString(issuerPub)
-
-	invite := &Invitation{ID: "invite-known-1", ApplicationID: "app-1", Role: "member", CreatedAt: time.Now().Unix(), GrantsMembership: true}
-	userRepo := &fakeUserRepo{existingUser: &user.User{PublicKey: "known-pk", Username: "known", Issuer: issuerB64}}
-	svc, token, spaceKeyB64 := newJoinTestService(t, invite, userRepo, "known-pk")
-
-	_, devicePriv, deviceB64 := generateDeviceKey(t)
-	now := time.Now().Unix()
-	assertion := buildAssertionJWS(t, issuerPriv, issuerB64, "known-pk", spaceKeyB64, "known", deviceB64, now, now+120)
-	proof := buildJoinProof(t, devicePriv, "known-pk", deviceB64, "known", invite.ID, now)
-
-	// when
-	_, err = svc.Join(token, proof, assertion, "")
-
-	// then
-	assert.NoError(t, err)
-	assert.Empty(t, userRepo.ensureDeviceCalls)
-}
-
-func TestJoin_KnownAccount_SelfPinned_WithAssertion_RepinsAndAddsNoDevice(t *testing.T) {
-	// given: a self-pinned account presented with a valid assertion from a
-	// DIFFERENT issuer - the one-way self->vouched re-pin (D5) should fire,
-	// and no device should ever be added on this path.
-	issuerPub, issuerPriv, err := ed25519.GenerateKey(rand.Reader)
-	assert.NoError(t, err)
-	issuerB64 := base64.StdEncoding.EncodeToString(issuerPub)
-
-	invite := &Invitation{ID: "invite-repin-1", ApplicationID: "app-1", Role: "member", CreatedAt: time.Now().Unix(), GrantsMembership: true}
-	userRepo := &fakeUserRepo{existingUser: &user.User{PublicKey: "self-pk", Username: "self", Issuer: "self-pk"}}
-	svc, token, spaceKeyB64 := newJoinTestService(t, invite, userRepo, "self-pk")
-
-	_, devicePriv, deviceB64 := generateDeviceKey(t)
-	now := time.Now().Unix()
-	assertion := buildAssertionJWS(t, issuerPriv, issuerB64, "self-pk", spaceKeyB64, "self", deviceB64, now, now+120)
-	proof := buildJoinProof(t, devicePriv, "self-pk", deviceB64, "self", invite.ID, now)
-
-	// when
-	_, err = svc.Join(token, proof, assertion, "")
-
-	// then
-	assert.NoError(t, err)
-	assert.Equal(t, issuerB64, userRepo.existingUser.Issuer)
-	assert.Len(t, userRepo.updateIssuerCalls, 1)
-	assert.Empty(t, userRepo.ensureDeviceCalls)
-}
-
-func TestJoin_KnownAccount_Vouched_DifferentIssuer_PinUnchangedJoinSucceeds(t *testing.T) {
-	// given: an already-vouched account presented with an assertion from
-	// yet ANOTHER issuer - the pin never moves once vouched, join still
-	// succeeds.
-	otherIssuerPub, otherIssuerPriv, err := ed25519.GenerateKey(rand.Reader)
-	assert.NoError(t, err)
-	otherIssuerB64 := base64.StdEncoding.EncodeToString(otherIssuerPub)
-
-	invite := &Invitation{ID: "invite-vouch-1", ApplicationID: "app-1", Role: "member", CreatedAt: time.Now().Unix(), GrantsMembership: true}
-	userRepo := &fakeUserRepo{existingUser: &user.User{PublicKey: "vouched-pk", Username: "vouched", Issuer: "original-issuer-key"}}
-	svc, token, spaceKeyB64 := newJoinTestService(t, invite, userRepo, "vouched-pk")
-
-	_, devicePriv, deviceB64 := generateDeviceKey(t)
-	now := time.Now().Unix()
-	assertion := buildAssertionJWS(t, otherIssuerPriv, otherIssuerB64, "vouched-pk", spaceKeyB64, "vouched", deviceB64, now, now+120)
-	proof := buildJoinProof(t, devicePriv, "vouched-pk", deviceB64, "vouched", invite.ID, now)
-
-	// when
-	_, err = svc.Join(token, proof, assertion, "")
-
-	// then
-	assert.NoError(t, err)
-	assert.Equal(t, "original-issuer-key", userRepo.existingUser.Issuer)
-	assert.Empty(t, userRepo.updateIssuerCalls)
-	assert.Empty(t, userRepo.ensureDeviceCalls)
 }
 
 func TestJoin_LegacyBackfill_VouchedAccountWithEmptyRoster_DoesNotBackfill(t *testing.T) {
@@ -643,14 +553,14 @@ func TestJoin_LegacyBackfill_VouchedAccountWithEmptyRoster_DoesNotBackfill(t *te
 	acctB64 := base64.StdEncoding.EncodeToString(acctPub)
 
 	invite := &Invitation{ID: "invite-g3-1", ApplicationID: "app-1", Role: "member", CreatedAt: time.Now().Unix(), GrantsMembership: true}
-	userRepo := &fakeUserRepo{existingUser: &user.User{PublicKey: acctB64, Username: "vouched2", Issuer: "some-space-key"}}
+	userRepo := &fakeUserRepo{existingUser: &user.User{PublicKey: acctB64, Username: "vouched2", BindingIat: 5}}
 	svc, token, _ := newJoinTestService(t, invite, userRepo, acctB64)
 
 	// when - plain join, no assertion, device key equals account key (the
 	// proof always carries an explicit devicePublicKey claim now, so this
 	// is the closest equivalent to the old "empty devicePublicKey" input)
 	proof := buildJoinProof(t, acctPriv, acctB64, acctB64, "vouched2", invite.ID, time.Now().Unix())
-	_, err = svc.Join(token, proof, "", "")
+	_, err = svc.Join(token, proof, "", "", "")
 
 	// then
 	assert.NoError(t, err)
@@ -672,7 +582,7 @@ func TestJoin_ShouldRejectNewAccountWhenIdentityNotGranted(t *testing.T) {
 	proof := buildJoinProof(t, devicePriv, "new-noidentity-pk", deviceB64, "newbie", invite.ID, time.Now().Unix())
 
 	// when: no assertion presented
-	_, err := svc.Join(token, proof, "", "")
+	_, err := svc.Join(token, proof, "", "", "")
 
 	// then: rejected before any user/device write
 	assert.ErrorIs(t, err, ErrIdentityNotGranted)
@@ -680,6 +590,9 @@ func TestJoin_ShouldRejectNewAccountWhenIdentityNotGranted(t *testing.T) {
 }
 
 func TestJoin_ShouldAllowAssertionBackedAccountWhenIdentityNotGranted(t *testing.T) {
+	issuerPub, issuerPriv, err := ed25519.GenerateKey(rand.Reader)
+	assert.NoError(t, err)
+	issuerB64 := base64.StdEncoding.EncodeToString(issuerPub)
 	// given: a brand-new account presented with a valid assertion, joining
 	// the same grants_identity=false invite (D6) - an assertion-backed join
 	// is not a bare identity mint, so the gate must not fire. Member row is
@@ -688,18 +601,15 @@ func TestJoin_ShouldAllowAssertionBackedAccountWhenIdentityNotGranted(t *testing
 	// assertion tests above.
 	invite := &Invitation{ID: "invite-identity-2", ApplicationID: "app-1", Role: "member", CreatedAt: time.Now().Unix(), GrantsMembership: true, GrantsIdentity: false}
 	userRepo := &fakeUserRepo{}
-	svc, token, spaceKeyB64 := newJoinTestService(t, invite, userRepo, "new-identity-assert-pk")
+	svc, token, spaceKeyB64 := newJoinTestService(t, invite, userRepo, issuerB64)
 
-	issuerPub, issuerPriv, err := ed25519.GenerateKey(rand.Reader)
-	assert.NoError(t, err)
-	issuerB64 := base64.StdEncoding.EncodeToString(issuerPub)
 	_, devicePriv, deviceB64 := generateDeviceKey(t)
 	now := time.Now().Unix()
-	assertion := buildAssertionJWS(t, issuerPriv, issuerB64, "new-identity-assert-pk", spaceKeyB64, "newbie", deviceB64, now, now+120)
-	proof := buildJoinProof(t, devicePriv, "new-identity-assert-pk", deviceB64, "newbie", invite.ID, now)
+	assertion := buildAssertionJWS(t, issuerPriv, issuerB64, issuerB64, spaceKeyB64, "newbie", deviceB64, now, now+120)
+	proof := buildJoinProof(t, devicePriv, issuerB64, deviceB64, "newbie", invite.ID, now)
 
 	// when
-	_, err = svc.Join(token, proof, assertion, "")
+	_, err = svc.Join(token, proof, assertion, "", "")
 
 	// then: identity gate does not fire for an assertion-backed join
 	assert.NoError(t, err)
@@ -716,7 +626,7 @@ func TestJoin_ShouldRejectWhenMembershipNotGranted(t *testing.T) {
 	proof := buildJoinProof(t, devicePriv, "preview-pk", deviceB64, "previewer", invite.ID, time.Now().Unix())
 
 	// when
-	_, err := svc.Join(token, proof, "", "")
+	_, err := svc.Join(token, proof, "", "", "")
 
 	// then: rejected before any user/device write
 	assert.ErrorIs(t, err, ErrMembershipNotGranted)
@@ -733,7 +643,7 @@ func TestJoin_ShouldRejectInviteWithOwnerRole(t *testing.T) {
 	proof := buildJoinProof(t, devicePriv, "legacy-pk", deviceB64, "legacy", invite.ID, time.Now().Unix())
 
 	// when
-	_, err := svc.Join(token, proof, "", "")
+	_, err := svc.Join(token, proof, "", "", "")
 
 	// then: rejected before any user/device write
 	assert.ErrorIs(t, err, ErrInvalidInviteRole)
@@ -1041,7 +951,7 @@ func TestJoin_WithMembershipDuration_SetsAbsoluteExpiryOnProducedEvent(t *testin
 	proof := buildJoinProof(t, acctPriv, acctB64, acctB64, "expiryuser", invite.ID, time.Now().Unix())
 
 	// when
-	result, err := svc.Join(token, proof, "", "")
+	result, err := svc.Join(token, proof, "", "", "")
 
 	// then: the produced member_added event carries an absolute deadline
 	// computed from the invite's duration, roughly now + duration
@@ -1073,7 +983,7 @@ func TestJoin_WithoutMembershipDuration_OmitsExpiryFromProducedEvent(t *testing.
 	proof := buildJoinProof(t, acctPriv, acctB64, acctB64, "noexpiryuser", invite.ID, time.Now().Unix())
 
 	// when
-	_, err = svc.Join(token, proof, "", "")
+	_, err = svc.Join(token, proof, "", "", "")
 
 	// then
 	assert.NoError(t, err)
@@ -1163,7 +1073,7 @@ func joinWithSpaceUse(t *testing.T, invite *Invitation, existingRole string, see
 	assert.NoError(t, err)
 	acctB64 := base64.StdEncoding.EncodeToString(acctPub)
 	if existingRole != "" {
-		userRepo.existingUser = &user.User{PublicKey: acctB64, Username: "joiner", Issuer: acctB64, Role: existingRole}
+		userRepo.existingUser = &user.User{PublicKey: acctB64, Username: "joiner", Role: existingRole}
 	}
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	assert.NoError(t, err)
@@ -1177,7 +1087,7 @@ func joinWithSpaceUse(t *testing.T, invite *Invitation, existingRole string, see
 	token, err := svc.GenerateToken(invite.ID, "https://space.example", nil)
 	assert.NoError(t, err)
 	proof := buildJoinProof(t, acctPriv, acctB64, acctB64, "joiner", invite.ID, time.Now().Unix())
-	return svc.Join(token, proof, "", "")
+	return svc.Join(token, proof, "", "", "")
 }
 
 func spaceUseInvite(grants bool) *Invitation {
@@ -1269,10 +1179,10 @@ func TestJoin_ExistingGuest_AssertionWithRevokedDevice_ShouldStayGuest(t *testin
 func joinGuestWithAssertionDevice(t *testing.T, enrolled, revoked bool) *fakeUserRepo {
 	t.Helper()
 	invite := spaceUseInvite(true)
-	acctPub, _, err := ed25519.GenerateKey(rand.Reader)
+	acctPub, acctPriv, err := ed25519.GenerateKey(rand.Reader)
 	assert.NoError(t, err)
 	acctB64 := base64.StdEncoding.EncodeToString(acctPub)
-	userRepo := &fakeUserRepo{existingUser: &user.User{PublicKey: acctB64, Username: "joiner", Issuer: acctB64, Role: user.RoleGuest}}
+	userRepo := &fakeUserRepo{existingUser: &user.User{PublicKey: acctB64, Username: "joiner", Role: user.RoleGuest}}
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	assert.NoError(t, err)
 	spaceKeyB64 := base64.StdEncoding.EncodeToString(pub)
@@ -1283,11 +1193,7 @@ func joinGuestWithAssertionDevice(t *testing.T, enrolled, revoked bool) *fakeUse
 	assert.NoError(t, err)
 	_, devicePriv, deviceB64 := generateDeviceKey(t)
 	now := time.Now().Unix()
-	issuerPub, issuerPriv, err := ed25519.GenerateKey(rand.Reader)
-	assert.NoError(t, err)
-	issuerB64 := base64.StdEncoding.EncodeToString(issuerPub)
-	userRepo.existingUser.Issuer = issuerB64
-	assertion := buildAssertionJWS(t, issuerPriv, issuerB64, acctB64, spaceKeyB64, "joiner", deviceB64, now, now+120)
+	assertion := buildAssertionJWS(t, acctPriv, acctB64, acctB64, spaceKeyB64, "joiner", deviceB64, now, now+120)
 	proof := buildJoinProof(t, devicePriv, acctB64, deviceB64, "joiner", invite.ID, now)
 
 	if enrolled {
@@ -1300,7 +1206,7 @@ func joinGuestWithAssertionDevice(t *testing.T, enrolled, revoked bool) *fakeUse
 	}
 
 	// when
-	_, err = svc.Join(token, proof, assertion, "")
+	_, err = svc.Join(token, proof, assertion, "", "")
 
 	// then
 	assert.NoError(t, err)
@@ -1469,7 +1375,7 @@ func gatedJoin(t *testing.T, invite *Invitation, existingRole string, singleUse 
 	assert.NoError(t, err)
 	acctB64 := base64.StdEncoding.EncodeToString(acctPub)
 	if existingRole != "" {
-		userRepo.existingUser = &user.User{PublicKey: acctB64, Username: "joiner", Issuer: acctB64, Role: existingRole}
+		userRepo.existingUser = &user.User{PublicKey: acctB64, Username: "joiner", Role: existingRole}
 	}
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	assert.NoError(t, err)
@@ -1482,7 +1388,7 @@ func gatedJoin(t *testing.T, invite *Invitation, existingRole string, singleUse 
 	token, err := svc.GenerateToken(invite.ID, "https://space.example", nil)
 	assert.NoError(t, err)
 	proof := buildJoinProof(t, acctPriv, acctB64, acctB64, "joiner", invite.ID, time.Now().Unix())
-	_, err = svc.Join(token, proof, "", "")
+	_, err = svc.Join(token, proof, "", "", "")
 	return svc, token, proof, err
 }
 
@@ -1537,7 +1443,7 @@ func TestJoin_SingleUseGate_ExistingAccount_MultiUseInvite_ShouldJoin(t *testing
 func TestJoin_SingleUseGate_NewAccountWithAssertion_MultiUseInvite_ShouldBeRefused(t *testing.T) {
 	// given
 	invite := gatedInvite(intPtr(3))
-	acctPub, _, err := ed25519.GenerateKey(rand.Reader)
+	acctPub, acctPriv, err := ed25519.GenerateKey(rand.Reader)
 	assert.NoError(t, err)
 	acctB64 := base64.StdEncoding.EncodeToString(acctPub)
 	_, devicePriv, deviceB64 := generateDeviceKey(t)
@@ -1551,14 +1457,11 @@ func TestJoin_SingleUseGate_NewAccountWithAssertion_MultiUseInvite_ShouldBeRefus
 	token, err := svc.GenerateToken(invite.ID, "https://space.example", nil)
 	assert.NoError(t, err)
 	now := time.Now().Unix()
-	issuerPub, issuerPriv, err := ed25519.GenerateKey(rand.Reader)
-	assert.NoError(t, err)
-	issuerB64 := base64.StdEncoding.EncodeToString(issuerPub)
-	assertion := buildAssertionJWS(t, issuerPriv, issuerB64, acctB64, spaceKeyB64, "joiner", deviceB64, now, now+120)
+	assertion := buildAssertionJWS(t, acctPriv, acctB64, acctB64, spaceKeyB64, "joiner", deviceB64, now, now+120)
 	proof := buildJoinProof(t, devicePriv, acctB64, deviceB64, "joiner", invite.ID, now)
 
 	// when
-	_, err = svc.Join(token, proof, assertion, "")
+	_, err = svc.Join(token, proof, assertion, "", "")
 
 	// then
 	assert.ErrorIs(t, err, ErrSingleUseInviteRequired)
@@ -1877,4 +1780,140 @@ func TestGetInvitesForApp_ShouldAllowAdmin(t *testing.T) {
 
 	// then
 	assert.NoError(t, err)
+}
+
+// ---- auth model B: identity binding on Join ----
+
+type bindingJoin struct {
+	svc       *InvitationService
+	token     string
+	proof     string
+	assertion string
+	binding   string
+	userRepo  *fakeUserRepo
+	acctB64   string
+}
+
+// newBindingJoin builds a join by a new device of account A, bound to space K:
+// the binding is signed by A, the assertion by K and addressed to this space.
+// assertionSigner overrides K's private key to forge the assertion.
+func newBindingJoin(t *testing.T, invite *Invitation, userRepo *fakeUserRepo, assertionSigner ed25519.PrivateKey) *bindingJoin {
+	t.Helper()
+	acctPub, acctPriv, err := ed25519.GenerateKey(rand.Reader)
+	assert.NoError(t, err)
+	acctB64 := base64.StdEncoding.EncodeToString(acctPub)
+	kPub, kPriv, err := ed25519.GenerateKey(rand.Reader)
+	assert.NoError(t, err)
+	kB64 := base64.StdEncoding.EncodeToString(kPub)
+	if assertionSigner == nil {
+		assertionSigner = kPriv
+	}
+	if userRepo.existingUser != nil {
+		userRepo.existingUser.PublicKey = acctB64
+	}
+
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	assert.NoError(t, err)
+	spaceKeyB64 := base64.StdEncoding.EncodeToString(pub)
+	appRepo := application.NewMemoryRepository()
+	assert.NoError(t, appRepo.RegisterApplication(&application.Application{ID: invite.ApplicationID, Name: "Test App"}))
+	svc := NewInvitationService(&fakeInvitationRepo{invite: invite}, priv, pub, appRepo, nil, userRepo, &capturingEventService{}, spaceKeyB64)
+	token, err := svc.GenerateToken(invite.ID, "https://space.example", nil)
+	assert.NoError(t, err)
+
+	_, devicePriv, deviceB64 := generateDeviceKey(t)
+	now := time.Now().Unix()
+	binding, err := jwt.NewWithClaims(jwt.SigningMethodEdDSA, jwt.MapClaims{
+		"typ": "prappser-binding", "iss": acctB64, "sub": kB64, "url": "https://k.example", "iat": now,
+	}).SignedString(acctPriv)
+	assert.NoError(t, err)
+	return &bindingJoin{
+		svc:       svc,
+		token:     token,
+		proof:     buildJoinProof(t, devicePriv, acctB64, deviceB64, "joiner", invite.ID, now),
+		assertion: buildAssertionJWS(t, assertionSigner, kB64, acctB64, spaceKeyB64, "joiner", deviceB64, now, now+120),
+		binding:   binding,
+		userRepo:  userRepo,
+		acctB64:   acctB64,
+	}
+}
+
+func TestJoin_WithBinding_KnownAccountNewDevice_ShouldAdmitAndPromote(t *testing.T) {
+	// given: a known guest account and a binding + K-assertion for a device not on its roster
+	userRepo := &fakeUserRepo{existingUser: &user.User{Username: "joiner", Role: user.RoleGuest}}
+	j := newBindingJoin(t, spaceUseInvite(true), userRepo, nil)
+
+	// when
+	_, err := j.svc.Join(j.token, j.proof, j.assertion, j.binding, "")
+
+	// then
+	assert.NoError(t, err)
+	assert.Len(t, userRepo.ensureDeviceCalls, 1)
+	assert.Equal(t, j.acctB64, userRepo.ensureDeviceCalls[0].userPublicKey)
+	assert.Equal(t, user.RoleUser, userRepo.existingUser.Role)
+}
+
+func TestJoin_WithBinding_BadAssertion_ShouldLeaveNoUserRow(t *testing.T) {
+	// given: a valid binding whose assertion is signed by a key other than the bound space
+	_, wrongPriv, err := ed25519.GenerateKey(rand.Reader)
+	assert.NoError(t, err)
+	userRepo := &fakeUserRepo{}
+	j := newBindingJoin(t, spaceUseInvite(true), userRepo, wrongPriv)
+
+	// when
+	_, err = j.svc.Join(j.token, j.proof, j.assertion, j.binding, "")
+
+	// then
+	assert.ErrorIs(t, err, user.ErrInvalidAssertion)
+	assert.Nil(t, userRepo.existingUser)
+	assert.Empty(t, userRepo.ensureDeviceCalls)
+}
+
+func TestJoin_WithBinding_WithoutAssertion_ShouldReturnInvalidAssertion(t *testing.T) {
+	// given
+	userRepo := &fakeUserRepo{}
+	j := newBindingJoin(t, spaceUseInvite(true), userRepo, nil)
+
+	// when
+	_, err := j.svc.Join(j.token, j.proof, "", j.binding, "")
+
+	// then
+	assert.ErrorIs(t, err, user.ErrInvalidAssertion)
+	assert.Nil(t, userRepo.existingUser)
+}
+
+func TestJoin_WithLowerBinding_ShouldReturnBindingRequiredWithStoredBinding(t *testing.T) {
+	// given: the account already stored a newer binding to another space
+	userRepo := &fakeUserRepo{
+		existingUser:  &user.User{Username: "joiner", Role: user.RoleGuest, BindingIat: time.Now().Unix() + 100, BindingSub: "other-space"},
+		storedBinding: "stored-jws",
+	}
+	j := newBindingJoin(t, spaceUseInvite(true), userRepo, nil)
+
+	// when
+	_, err := j.svc.Join(j.token, j.proof, j.assertion, j.binding, "")
+
+	// then
+	var required *user.BindingRequiredError
+	assert.ErrorAs(t, err, &required)
+	assert.Equal(t, "stored-jws", required.Binding)
+	assert.Empty(t, userRepo.ensureDeviceCalls)
+}
+
+func TestJoin_NonAccountDeviceWithoutBinding_AfterBindingStored_ShouldBeRejected(t *testing.T) {
+	// given: an account with a stored binding (iat > 0) and a live roster device that is not its key
+	invite := spaceUseInvite(true)
+	_, devicePriv, deviceB64 := generateDeviceKey(t)
+	userRepo := &fakeUserRepo{
+		existingUser: &user.User{PublicKey: "acct-pk", Username: "joiner", Role: user.RoleGuest, BindingIat: 5, BindingSub: "other-space"},
+		devices:      map[string]*user.Device{deviceB64: {DevicePublicKey: deviceB64, UserPublicKey: "acct-pk"}},
+	}
+	svc, token, _ := newJoinTestService(t, invite, userRepo, "acct-pk")
+	proof := buildJoinProof(t, devicePriv, "acct-pk", deviceB64, "joiner", invite.ID, time.Now().Unix())
+
+	// when
+	_, err := svc.Join(token, proof, "", "", "")
+
+	// then
+	assert.ErrorIs(t, err, ErrAccountKeyNotProven)
 }

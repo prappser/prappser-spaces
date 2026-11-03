@@ -56,8 +56,9 @@ func (r *deviceTestRepo) UpdateUsername(publicKey, username string) error {
 	}
 	return nil
 }
-func (r *deviceTestRepo) UpdateUserIssuer(publicKey, issuer string) error { return nil }
-func (r *deviceTestRepo) SetUserIssuer(publicKey, issuer string) error    { return nil }
+func (r *deviceTestRepo) AcceptBinding(_, _ string, _ int64, _, _ string) (string, string, bool, error) {
+	return "", "", false, nil
+}
 
 func (r *deviceTestRepo) EnsureDevice(devicePublicKey, userPublicKey string, deviceName *string, createdAt int64) error {
 	if _, exists := r.devices[devicePublicKey]; exists {
@@ -99,7 +100,7 @@ func (r *deviceTestRepo) RenameDevice(devicePublicKey, deviceName string) error 
 }
 func (r *deviceTestRepo) TouchDeviceLastSeen(devicePublicKey string, ts int64) error { return nil }
 
-func (r *deviceTestRepo) SetPasswordCredentials(publicKey, passwordVerifier, handle, accountKeyBlob, userState string) error {
+func (r *deviceTestRepo) SetPasswordCredentials(publicKey, passwordVerifier, handle, accountKeyBlob, userState, ownKey string) error {
 	if _, ok := r.accounts[publicKey]; !ok {
 		return fmt.Errorf("no account for public key %s", publicKey)
 	}
@@ -128,7 +129,7 @@ func (r *deviceTestRepo) UpdateUserState(publicKey, userState string) error {
 	r.escrow[publicKey] = escrow
 	return nil
 }
-func (r *deviceTestRepo) ClearEscrow(publicKey string) error { return nil }
+func (r *deviceTestRepo) ClearEscrow(publicKey, ownKey string) error { return nil }
 func (r *deviceTestRepo) ClaimOwner(publicKey, username, passwordVerifier, handle, accountKeyBlob, userState, devicePublicKey string, deviceName *string, createdAt int64) error {
 	return nil
 }
@@ -445,7 +446,7 @@ func seedPasswordCredential(t *testing.T, repo *deviceTestRepo, verifierKey []by
 	assert.NoError(t, err)
 
 	repo.accounts["account-1"] = &User{PublicKey: "account-1", Username: username, Role: RoleUser}
-	assert.NoError(t, repo.SetPasswordCredentials("account-1", verifier, "", accountKeyBlob, userState))
+	assert.NoError(t, repo.SetPasswordCredentials("account-1", verifier, "", accountKeyBlob, userState, ""))
 	return authSecret
 }
 

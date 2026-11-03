@@ -23,8 +23,9 @@ func (noopUserRepository) UpdateAvatarStorageID(publicKey string, avatarStorageI
 	return nil
 }
 func (noopUserRepository) UpdateUsername(publicKey, username string) error { return nil }
-func (noopUserRepository) UpdateUserIssuer(publicKey, issuer string) error { return nil }
-func (noopUserRepository) SetUserIssuer(publicKey, issuer string) error    { return nil }
+func (noopUserRepository) AcceptBinding(_, _ string, _ int64, _, _ string) (string, string, bool, error) {
+	return "", "", false, nil
+}
 func (noopUserRepository) EnsureDevice(devicePublicKey, userPublicKey string, deviceName *string, createdAt int64) error {
 	return nil
 }
@@ -37,7 +38,7 @@ func (noopUserRepository) RenameDevice(devicePublicKey, deviceName string) error
 func (noopUserRepository) TouchDeviceLastSeen(devicePublicKey string, ts int64) error {
 	return nil
 }
-func (noopUserRepository) SetPasswordCredentials(publicKey, passwordVerifier, handle, accountKeyBlob, userState string) error {
+func (noopUserRepository) SetPasswordCredentials(publicKey, passwordVerifier, handle, accountKeyBlob, userState, ownKey string) error {
 	return nil
 }
 func (noopUserRepository) GetPasswordCredential(username string) (string, string, error) {
@@ -50,7 +51,7 @@ func (noopUserRepository) GetEscrow(publicKey string) (string, string, error) {
 	return "", "", nil
 }
 func (noopUserRepository) UpdateUserState(publicKey, userState string) error { return nil }
-func (noopUserRepository) ClearEscrow(publicKey string) error                { return nil }
+func (noopUserRepository) ClearEscrow(publicKey, ownKey string) error        { return nil }
 func (noopUserRepository) ClaimOwner(publicKey, username, passwordVerifier, handle, accountKeyBlob, userState, devicePublicKey string, deviceName *string, createdAt int64) error {
 	return nil
 }

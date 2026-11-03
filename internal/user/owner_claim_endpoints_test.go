@@ -51,8 +51,9 @@ func (r *ownerClaimTestRepo) UpdateAvatarStorageID(publicKey string, avatarStora
 	return nil
 }
 func (r *ownerClaimTestRepo) UpdateUsername(publicKey, username string) error { return nil }
-func (r *ownerClaimTestRepo) UpdateUserIssuer(publicKey, issuer string) error { return nil }
-func (r *ownerClaimTestRepo) SetUserIssuer(publicKey, issuer string) error    { return nil }
+func (r *ownerClaimTestRepo) AcceptBinding(_, _ string, _ int64, _, _ string) (string, string, bool, error) {
+	return "", "", false, nil
+}
 func (r *ownerClaimTestRepo) EnsureDevice(devicePublicKey, userPublicKey string, deviceName *string, createdAt int64) error {
 	return nil
 }
@@ -66,7 +67,7 @@ func (r *ownerClaimTestRepo) RenameDevice(devicePublicKey, deviceName string) er
 }
 func (r *ownerClaimTestRepo) TouchDeviceLastSeen(devicePublicKey string, ts int64) error { return nil }
 
-func (r *ownerClaimTestRepo) SetPasswordCredentials(publicKey, passwordVerifier, handle, accountKeyBlob, userState string) error {
+func (r *ownerClaimTestRepo) SetPasswordCredentials(publicKey, passwordVerifier, handle, accountKeyBlob, userState, ownKey string) error {
 	r.verifiers[publicKey] = passwordVerifier
 	if _, exists := r.handles[publicKey]; !exists {
 		r.handles[publicKey] = handle
@@ -100,7 +101,7 @@ func (r *ownerClaimTestRepo) UpdateUserState(publicKey, userState string) error 
 	r.escrow[publicKey] = escrow
 	return nil
 }
-func (r *ownerClaimTestRepo) ClearEscrow(publicKey string) error {
+func (r *ownerClaimTestRepo) ClearEscrow(publicKey, ownKey string) error {
 	delete(r.escrow, publicKey)
 	delete(r.verifiers, publicKey)
 	return nil
@@ -128,7 +129,7 @@ func (r *ownerClaimTestRepo) ClaimOwner(publicKey, username, passwordVerifier, h
 	if _, exists := r.devices[devicePublicKey]; exists {
 		return ErrDeviceKeyTaken
 	}
-	r.accounts[publicKey] = &User{PublicKey: publicKey, Username: username, Role: RoleOwner, Issuer: publicKey, CreatedAt: createdAt}
+	r.accounts[publicKey] = &User{PublicKey: publicKey, Username: username, Role: RoleOwner, CreatedAt: createdAt}
 	r.verifiers[publicKey] = passwordVerifier
 	r.handles[publicKey] = handle
 	r.escrow[publicKey] = struct{ accountKeyBlob, userState string }{accountKeyBlob, userState}
@@ -183,7 +184,7 @@ func newClaimRequestCtx(t *testing.T, body claimOwnerRequest) *fasthttp.RequestC
 
 // TestClaim_ShouldReturn201AndPersistFullOwnerRecordOnEmptySpace covers the
 // happy path end to end: every field the repo receives must match the
-// request - role, self-pinned issuer, device #1 keyed by the account key,
+// request - role, device #1 keyed by the account key,
 // the HMAC password verifier, the lowercased handle, and both escrow blobs.
 func TestClaim_ShouldReturn201AndPersistFullOwnerRecordOnEmptySpace(t *testing.T) {
 	// given
@@ -212,7 +213,6 @@ func TestClaim_ShouldReturn201AndPersistFullOwnerRecordOnEmptySpace(t *testing.T
 	account, ok := repo.accounts[req.PublicKey]
 	assert.True(t, ok)
 	assert.Equal(t, RoleOwner, account.Role)
-	assert.Equal(t, req.PublicKey, account.Issuer, "issuer must be self-pinned to the new owner's own public key")
 	assert.Equal(t, "Alice", account.Username)
 
 	device, ok := repo.devices[req.PublicKey]
@@ -292,7 +292,7 @@ func TestClaim_ShouldReturn409AndLeaveSpaceUnclaimedWhenDevicePublicKeyAlreadyRe
 // TestClaim_ShouldSucceedWithoutAuthSecretAndReportNoPasswordViaGetProfile is
 // the regression guard for the NULLIF fix in ClaimOwner: without it, an
 // empty-string verifier would satisfy GetPasswordCredential's
-// "verifier != ''" check and every passwordless claim would report a
+// "verifier != ”" check and every passwordless claim would report a
 // phantom password.
 func TestClaim_ShouldSucceedWithoutAuthSecretAndReportNoPasswordViaGetProfile(t *testing.T) {
 	// given

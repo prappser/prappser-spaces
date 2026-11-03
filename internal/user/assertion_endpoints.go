@@ -11,27 +11,28 @@ import (
 )
 
 // AssertionEndpoints exposes the HTTP handlers for minting cross-space
-// identity assertions (#111) and rebinding an account's issuer (#116 Phase
-// 5).
 type AssertionEndpoints struct {
-	// userRepository is unused by IssueAssertion (the authenticated user
-	// already comes from ctx via RequireAuth), but RebindIssuer writes
-	// through it via SetUserIssuer.
 	userRepository UserRepository
 	privateKey     ed25519.PrivateKey
 	spacePublicKey string
-	// usedJTIs provides jti replay protection for RebindIssuer, the same
-	// jtiStore mechanism DeviceEndpoints.usedJTIs uses for delegation JWSs
-	// (device_endpoints.go) - a rebind JWS is single-use.
-	usedJTIs *jtiStore
+	bindings       *Bindings
 }
 
 // NewAssertionEndpoints creates a new AssertionEndpoints. spacePublicKey is
 // this space's own base64-encoded Ed25519 public key (see main.go's
-// spacePublicKeyString) - it becomes every minted assertion's iss claim, and
-// is the expected aud on an incoming rebind.
-func NewAssertionEndpoints(userRepository UserRepository, privateKey ed25519.PrivateKey, spacePublicKey string) *AssertionEndpoints {
-	return &AssertionEndpoints{userRepository: userRepository, privateKey: privateKey, spacePublicKey: spacePublicKey, usedJTIs: newJTIStore()}
+func NewAssertionEndpoints(userRepository UserRepository, privateKey ed25519.PrivateKey, spacePublicKey string, bindings *Bindings) *AssertionEndpoints {
+	return &AssertionEndpoints{userRepository: userRepository, privateKey: privateKey, spacePublicKey: spacePublicKey, bindings: bindings}
+}
+
+type bindingResponse struct {
+	Code    string `json:"code,omitempty"`
+	Binding string `json:"binding,omitempty"`
+}
+
+func writeJSON(ctx *fasthttp.RequestCtx, status int, body any) {
+	ctx.SetStatusCode(status)
+	ctx.SetContentType("application/json")
+	json.NewEncoder(ctx).Encode(body)
 }
 
 // issueAssertionRequest is the request body for POST /identity/assertion.
@@ -43,20 +44,32 @@ type issueAssertionRequest struct {
 type issueAssertionResponse struct {
 	Assertion string `json:"assertion"`
 	ExpiresAt int64  `json:"expiresAt"`
+	Binding   string `json:"binding,omitempty"`
 }
 
 // IssueAssertion handles POST /identity/assertion. Requires auth: it mints
 // an assertion vouching for the authenticated account, addressed to the
 // relying space named by the request's audience, bound to the device that
-// authenticated the current request (PoP, D3). Mints for any authenticated
-// account, including one that is itself only self-asserted here - gating
-// which accounts may mint at all is #110, out of scope.
-// ponytail: no per-account mint budget; add if #110 lands.
+// authenticated the current request (PoP, D3). Only an account whose identity
+// space is this one may mint (Bindings.IsIdentitySpace), else 409 not_identity_space.
+// ponytail: no per-account mint budget; add one if minting gets abused.
 func (ae *AssertionEndpoints) IssueAssertion(ctx *fasthttp.RequestCtx) {
 	authenticatedUser, ok := ctx.UserValue("user").(*User)
 	if !ok || authenticatedUser == nil {
 		log.Error().Msg("[ASSERTION] Failed to get authenticated user from context")
 		ctx.Error("Unauthorized", fasthttp.StatusUnauthorized)
+		return
+	}
+
+	identity, err := ae.bindings.IsIdentitySpace(authenticatedUser)
+	if err != nil {
+		log.Error().Err(err).Msg("[ASSERTION] Failed to check identity space")
+		ctx.Error("internal server error", fasthttp.StatusInternalServerError)
+		return
+	}
+	if !identity {
+		log.Debug().Msg("[ASSERTION] This space is not the account's identity space")
+		writeJSON(ctx, fasthttp.StatusConflict, bindingResponse{Code: "not_identity_space", Binding: authenticatedUser.StoredBinding})
 		return
 	}
 
@@ -92,59 +105,55 @@ func (ae *AssertionEndpoints) IssueAssertion(ctx *fasthttp.RequestCtx) {
 	}
 
 	log.Debug().Str("publicKey", authenticatedUser.PublicKey).Str("audience", req.Audience).Msg("[ASSERTION] Assertion issued")
-	ctx.SetStatusCode(fasthttp.StatusOK)
-	ctx.SetContentType("application/json")
-	json.NewEncoder(ctx).Encode(issueAssertionResponse{Assertion: assertion, ExpiresAt: expiresAt})
+	writeJSON(ctx, fasthttp.StatusOK, issueAssertionResponse{Assertion: assertion, ExpiresAt: expiresAt, Binding: authenticatedUser.StoredBinding})
 }
 
-// rebindIssuerRequest is the request body for POST /identity/rebind.
-type rebindIssuerRequest struct {
-	Rebind string `json:"rebind"`
+type putBindingRequest struct {
+	Binding string `json:"binding"`
 }
 
-// RebindIssuer handles POST /identity/rebind. Requires auth: the caller must
-// be authenticated as the very account named by the rebind JWS's user_id
-// claim - VerifyRebind is passed the authenticated user's public key as
-// expectedUserID and enforces the match itself, before consuming the jti, so
-// a valid JWS submitted under the wrong session doesn't burn its jti. users.
-// issuer is provenance-only (see UserRepository's doc comment), so any
-// transition the account key signs for is accepted, including
-// vouched->self. Idempotent: when the account is already pinned to the
-// requested issuer, this is a 204 no-op with no repository write.
-func (ae *AssertionEndpoints) RebindIssuer(ctx *fasthttp.RequestCtx) {
+func (ae *AssertionEndpoints) PutBinding(ctx *fasthttp.RequestCtx) {
 	authenticatedUser, ok := ctx.UserValue("user").(*User)
 	if !ok || authenticatedUser == nil {
-		log.Error().Msg("[REBIND] Failed to get authenticated user from context")
+		log.Error().Msg("[BINDING] Failed to get authenticated user from context")
 		ctx.Error("Unauthorized", fasthttp.StatusUnauthorized)
 		return
 	}
 
-	var req rebindIssuerRequest
+	var req putBindingRequest
 	if err := json.Unmarshal(ctx.PostBody(), &req); err != nil {
-		log.Error().Err(err).Msg("[REBIND] Failed to parse rebind request body")
+		log.Error().Err(err).Msg("[BINDING] Failed to parse binding request body")
 		ctx.Error("invalid request body", fasthttp.StatusBadRequest)
 		return
 	}
-
-	claims, err := VerifyRebind(req.Rebind, ae.spacePublicKey, authenticatedUser.PublicKey, ae.usedJTIs, time.Now())
+	claims, err := verifyBinding(req.Binding, authenticatedUser.PublicKey, time.Now())
 	if err != nil {
-		log.Debug().Err(err).Msg("[REBIND] Rebind verification failed")
-		ctx.Error("invalid rebind", fasthttp.StatusUnauthorized)
+		log.Error().Err(err).Msg("[BINDING] Binding verification failed")
+		ctx.Error("invalid binding", fasthttp.StatusBadRequest)
 		return
 	}
 
-	if authenticatedUser.Issuer == claims.NewIssuer {
-		log.Debug().Str("publicKey", claims.UserID).Msg("[REBIND] Already pinned to requested issuer, no-op")
-		ctx.SetStatusCode(fasthttp.StatusNoContent)
-		return
+	if claims.Subject == ae.spacePublicKey {
+		blob, _, err := ae.userRepository.GetEscrow(authenticatedUser.PublicKey)
+		if err != nil {
+			log.Error().Err(err).Msg("[BINDING] Failed to look up escrow")
+			ctx.Error("internal server error", fasthttp.StatusInternalServerError)
+			return
+		}
+		if blob == "" {
+			log.Error().Msg("[BINDING] Binding names this space but the account has no escrow here")
+			writeJSON(ctx, fasthttp.StatusConflict, bindingResponse{Code: "no_escrow"})
+			return
+		}
 	}
 
-	if err := ae.userRepository.SetUserIssuer(claims.UserID, claims.NewIssuer); err != nil {
-		log.Error().Err(err).Msg("[REBIND] Failed to set user issuer")
+	stored, _, err := ae.bindings.Accept(authenticatedUser.PublicKey, req.Binding, claims)
+	if err != nil {
+		log.Error().Err(err).Msg("[BINDING] Failed to accept binding")
 		ctx.Error("internal server error", fasthttp.StatusInternalServerError)
 		return
 	}
 
-	log.Debug().Str("publicKey", claims.UserID).Str("newIssuer", claims.NewIssuer).Msg("[REBIND] Issuer rebound")
-	ctx.SetStatusCode(fasthttp.StatusNoContent)
+	log.Debug().Str("publicKey", authenticatedUser.PublicKey).Msg("[BINDING] Binding processed")
+	writeJSON(ctx, fasthttp.StatusOK, bindingResponse{Binding: stored})
 }

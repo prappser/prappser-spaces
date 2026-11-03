@@ -34,11 +34,10 @@ type User struct {
 	SpaceID         string  `json:"spaceId,omitempty"`
 	CreatedAt       int64   `json:"createdAt"`
 	AvatarStorageID *string `json:"avatarStorageId,omitempty"`
-	// Issuer is the public key that vouched for this account TO THIS SPACE.
-	// Equals PublicKey when the account registered/joined here directly;
-	// equals the issuing space's key when it arrived via a cross-space
-	// assertion (#111). NEVER empty: CreateUser defaults it to PublicKey.
-	Issuer string `json:"issuer"`
+	BindingIat      int64   `json:"-"`
+	BindingSub      string  `json:"-"`
+	StoredBinding   string  `json:"-"`
+	IdentityBinding string  `json:"identityBinding,omitempty"`
 	// DevicePublicKey identifies which of the account's devices authenticated
 	// the current request. Populated by UserService.ValidateJWT from the JWT's
 	// devicePublicKey claim (or the account key for legacy tokens - device #1's
@@ -101,20 +100,7 @@ type UserRepository interface {
 	// password-enabled account's username (see user_repository.go's partial
 	// unique index) - non-password accounts may freely share a username.
 	UpdateUsername(publicKey, username string) error
-	// UpdateUserIssuer re-pins issuer from self (issuer == public_key) to a
-	// vouching space's key, used only by the cross-space assertion re-pin
-	// (#111 D5). The SQL guard (WHERE issuer = public_key) enforces the
-	// one-way self->vouched upgrade: it is a no-op, returning nil, when the
-	// account is already vouched or doesn't exist - callers treat a no-op as
-	// fine.
-	UpdateUserIssuer(publicKey, issuer string) error
-	// SetUserIssuer unconditionally overwrites issuer for an account, used
-	// only by the account-key-signed rebind endpoint (#116 Phase 5, see
-	// AssertionEndpoints.RebindIssuer). Unlike UpdateUserIssuer, there is no
-	// guard: any transition is allowed, including vouched->self, because the
-	// account key itself is root authority over its own provenance-only
-	// issuer field.
-	SetUserIssuer(publicKey, issuer string) error
+	AcceptBinding(publicKey, binding string, iat int64, sub, ownKey string) (storedBinding, storedSub string, updated bool, err error)
 	// EnsureDevice registers a device for an account if it doesn't already exist (no-op otherwise).
 	EnsureDevice(devicePublicKey, userPublicKey string, deviceName *string, createdAt int64) error
 	// GetDevice returns nil, nil when no device with that key exists.
@@ -134,7 +120,7 @@ type UserRepository interface {
 	// ErrUsernameTaken if another account already holds that username as its
 	// password-login handle (case-insensitive). An empty accountKeyBlob or
 	// userState clears that column.
-	SetPasswordCredentials(publicKey, passwordVerifier, handle, accountKeyBlob, userState string) error
+	SetPasswordCredentials(publicKey, passwordVerifier, handle, accountKeyBlob, userState, ownKey string) error
 	// GetPasswordCredential returns "", "", nil when no PASSWORD-ENABLED
 	// account holds this username (absence is a valid state, not an error).
 	GetPasswordCredential(username string) (userPublicKey, verifier string, err error)
@@ -160,8 +146,7 @@ type UserRepository interface {
 	// /users/me/escrow, see PasswordEndpoints.ClearEscrow) - used when the
 	// account is moving its escrow elsewhere, or reclaiming its key.
 	// password_handle is deliberately left alone; idempotent, an
-	// already-clear account is not an error.
-	ClearEscrow(publicKey string) error
+	ClearEscrow(publicKey, ownKey string) error
 	// ClaimOwner creates the owner account, its first device, and its
 	// password-login credentials, then records the claim in a single
 	// transaction (see owner_claim_endpoints.go's Claim, the one-shot
@@ -200,6 +185,8 @@ type UserRepository interface {
 // when the requested username is already used for password login on this
 // space (by a different, password-enabled account).
 var ErrUsernameTaken = errors.New("username already used for password login")
+
+var ErrIdentitySpaceEscrow = errors.New("escrow cannot be cleared on the identity space")
 
 // ErrSpaceAlreadyClaimed is returned by ClaimOwner when an owner account
 // already exists for this space - the one-shot owner-claim endpoint refuses
@@ -369,19 +356,9 @@ func (ue UserEndpoints) GetChallenge(ctx *fasthttp.RequestCtx) {
 	publicKeyStr := string(publicKey)
 	log.Debug().Str("publicKey", publicKeyStr).Int("publicKeyLen", len(publicKeyStr)).Msg("[CHALLENGE] Challenge requested for device (full key)")
 
-	// publicKey identifies a DEVICE key (see device_repository.go), not
-	// necessarily the account key - pre-device-roster clients pass the
-	// account key directly, which still resolves because device #1's key
-	// equals the account key (backfilled by migration 000018).
-	device, err := ue.userRepository.GetDevice(publicKeyStr)
-	if err != nil {
-		log.Error().Err(err).Str("publicKey", publicKeyStr[:min(50, len(publicKeyStr))]+"...").Msg("[CHALLENGE] Failed to get device")
-		ctx.Error("Internal server error", fasthttp.StatusInternalServerError)
-		return
-	}
-	if device == nil || device.RevokedAt != nil {
-		log.Debug().Str("publicKey", publicKeyStr[:min(50, len(publicKeyStr))]+"...").Msg("[CHALLENGE] Device not found or revoked")
-		ctx.Error("Device not found", fasthttp.StatusNotFound)
+	if !isPublicKey(publicKeyStr) {
+		log.Debug().Msg("[CHALLENGE] Malformed publicKey")
+		ctx.Error("publicKey must be 32 std-base64-encoded bytes", fasthttp.StatusBadRequest)
 		return
 	}
 
@@ -688,6 +665,11 @@ func (ue UserEndpoints) verifyUserAuthJWS(signedJWT string, ttlSec int, expected
 	return &claims, device, nil
 }
 
+func isPublicKey(s string) bool {
+	b, err := base64.StdEncoding.DecodeString(s)
+	return err == nil && len(b) == ed25519.PublicKeySize
+}
+
 func generateChallenge() (string, error) {
 	bytes := make([]byte, 32)
 	_, err := rand.Read(bytes)
@@ -730,6 +712,7 @@ func (ue UserEndpoints) GetProfile(ctx *fasthttp.RequestCtx) {
 		profile.UserStateBlob = userState
 		profile.HasEscrow = accountKeyBlob != ""
 	}
+	profile.IdentityBinding = authenticatedUser.StoredBinding
 
 	ctx.SetStatusCode(fasthttp.StatusOK)
 	ctx.SetContentType("application/json")

@@ -128,13 +128,11 @@ func Connect(t *testing.T, pkg string) *sql.DB {
 }
 
 // InsertTestUser inserts a bare-minimum users row. The users schema is
-// strict: issuer is NOT NULL with no default, and role is CHECK'd to
-// owner/user/guest - self-pinning issuer to publicKey (as every real
-// self-registered account does) satisfies both.
+// strict: role is CHECK'd to owner/user/guest.
 func InsertTestUser(t *testing.T, db *sql.DB, publicKey string) {
 	t.Helper()
 	if _, err := db.Exec(
-		"INSERT INTO users (public_key, username, role, created_at, issuer) VALUES ($1,$2,$3,$4,$1)",
+		"INSERT INTO users (public_key, username, role, created_at) VALUES ($1,$2,$3,$4)",
 		publicKey, "test-user-"+publicKey, "user", time.Now().Unix(),
 	); err != nil {
 		t.Fatalf("Failed to insert test user %s: %v", publicKey, err)
