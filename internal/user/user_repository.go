@@ -176,10 +176,10 @@ func (r *userRepository) AcceptBinding(publicKey, binding string, iat int64, sub
 // lower(username) - and this same UPDATE overwrites both blobs, so the handle
 // is re-pointed to the submitted one. Otherwise a rename after ClearEscrow
 // would leave the stored handle stale and every later GetSalt wrong.
-func (r *userRepository) SetPasswordCredentials(publicKey, passwordVerifier, handle, accountKeyBlob, userState string) error {
-	_, err := r.db.Exec(
-		"UPDATE users SET password_verifier = $1, password_handle = CASE WHEN password_verifier IS NULL THEN $2 ELSE COALESCE(password_handle, $2) END, account_key_blob = NULLIF($3, ''), user_state_blob = NULLIF($4, '') WHERE public_key = $5",
-		passwordVerifier, handle, accountKeyBlob, userState, publicKey,
+func (r *userRepository) SetPasswordCredentials(publicKey, passwordVerifier, handle, accountKeyBlob, userState, ownKey string) error {
+	result, err := r.db.Exec(
+		"UPDATE users SET password_verifier = $1, password_handle = CASE WHEN password_verifier IS NULL THEN $2 ELSE COALESCE(password_handle, $2) END, account_key_blob = NULLIF($3, ''), user_state_blob = NULLIF($4, '') WHERE public_key = $5 AND ($3 <> '' OR binding_sub <> $6)",
+		passwordVerifier, handle, accountKeyBlob, userState, publicKey, ownKey,
 	)
 	if err != nil {
 		var pqErr *pq.Error
@@ -187,6 +187,13 @@ func (r *userRepository) SetPasswordCredentials(publicKey, passwordVerifier, han
 			return ErrUsernameTaken
 		}
 		return fmt.Errorf("failed to set password credentials: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to check rows affected: %w", err)
+	}
+	if rows == 0 {
+		return ErrIdentitySpaceEscrow
 	}
 	return nil
 }
@@ -279,13 +286,20 @@ func (r *userRepository) UpdateUserState(publicKey, userState string) error {
 // password login on this space cleanly with a 401, instead of letting it
 // succeed and hand a new device an empty escrow it can silently do nothing
 // with.
-func (r *userRepository) ClearEscrow(publicKey string) error {
-	_, err := r.db.Exec(
-		"UPDATE users SET account_key_blob = NULL, user_state_blob = NULL, password_verifier = NULL WHERE public_key = $1",
-		publicKey,
+func (r *userRepository) ClearEscrow(publicKey, ownKey string) error {
+	result, err := r.db.Exec(
+		"UPDATE users SET account_key_blob = NULL, user_state_blob = NULL, password_verifier = NULL WHERE public_key = $1 AND binding_sub <> $2",
+		publicKey, ownKey,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to clear escrow: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to check rows affected: %w", err)
+	}
+	if rows == 0 {
+		return ErrIdentitySpaceEscrow
 	}
 	return nil
 }

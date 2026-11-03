@@ -152,7 +152,7 @@ func (r *fakeUserRepo) ListDevices(userPublicKey string) ([]*user.Device, error)
 func (r *fakeUserRepo) RevokeDevice(devicePublicKey string, ts int64) error        { return nil }
 func (r *fakeUserRepo) RenameDevice(devicePublicKey, deviceName string) error      { return nil }
 func (r *fakeUserRepo) TouchDeviceLastSeen(devicePublicKey string, ts int64) error { return nil }
-func (r *fakeUserRepo) SetPasswordCredentials(publicKey, passwordVerifier, handle, accountKeyBlob, userState string) error {
+func (r *fakeUserRepo) SetPasswordCredentials(publicKey, passwordVerifier, handle, accountKeyBlob, userState, ownKey string) error {
 	return nil
 }
 func (r *fakeUserRepo) GetPasswordCredential(username string) (string, string, error) {
@@ -165,7 +165,7 @@ func (r *fakeUserRepo) GetEscrow(publicKey string) (string, string, error) {
 	return "", "", nil
 }
 func (r *fakeUserRepo) UpdateUserState(publicKey, userState string) error { return nil }
-func (r *fakeUserRepo) ClearEscrow(publicKey string) error                { return nil }
+func (r *fakeUserRepo) ClearEscrow(publicKey, ownKey string) error        { return nil }
 func (r *fakeUserRepo) ClaimOwner(publicKey, username, passwordVerifier, handle, accountKeyBlob, userState, devicePublicKey string, deviceName *string, createdAt int64) error {
 	return nil
 }

@@ -69,7 +69,15 @@ func (r *passwordTestRepo) RevokeDevice(devicePublicKey string, ts int64) error 
 func (r *passwordTestRepo) RenameDevice(devicePublicKey, deviceName string) error      { return nil }
 func (r *passwordTestRepo) TouchDeviceLastSeen(devicePublicKey string, ts int64) error { return nil }
 
-func (r *passwordTestRepo) SetPasswordCredentials(publicKey, passwordVerifier, handle, accountKeyBlob, userState string) error {
+func (r *passwordTestRepo) bindsOwnKey(publicKey, ownKey string) bool {
+	account, ok := r.accounts[publicKey]
+	return ok && ownKey != "" && account.BindingSub == ownKey
+}
+
+func (r *passwordTestRepo) SetPasswordCredentials(publicKey, passwordVerifier, handle, accountKeyBlob, userState, ownKey string) error {
+	if accountKeyBlob == "" && r.bindsOwnKey(publicKey, ownKey) {
+		return ErrIdentitySpaceEscrow
+	}
 	account, ok := r.accounts[publicKey]
 	if !ok {
 		return fmt.Errorf("no account for public key %s", publicKey)
@@ -125,7 +133,10 @@ func (r *passwordTestRepo) UpdateUserState(publicKey, userState string) error {
 // ClearEscrow mirrors the real UPDATE: verifier and both escrow blobs are
 // cleared, password_handle is deliberately left untouched (see
 // user_repository.go's ClearEscrow).
-func (r *passwordTestRepo) ClearEscrow(publicKey string) error {
+func (r *passwordTestRepo) ClearEscrow(publicKey, ownKey string) error {
+	if r.bindsOwnKey(publicKey, ownKey) {
+		return ErrIdentitySpaceEscrow
+	}
 	r.verifiers[publicKey] = ""
 	r.escrow[publicKey] = struct{ accountKeyBlob, userState string }{}
 	return nil
@@ -152,7 +163,7 @@ func newSaltRequestCtx(username string) *fasthttp.RequestCtx {
 func TestGetSalt_ShouldReturnDeterministicFallbackForUnknownUsername(t *testing.T) {
 	// given
 	saltSecret := []byte("salt-secret")
-	pe := NewPasswordEndpoints(newPasswordTestRepo(), saltSecret, []byte("verifier-key"))
+	pe := NewPasswordEndpoints(newPasswordTestRepo(), saltSecret, []byte("verifier-key"), "")
 	ctx := newSaltRequestCtx("does-not-exist")
 
 	// when
@@ -174,7 +185,7 @@ func TestGetSalt_ShouldReturnStoredSaltForPasswordEnabledAccount(t *testing.T) {
 	saltSecret := []byte("salt-secret")
 	repo := newPasswordTestRepo()
 	repo.accounts["account-1"] = &User{PublicKey: "account-1", Username: "alice"}
-	pe := NewPasswordEndpoints(repo, saltSecret, []byte("verifier-key"))
+	pe := NewPasswordEndpoints(repo, saltSecret, []byte("verifier-key"), "")
 	setCtx := newSetPasswordRequestCtx(t, &User{PublicKey: "account-1", Username: "alice"}, setPasswordRequest{AuthSecret: randomAuthSecret(t)})
 	pe.SetPassword(setCtx)
 	assert.Equal(t, fasthttp.StatusNoContent, setCtx.Response.StatusCode())
@@ -207,7 +218,7 @@ func TestGetSalt_ShouldUseStoredHandleNotCurrentUsername(t *testing.T) {
 	repo.accounts["account-1"] = &User{PublicKey: "account-1", Username: "displayname"}
 	repo.verifiers["account-1"] = "hmac-sha256$AAAA"
 	repo.handles["account-1"] = "old-identifier"
-	pe := NewPasswordEndpoints(repo, saltSecret, []byte("verifier-key"))
+	pe := NewPasswordEndpoints(repo, saltSecret, []byte("verifier-key"), "")
 
 	// when
 	ctx := newSaltRequestCtx("displayname")
@@ -231,7 +242,7 @@ func TestGetSalt_ShouldStaySameAcrossUsernameRename(t *testing.T) {
 	saltSecret := []byte("salt-secret")
 	repo := newPasswordTestRepo()
 	repo.accounts["account-1"] = &User{PublicKey: "account-1", Username: "alice"}
-	pe := NewPasswordEndpoints(repo, saltSecret, []byte("verifier-key"))
+	pe := NewPasswordEndpoints(repo, saltSecret, []byte("verifier-key"), "")
 	setCtx := newSetPasswordRequestCtx(t, &User{PublicKey: "account-1", Username: "alice"}, setPasswordRequest{AuthSecret: randomAuthSecret(t)})
 	pe.SetPassword(setCtx)
 	assert.Equal(t, fasthttp.StatusNoContent, setCtx.Response.StatusCode())
@@ -266,11 +277,11 @@ func TestGetSalt_ShouldFollowNewUsernameWhenPasswordResetAfterClearEscrowAndRena
 	saltSecret := []byte("salt-secret")
 	repo := newPasswordTestRepo()
 	repo.accounts["account-1"] = &User{PublicKey: "account-1", Username: "alice"}
-	pe := NewPasswordEndpoints(repo, saltSecret, []byte("verifier-key"))
+	pe := NewPasswordEndpoints(repo, saltSecret, []byte("verifier-key"), "")
 	setCtx := newSetPasswordRequestCtx(t, &User{PublicKey: "account-1", Username: "alice"}, setPasswordRequest{AuthSecret: randomAuthSecret(t)})
 	pe.SetPassword(setCtx)
 	assert.Equal(t, fasthttp.StatusNoContent, setCtx.Response.StatusCode())
-	assert.NoError(t, repo.ClearEscrow("account-1"))
+	assert.NoError(t, repo.ClearEscrow("account-1", ""))
 	assert.NoError(t, repo.UpdateUsername("account-1", "Bob"))
 
 	// when
@@ -288,7 +299,7 @@ func TestGetSalt_ShouldFollowNewUsernameWhenPasswordResetAfterClearEscrowAndRena
 
 func TestGetSalt_ShouldReturn400ForEmptyUsername(t *testing.T) {
 	// given
-	pe := NewPasswordEndpoints(newPasswordTestRepo(), []byte("salt-secret"), []byte("verifier-key"))
+	pe := NewPasswordEndpoints(newPasswordTestRepo(), []byte("salt-secret"), []byte("verifier-key"), "")
 	ctx := newSaltRequestCtx("")
 
 	// when
@@ -300,7 +311,7 @@ func TestGetSalt_ShouldReturn400ForEmptyUsername(t *testing.T) {
 
 func TestGetSalt_ShouldReturn400ForOversizedUsername(t *testing.T) {
 	// given
-	pe := NewPasswordEndpoints(newPasswordTestRepo(), []byte("salt-secret"), []byte("verifier-key"))
+	pe := NewPasswordEndpoints(newPasswordTestRepo(), []byte("salt-secret"), []byte("verifier-key"), "")
 	ctx := newSaltRequestCtx(strings.Repeat("a", 65))
 
 	// when
@@ -328,7 +339,7 @@ func TestSetPassword_ShouldReturn204OnSuccess(t *testing.T) {
 	repo := newPasswordTestRepo()
 	repo.accounts["account-1"] = &User{PublicKey: "account-1", Username: "alice"}
 	verifierKey := []byte("verifier-key")
-	pe := NewPasswordEndpoints(repo, []byte("salt-secret"), verifierKey)
+	pe := NewPasswordEndpoints(repo, []byte("salt-secret"), verifierKey, "")
 	authSecret := randomAuthSecret(t)
 	ctx := newSetPasswordRequestCtx(t, &User{PublicKey: "account-1", Username: "alice"}, setPasswordRequest{AuthSecret: authSecret})
 
@@ -353,7 +364,7 @@ func TestSetPassword_ShouldReturn409WhenUsernameAlreadyTakenForPasswordLogin(t *
 	repo := newPasswordTestRepo()
 	repo.accounts["account-1"] = &User{PublicKey: "account-1", Username: "alice"}
 	repo.accounts["account-2"] = &User{PublicKey: "account-2", Username: "ALICE"}
-	pe := NewPasswordEndpoints(repo, []byte("salt-secret"), []byte("verifier-key"))
+	pe := NewPasswordEndpoints(repo, []byte("salt-secret"), []byte("verifier-key"), "")
 	firstCtx := newSetPasswordRequestCtx(t, &User{PublicKey: "account-1", Username: "alice"}, setPasswordRequest{AuthSecret: randomAuthSecret(t)})
 	pe.SetPassword(firstCtx)
 	assert.Equal(t, fasthttp.StatusNoContent, firstCtx.Response.StatusCode())
@@ -369,7 +380,7 @@ func TestSetPassword_ShouldReturn409WhenUsernameAlreadyTakenForPasswordLogin(t *
 
 func TestSetPassword_ShouldReturn400ForInvalidAuthSecret(t *testing.T) {
 	// given
-	pe := NewPasswordEndpoints(newPasswordTestRepo(), []byte("salt-secret"), []byte("verifier-key"))
+	pe := NewPasswordEndpoints(newPasswordTestRepo(), []byte("salt-secret"), []byte("verifier-key"), "")
 	ctx := newSetPasswordRequestCtx(t, &User{PublicKey: "account-1", Username: "alice"}, setPasswordRequest{AuthSecret: "not-valid-base64!!"})
 
 	// when
@@ -381,7 +392,7 @@ func TestSetPassword_ShouldReturn400ForInvalidAuthSecret(t *testing.T) {
 
 func TestSetPassword_ShouldReturn401WhenUnauthenticated(t *testing.T) {
 	// given
-	pe := NewPasswordEndpoints(newPasswordTestRepo(), []byte("salt-secret"), []byte("verifier-key"))
+	pe := NewPasswordEndpoints(newPasswordTestRepo(), []byte("salt-secret"), []byte("verifier-key"), "")
 	ctx := newSetPasswordRequestCtx(t, nil, setPasswordRequest{AuthSecret: randomAuthSecret(t)})
 
 	// when
@@ -401,7 +412,7 @@ func TestSetPassword_ShouldIgnoreStrayIdentifierOrUsernameBodyKeys(t *testing.T)
 	// given
 	repo := newPasswordTestRepo()
 	repo.accounts["account-1"] = &User{PublicKey: "account-1", Username: "alice"}
-	pe := NewPasswordEndpoints(repo, []byte("salt-secret"), []byte("verifier-key"))
+	pe := NewPasswordEndpoints(repo, []byte("salt-secret"), []byte("verifier-key"), "")
 	body, err := json.Marshal(map[string]string{
 		"identifier": "someone-else",
 		"username":   "someone-else-too",
@@ -435,7 +446,7 @@ func TestSetPassword_ShouldNotChangeHandleOnSelfReset(t *testing.T) {
 	// given
 	repo := newPasswordTestRepo()
 	repo.accounts["account-1"] = &User{PublicKey: "account-1", Username: "alice"}
-	pe := NewPasswordEndpoints(repo, []byte("salt-secret"), []byte("verifier-key"))
+	pe := NewPasswordEndpoints(repo, []byte("salt-secret"), []byte("verifier-key"), "")
 	firstCtx := newSetPasswordRequestCtx(t, &User{PublicKey: "account-1", Username: "alice"}, setPasswordRequest{AuthSecret: randomAuthSecret(t)})
 	pe.SetPassword(firstCtx)
 	assert.Equal(t, fasthttp.StatusNoContent, firstCtx.Response.StatusCode())
@@ -458,7 +469,7 @@ func TestSetPassword_ShouldPersistEscrowBlobs(t *testing.T) {
 	// given
 	repo := newPasswordTestRepo()
 	repo.accounts["account-1"] = &User{PublicKey: "account-1", Username: "alice"}
-	pe := NewPasswordEndpoints(repo, []byte("salt-secret"), []byte("verifier-key"))
+	pe := NewPasswordEndpoints(repo, []byte("salt-secret"), []byte("verifier-key"), "")
 	accountKeyBlob := base64.StdEncoding.EncodeToString([]byte("sealed-account-key"))
 	userState := base64.StdEncoding.EncodeToString([]byte("sealed-user-state"))
 	ctx := newSetPasswordRequestCtx(t, &User{PublicKey: "account-1", Username: "alice"}, setPasswordRequest{
@@ -486,7 +497,7 @@ func TestSetPassword_ShouldClearEscrowWhenBlobsOmitted(t *testing.T) {
 	// given
 	repo := newPasswordTestRepo()
 	repo.accounts["account-1"] = &User{PublicKey: "account-1", Username: "alice"}
-	pe := NewPasswordEndpoints(repo, []byte("salt-secret"), []byte("verifier-key"))
+	pe := NewPasswordEndpoints(repo, []byte("salt-secret"), []byte("verifier-key"), "")
 	ctx := newSetPasswordRequestCtx(t, &User{PublicKey: "account-1", Username: "alice"}, setPasswordRequest{
 		AuthSecret:     randomAuthSecret(t),
 		AccountKeyBlob: base64.StdEncoding.EncodeToString([]byte("sealed-account-key")),
@@ -511,7 +522,7 @@ func TestSetPassword_ShouldClearEscrowWhenBlobsOmitted(t *testing.T) {
 
 func TestSetPassword_ShouldReturn400ForNonBase64AccountKeyBlob(t *testing.T) {
 	// given
-	pe := NewPasswordEndpoints(newPasswordTestRepo(), []byte("salt-secret"), []byte("verifier-key"))
+	pe := NewPasswordEndpoints(newPasswordTestRepo(), []byte("salt-secret"), []byte("verifier-key"), "")
 	ctx := newSetPasswordRequestCtx(t, &User{PublicKey: "account-1", Username: "alice"}, setPasswordRequest{
 		AuthSecret:     randomAuthSecret(t),
 		AccountKeyBlob: "not-valid-base64!!",
@@ -526,7 +537,7 @@ func TestSetPassword_ShouldReturn400ForNonBase64AccountKeyBlob(t *testing.T) {
 
 func TestSetPassword_ShouldReturn400ForOversizedUserState(t *testing.T) {
 	// given
-	pe := NewPasswordEndpoints(newPasswordTestRepo(), []byte("salt-secret"), []byte("verifier-key"))
+	pe := NewPasswordEndpoints(newPasswordTestRepo(), []byte("salt-secret"), []byte("verifier-key"), "")
 	oversized := base64.StdEncoding.EncodeToString(make([]byte, maxUserStateBlobLen+1))
 	ctx := newSetPasswordRequestCtx(t, &User{PublicKey: "account-1", Username: "alice"}, setPasswordRequest{
 		AuthSecret: randomAuthSecret(t),
@@ -560,7 +571,7 @@ func TestClearEscrow_ShouldNullVerifierAndBlobsButLeaveHandle(t *testing.T) {
 	repo.verifiers["account-1"] = "hmac-sha256$AAAA"
 	repo.handles["account-1"] = "alice"
 	repo.escrow["account-1"] = struct{ accountKeyBlob, userState string }{"sealed-account-key", "sealed-user-state"}
-	pe := NewPasswordEndpoints(repo, []byte("salt-secret"), []byte("verifier-key"))
+	pe := NewPasswordEndpoints(repo, []byte("salt-secret"), []byte("verifier-key"), "")
 	ctx := newClearEscrowRequestCtx(&User{PublicKey: "account-1"})
 
 	// when
@@ -582,7 +593,7 @@ func TestClearEscrow_ShouldReturn204WhenAlreadyClear(t *testing.T) {
 	// given
 	repo := newPasswordTestRepo()
 	repo.accounts["account-1"] = &User{PublicKey: "account-1", Username: "alice"}
-	pe := NewPasswordEndpoints(repo, []byte("salt-secret"), []byte("verifier-key"))
+	pe := NewPasswordEndpoints(repo, []byte("salt-secret"), []byte("verifier-key"), "")
 	ctx := newClearEscrowRequestCtx(&User{PublicKey: "account-1"})
 
 	// when
@@ -594,7 +605,7 @@ func TestClearEscrow_ShouldReturn204WhenAlreadyClear(t *testing.T) {
 
 func TestClearEscrow_ShouldReturn401WhenUnauthenticated(t *testing.T) {
 	// given
-	pe := NewPasswordEndpoints(newPasswordTestRepo(), []byte("salt-secret"), []byte("verifier-key"))
+	pe := NewPasswordEndpoints(newPasswordTestRepo(), []byte("salt-secret"), []byte("verifier-key"), "")
 	ctx := newClearEscrowRequestCtx(nil)
 
 	// when
@@ -602,4 +613,77 @@ func TestClearEscrow_ShouldReturn401WhenUnauthenticated(t *testing.T) {
 
 	// then
 	assert.Equal(t, fasthttp.StatusUnauthorized, ctx.Response.StatusCode())
+}
+
+func newOwnKeyEscrowRepo(bindingSub string) *passwordTestRepo {
+	repo := newPasswordTestRepo()
+	repo.accounts["account-1"] = &User{PublicKey: "account-1", Username: "alice", BindingSub: bindingSub}
+	repo.verifiers["account-1"] = "hmac-sha256$AAAA"
+	repo.escrow["account-1"] = struct{ accountKeyBlob, userState string }{"sealed-account-key", "sealed-user-state"}
+	return repo
+}
+
+func TestClearEscrow_ShouldReturn409WhenBindingNamesOwnKey(t *testing.T) {
+	// given
+	repo := newOwnKeyEscrowRepo("own-key")
+	pe := NewPasswordEndpoints(repo, []byte("salt-secret"), []byte("verifier-key"), "own-key")
+	ctx := newClearEscrowRequestCtx(&User{PublicKey: "account-1"})
+
+	// when
+	pe.ClearEscrow(ctx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusConflict, ctx.Response.StatusCode())
+	assert.JSONEq(t, `{"code":"identity_space_escrow"}`, string(ctx.Response.Body()))
+	blob, _, _ := repo.GetEscrow("account-1")
+	assert.NotEmpty(t, blob)
+}
+
+func TestClearEscrow_ShouldReturn204WhenBindingNamesForeignKeyOrNone(t *testing.T) {
+	for _, sub := range []string{"foreign-key", ""} {
+		// given
+		repo := newOwnKeyEscrowRepo(sub)
+		pe := NewPasswordEndpoints(repo, []byte("salt-secret"), []byte("verifier-key"), "own-key")
+		ctx := newClearEscrowRequestCtx(&User{PublicKey: "account-1"})
+
+		// when
+		pe.ClearEscrow(ctx)
+
+		// then
+		assert.Equal(t, fasthttp.StatusNoContent, ctx.Response.StatusCode())
+		blob, _, _ := repo.GetEscrow("account-1")
+		assert.Empty(t, blob)
+	}
+}
+
+func TestSetPassword_ShouldReturn409WhenEmptyBlobAndBindingNamesOwnKey(t *testing.T) {
+	// given
+	repo := newOwnKeyEscrowRepo("own-key")
+	pe := NewPasswordEndpoints(repo, []byte("salt-secret"), []byte("verifier-key"), "own-key")
+	ctx := newSetPasswordRequestCtx(t, &User{PublicKey: "account-1", Username: "alice"}, setPasswordRequest{AuthSecret: randomAuthSecret(t)})
+
+	// when
+	pe.SetPassword(ctx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusConflict, ctx.Response.StatusCode())
+	assert.JSONEq(t, `{"code":"identity_space_escrow"}`, string(ctx.Response.Body()))
+	blob, _, _ := repo.GetEscrow("account-1")
+	assert.NotEmpty(t, blob)
+}
+
+func TestSetPassword_ShouldReturn204WhenNonEmptyBlobAndBindingNamesOwnKey(t *testing.T) {
+	// given
+	repo := newOwnKeyEscrowRepo("own-key")
+	pe := NewPasswordEndpoints(repo, []byte("salt-secret"), []byte("verifier-key"), "own-key")
+	ctx := newSetPasswordRequestCtx(t, &User{PublicKey: "account-1", Username: "alice"}, setPasswordRequest{
+		AuthSecret:     randomAuthSecret(t),
+		AccountKeyBlob: base64.StdEncoding.EncodeToString([]byte("new-key")),
+	})
+
+	// when
+	pe.SetPassword(ctx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusNoContent, ctx.Response.StatusCode())
 }

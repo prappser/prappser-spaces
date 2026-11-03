@@ -66,7 +66,7 @@ func (r *getChallengeTestRepo) RenameDevice(devicePublicKey, deviceName string) 
 func (r *getChallengeTestRepo) TouchDeviceLastSeen(devicePublicKey string, ts int64) error {
 	return nil
 }
-func (r *getChallengeTestRepo) SetPasswordCredentials(publicKey, passwordVerifier, handle, accountKeyBlob, userState string) error {
+func (r *getChallengeTestRepo) SetPasswordCredentials(publicKey, passwordVerifier, handle, accountKeyBlob, userState, ownKey string) error {
 	return nil
 }
 func (r *getChallengeTestRepo) GetPasswordCredential(username string) (string, string, error) {
@@ -79,7 +79,7 @@ func (r *getChallengeTestRepo) GetEscrow(publicKey string) (string, string, erro
 	return "", "", nil
 }
 func (r *getChallengeTestRepo) UpdateUserState(publicKey, userState string) error { return nil }
-func (r *getChallengeTestRepo) ClearEscrow(publicKey string) error                { return nil }
+func (r *getChallengeTestRepo) ClearEscrow(publicKey, ownKey string) error        { return nil }
 func (r *getChallengeTestRepo) ClaimOwner(publicKey, username, passwordVerifier, handle, accountKeyBlob, userState, devicePublicKey string, deviceName *string, createdAt int64) error {
 	return nil
 }

@@ -266,7 +266,7 @@ func (m *mockUserRepoStorage) ListDevices(_ string) ([]*user.Device, error) { re
 func (m *mockUserRepoStorage) RevokeDevice(_ string, _ int64) error         { return nil }
 func (m *mockUserRepoStorage) RenameDevice(_, _ string) error               { return nil }
 func (m *mockUserRepoStorage) TouchDeviceLastSeen(_ string, _ int64) error  { return nil }
-func (m *mockUserRepoStorage) SetPasswordCredentials(_, _, _, _, _ string) error {
+func (m *mockUserRepoStorage) SetPasswordCredentials(_, _, _, _, _, _ string) error {
 	return nil
 }
 func (m *mockUserRepoStorage) GetPasswordCredential(_ string) (string, string, error) {
@@ -277,7 +277,7 @@ func (m *mockUserRepoStorage) GetEscrow(_ string) (string, string, error) {
 	return "", "", nil
 }
 func (m *mockUserRepoStorage) UpdateUserState(_, _ string) error { return nil }
-func (m *mockUserRepoStorage) ClearEscrow(_ string) error        { return nil }
+func (m *mockUserRepoStorage) ClearEscrow(_, _ string) error     { return nil }
 func (m *mockUserRepoStorage) ClaimOwner(_, _, _, _, _, _, _ string, _ *string, _ int64) error {
 	return nil
 }

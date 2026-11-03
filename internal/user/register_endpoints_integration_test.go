@@ -65,7 +65,7 @@ func responseCode(t *testing.T, ctx *fasthttp.RequestCtx) string {
 
 func getSalt(t *testing.T, repo UserRepository, username string) string {
 	t.Helper()
-	pe := NewPasswordEndpoints(repo, registerTestSaltSecret, registerTestVerifierKey)
+	pe := NewPasswordEndpoints(repo, registerTestSaltSecret, registerTestVerifierKey, "")
 	ctx := &fasthttp.RequestCtx{}
 	ctx.Request.SetRequestURI("/users/salt?username=" + username)
 	pe.GetSalt(ctx)

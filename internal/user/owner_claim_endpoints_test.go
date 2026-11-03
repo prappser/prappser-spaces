@@ -67,7 +67,7 @@ func (r *ownerClaimTestRepo) RenameDevice(devicePublicKey, deviceName string) er
 }
 func (r *ownerClaimTestRepo) TouchDeviceLastSeen(devicePublicKey string, ts int64) error { return nil }
 
-func (r *ownerClaimTestRepo) SetPasswordCredentials(publicKey, passwordVerifier, handle, accountKeyBlob, userState string) error {
+func (r *ownerClaimTestRepo) SetPasswordCredentials(publicKey, passwordVerifier, handle, accountKeyBlob, userState, ownKey string) error {
 	r.verifiers[publicKey] = passwordVerifier
 	if _, exists := r.handles[publicKey]; !exists {
 		r.handles[publicKey] = handle
@@ -101,7 +101,7 @@ func (r *ownerClaimTestRepo) UpdateUserState(publicKey, userState string) error 
 	r.escrow[publicKey] = escrow
 	return nil
 }
-func (r *ownerClaimTestRepo) ClearEscrow(publicKey string) error {
+func (r *ownerClaimTestRepo) ClearEscrow(publicKey, ownKey string) error {
 	delete(r.escrow, publicKey)
 	delete(r.verifiers, publicKey)
 	return nil

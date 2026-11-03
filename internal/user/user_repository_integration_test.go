@@ -19,6 +19,8 @@ import (
 	"github.com/prappser/prappser-spaces/internal/testdb"
 )
 
+const ownKeyForTest = "own"
+
 // getTestDB returns a *sql.DB scoped to this package's own Postgres schema,
 // built from the real files/migrations (see internal/testdb) rather than a
 // hand-written copy - so this file can't drift from production schema.
@@ -79,7 +81,7 @@ func TestUserRepository_SetPasswordCredentials_ShouldRoundTripWithGetPasswordCre
 	}
 
 	// when
-	err := repo.SetPasswordCredentials("test-user-1", "hmac-sha256$dGVzdC12ZXJpZmllcg==", "test-salt", "", "")
+	err := repo.SetPasswordCredentials("test-user-1", "hmac-sha256$dGVzdC12ZXJpZmllcg==", "test-salt", "", "", ownKeyForTest)
 
 	// then
 	assert.NoError(t, err)
@@ -106,7 +108,7 @@ func TestUserRepository_SetPasswordCredentials_ShouldRoundTripEscrowBlobsWithGet
 	}
 
 	// when
-	err := repo.SetPasswordCredentials("test-user-1", "hmac-sha256$dGVzdC12ZXJpZmllcg==", "test-salt", "sealed-account-key", "sealed-user-state")
+	err := repo.SetPasswordCredentials("test-user-1", "hmac-sha256$dGVzdC12ZXJpZmllcg==", "test-salt", "sealed-account-key", "sealed-user-state", ownKeyForTest)
 
 	// then
 	assert.NoError(t, err)
@@ -131,10 +133,10 @@ func TestUserRepository_SetPasswordCredentials_ShouldClearEscrowBlobsWhenOmitted
 	); err != nil {
 		t.Fatalf("Failed to insert test user: %v", err)
 	}
-	assert.NoError(t, repo.SetPasswordCredentials("test-user-1", "hmac-sha256$AAAA", "test-salt", "sealed-account-key", "sealed-user-state"))
+	assert.NoError(t, repo.SetPasswordCredentials("test-user-1", "hmac-sha256$AAAA", "test-salt", "sealed-account-key", "sealed-user-state", ownKeyForTest))
 
 	// when - re-set with no escrow blobs
-	err := repo.SetPasswordCredentials("test-user-1", "hmac-sha256$BBBB", "test-salt", "", "")
+	err := repo.SetPasswordCredentials("test-user-1", "hmac-sha256$BBBB", "test-salt", "", "", ownKeyForTest)
 
 	// then
 	assert.NoError(t, err)
@@ -160,10 +162,10 @@ func TestUserRepository_ClearEscrow_ShouldNullVerifierAndBlobsButKeepHandle_Inte
 	); err != nil {
 		t.Fatalf("Failed to insert test user: %v", err)
 	}
-	assert.NoError(t, repo.SetPasswordCredentials("test-clear-escrow-user", "hmac-sha256$AAAA", "test-clear-escrow-handle", "sealed-account-key", "sealed-user-state"))
+	assert.NoError(t, repo.SetPasswordCredentials("test-clear-escrow-user", "hmac-sha256$AAAA", "test-clear-escrow-handle", "sealed-account-key", "sealed-user-state", ownKeyForTest))
 
 	// when
-	err := repo.ClearEscrow("test-clear-escrow-user")
+	err := repo.ClearEscrow("test-clear-escrow-user", ownKeyForTest)
 
 	// then
 	assert.NoError(t, err)
@@ -200,8 +202,8 @@ func TestUserRepository_ClearEscrow_ShouldBeIdempotent_Integration(t *testing.T)
 	}
 
 	// when - cleared twice in a row, neither call has anything to clear
-	assert.NoError(t, repo.ClearEscrow("test-clear-escrow-idempotent-user"))
-	err := repo.ClearEscrow("test-clear-escrow-idempotent-user")
+	assert.NoError(t, repo.ClearEscrow("test-clear-escrow-idempotent-user", ownKeyForTest))
+	err := repo.ClearEscrow("test-clear-escrow-idempotent-user", ownKeyForTest)
 
 	// then
 	assert.NoError(t, err)
@@ -251,7 +253,7 @@ func TestUserRepository_GetPasswordCredential_ShouldMatchCaseInsensitively_Integ
 	); err != nil {
 		t.Fatalf("Failed to insert test user: %v", err)
 	}
-	assert.NoError(t, repo.SetPasswordCredentials("test-user-1", "hmac-sha256$DDDD", "test-salt", "", ""))
+	assert.NoError(t, repo.SetPasswordCredentials("test-user-1", "hmac-sha256$DDDD", "test-salt", "", "", ownKeyForTest))
 
 	// when
 	userPublicKey, verifier, err := repo.GetPasswordCredential("TEST-casemix")
@@ -279,7 +281,7 @@ func TestUserRepository_GetPasswordCredential_ShouldPickPasswordEnabledRowWhenNo
 	); err != nil {
 		t.Fatalf("Failed to insert test users: %v", err)
 	}
-	assert.NoError(t, repo.SetPasswordCredentials("test-user-2", "hmac-sha256$CCCC", "test-salt", "", ""))
+	assert.NoError(t, repo.SetPasswordCredentials("test-user-2", "hmac-sha256$CCCC", "test-salt", "", "", ownKeyForTest))
 
 	// when
 	userPublicKey, verifier, err := repo.GetPasswordCredential("test-dupname")
@@ -323,10 +325,10 @@ func TestUserRepository_SetPasswordCredentials_ShouldReturnErrUsernameTakenForDu
 	); err != nil {
 		t.Fatalf("Failed to insert test users: %v", err)
 	}
-	assert.NoError(t, repo.SetPasswordCredentials("test-user-1", "hmac-sha256$AAAA", "test-salt", "", ""))
+	assert.NoError(t, repo.SetPasswordCredentials("test-user-1", "hmac-sha256$AAAA", "test-salt", "", "", ownKeyForTest))
 
 	// when - a different account, whose username differs only by case, also sets a password
-	err := repo.SetPasswordCredentials("test-user-2", "hmac-sha256$BBBB", "test-salt", "", "")
+	err := repo.SetPasswordCredentials("test-user-2", "hmac-sha256$BBBB", "test-salt", "", "", ownKeyForTest)
 
 	// then
 	assert.ErrorIs(t, err, ErrUsernameTaken)
@@ -351,10 +353,10 @@ func TestUserRepository_UpdateUsername_ShouldReturnErrUsernameTakenWhenRenamingI
 	); err != nil {
 		t.Fatalf("Failed to insert test users: %v", err)
 	}
-	assert.NoError(t, repo.SetPasswordCredentials("test-user-1", "hmac-sha256$AAAA", "test-salt", "", ""))
+	assert.NoError(t, repo.SetPasswordCredentials("test-user-1", "hmac-sha256$AAAA", "test-salt", "", "", ownKeyForTest))
 	// test-user-2 must be password-enabled too, or the partial index simply
 	// doesn't cover it and the rename below would succeed unconstrained.
-	assert.NoError(t, repo.SetPasswordCredentials("test-user-2", "hmac-sha256$BBBB", "test-salt-2", "", ""))
+	assert.NoError(t, repo.SetPasswordCredentials("test-user-2", "hmac-sha256$BBBB", "test-salt-2", "", "", ownKeyForTest))
 
 	// when
 	err := repo.UpdateUsername("test-user-2", "TEST-PASSWORDED")
@@ -384,7 +386,7 @@ func TestUserRepository_UpdateUsername_ShouldSucceedWhenRenamingIntoPasswordEnab
 	); err != nil {
 		t.Fatalf("Failed to insert test users: %v", err)
 	}
-	assert.NoError(t, repo.SetPasswordCredentials("test-user-1", "hmac-sha256$CCCC", "test-salt-3", "", ""))
+	assert.NoError(t, repo.SetPasswordCredentials("test-user-1", "hmac-sha256$CCCC", "test-salt-3", "", "", ownKeyForTest))
 
 	// when - test-user-2 has no password of its own
 	err := repo.UpdateUsername("test-user-2", "test-passworded-2")
@@ -433,10 +435,10 @@ func TestUserRepository_GetPasswordHandle_ShouldRoundTripAndCoalesceOnResubmit_I
 	); err != nil {
 		t.Fatalf("Failed to insert test user: %v", err)
 	}
-	assert.NoError(t, repo.SetPasswordCredentials("test-user-1", "hmac-sha256$EEEE", "handle-first", "", ""))
+	assert.NoError(t, repo.SetPasswordCredentials("test-user-1", "hmac-sha256$EEEE", "handle-first", "", "", ownKeyForTest))
 
 	// when - re-set with a different handle argument
-	assert.NoError(t, repo.SetPasswordCredentials("test-user-1", "hmac-sha256$FFFF", "handle-second", "", ""))
+	assert.NoError(t, repo.SetPasswordCredentials("test-user-1", "hmac-sha256$FFFF", "handle-second", "", "", ownKeyForTest))
 
 	// then - the FIRST handle sticks
 	handle, err := repo.GetPasswordHandle("test-handled")
@@ -456,12 +458,12 @@ func TestUserRepository_SetPasswordCredentials_ShouldRepointHandleAfterClearEscr
 	); err != nil {
 		t.Fatalf("Failed to insert test user: %v", err)
 	}
-	assert.NoError(t, repo.SetPasswordCredentials("test-user-1", "hmac-sha256$AAAA", "alice", "", ""))
-	assert.NoError(t, repo.ClearEscrow("test-user-1"))
+	assert.NoError(t, repo.SetPasswordCredentials("test-user-1", "hmac-sha256$AAAA", "alice", "", "", ownKeyForTest))
+	assert.NoError(t, repo.ClearEscrow("test-user-1", ownKeyForTest))
 	assert.NoError(t, repo.UpdateUsername("test-user-1", "Bob"))
 
 	// when
-	assert.NoError(t, repo.SetPasswordCredentials("test-user-1", "hmac-sha256$BBBB", "bob", "", ""))
+	assert.NoError(t, repo.SetPasswordCredentials("test-user-1", "hmac-sha256$BBBB", "bob", "", "", ownKeyForTest))
 
 	// then - the stale handle is replaced, not COALESCEd
 	handle, err := repo.GetPasswordHandle("Bob")
@@ -891,7 +893,7 @@ func TestUserRepository_ClaimOwner_ShouldKeepSaltIdenticalAcrossClaim_Integratio
 	defer db.Close()
 	repo := NewUserRepository(db)
 	saltSecret := []byte("salt-secret")
-	pe := NewPasswordEndpoints(repo, saltSecret, []byte("verifier-key"))
+	pe := NewPasswordEndpoints(repo, saltSecret, []byte("verifier-key"), "")
 	username := "test-claim-salt-name"
 
 	beforeCtx := newSaltRequestCtx(username)
@@ -987,4 +989,64 @@ func TestMigration_SpaceOwnerClaim_ShouldBackfillClaimFromLegacyMultiOwnerSpace_
 	// then (d) - a fresh claim attempt against this now-claimed legacy space is refused
 	err = repo.ClaimOwner("test-legacy-new-claimant", "test-legacy-newname", "hmac-sha256$AAAA", "test-legacy-newname", "", "", "test-legacy-new-claimant", nil, time.Now().Unix())
 	assert.ErrorIs(t, err, ErrSpaceAlreadyClaimed)
+}
+
+func TestUserRepository_ClearEscrow_ShouldRefuseWhenBindingNamesOwnKey_Integration(t *testing.T) {
+	// given
+	db := getTestDB(t)
+	defer db.Close()
+	repo := NewUserRepository(db)
+	seedEscrowUser(t, db, "acct-1")
+	_, _, _, err := repo.AcceptBinding("acct-1", "jws-1", 100, ownKeyForTest, ownKeyForTest)
+	assert.NoError(t, err)
+
+	// when
+	err = repo.ClearEscrow("acct-1", ownKeyForTest)
+
+	// then
+	assert.ErrorIs(t, err, ErrIdentitySpaceEscrow)
+	blob, state, verifier := escrowPresent(t, db, "acct-1")
+	assert.True(t, blob)
+	assert.True(t, state)
+	assert.True(t, verifier)
+}
+
+func TestUserRepository_ClearEscrow_ShouldClearWhenBindingNamesForeignKey_Integration(t *testing.T) {
+	// given
+	db := getTestDB(t)
+	defer db.Close()
+	repo := NewUserRepository(db)
+	seedEscrowUser(t, db, "acct-1")
+	_, err := db.Exec("UPDATE users SET binding_sub = 'foreign' WHERE public_key = 'acct-1'")
+	assert.NoError(t, err)
+
+	// when
+	err = repo.ClearEscrow("acct-1", ownKeyForTest)
+
+	// then
+	assert.NoError(t, err)
+	blob, state, verifier := escrowPresent(t, db, "acct-1")
+	assert.False(t, blob)
+	assert.False(t, state)
+	assert.False(t, verifier)
+}
+
+func TestUserRepository_SetPasswordCredentials_ShouldRefuseEmptyBlobWhenBindingNamesOwnKey_Integration(t *testing.T) {
+	// given
+	db := getTestDB(t)
+	defer db.Close()
+	repo := NewUserRepository(db)
+	seedEscrowUser(t, db, "acct-1")
+	_, err := db.Exec("UPDATE users SET binding_sub = $1 WHERE public_key = 'acct-1'", ownKeyForTest)
+	assert.NoError(t, err)
+
+	// when
+	refused := repo.SetPasswordCredentials("acct-1", "hmac-sha256$ZZZZ", "h", "", "", ownKeyForTest)
+	allowed := repo.SetPasswordCredentials("acct-1", "hmac-sha256$ZZZZ", "h", "new-blob", "", ownKeyForTest)
+
+	// then
+	assert.ErrorIs(t, refused, ErrIdentitySpaceEscrow)
+	assert.NoError(t, allowed)
+	blob, _, _ := escrowPresent(t, db, "acct-1")
+	assert.True(t, blob)
 }

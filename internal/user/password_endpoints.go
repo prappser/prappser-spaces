@@ -2,6 +2,7 @@ package user
 
 import (
 	"encoding/base64"
+	"errors"
 	"strings"
 
 	"github.com/goccy/go-json"
@@ -15,13 +16,14 @@ type PasswordEndpoints struct {
 	userRepository UserRepository
 	saltSecret     []byte
 	verifierKey    []byte
+	spacePublicKey string
 }
 
 // NewPasswordEndpoints creates a new PasswordEndpoints. saltSecret and
 // verifierKey come from derivePasswordSecrets (see password.go) - both are
 // derived from the space keypair, not stored independently.
-func NewPasswordEndpoints(userRepository UserRepository, saltSecret, verifierKey []byte) *PasswordEndpoints {
-	return &PasswordEndpoints{userRepository: userRepository, saltSecret: saltSecret, verifierKey: verifierKey}
+func NewPasswordEndpoints(userRepository UserRepository, saltSecret, verifierKey []byte, spacePublicKey string) *PasswordEndpoints {
+	return &PasswordEndpoints{userRepository: userRepository, saltSecret: saltSecret, verifierKey: verifierKey, spacePublicKey: spacePublicKey}
 }
 
 // saltResponse is the response body for GET /users/salt.
@@ -128,7 +130,12 @@ func (pe *PasswordEndpoints) SetPassword(ctx *fasthttp.RequestCtx) {
 
 	handle := strings.ToLower(authenticatedUser.Username)
 
-	if err := pe.userRepository.SetPasswordCredentials(authenticatedUser.PublicKey, verifier, handle, req.AccountKeyBlob, req.UserState); err != nil {
+	if err := pe.userRepository.SetPasswordCredentials(authenticatedUser.PublicKey, verifier, handle, req.AccountKeyBlob, req.UserState, pe.spacePublicKey); err != nil {
+		if errors.Is(err, ErrIdentitySpaceEscrow) {
+			log.Error().Msg("[PASSWORD] Refused to clear escrow on the identity space")
+			writeJSON(ctx, fasthttp.StatusConflict, bindingResponse{Code: "identity_space_escrow"})
+			return
+		}
 		if err == ErrUsernameTaken {
 			// Residual enumeration oracle, accepted deliberately: this 409
 			// only fires for an AUTHENTICATED account whose OWN username
@@ -209,7 +216,12 @@ func (pe *PasswordEndpoints) ClearEscrow(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	if err := pe.userRepository.ClearEscrow(authenticatedUser.PublicKey); err != nil {
+	if err := pe.userRepository.ClearEscrow(authenticatedUser.PublicKey, pe.spacePublicKey); err != nil {
+		if errors.Is(err, ErrIdentitySpaceEscrow) {
+			log.Error().Msg("[ESCROW] Refused to clear escrow on the identity space")
+			writeJSON(ctx, fasthttp.StatusConflict, bindingResponse{Code: "identity_space_escrow"})
+			return
+		}
 		log.Error().Err(err).Msg("[ESCROW] Failed to clear escrow")
 		ctx.Error("internal server error", fasthttp.StatusInternalServerError)
 		return

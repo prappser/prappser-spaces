@@ -254,7 +254,7 @@ func main() {
 	// user.DerivePasswordSecrets).
 	saltSecret, verifierKey := user.DerivePasswordSecrets(privateKey.Seed())
 	deviceEndpoints := user.NewDeviceEndpoints(userRepository, verifierKey, spacePublicKeyString)
-	passwordEndpoints := user.NewPasswordEndpoints(userRepository, saltSecret, verifierKey)
+	passwordEndpoints := user.NewPasswordEndpoints(userRepository, saltSecret, verifierKey, spacePublicKeyString)
 	ownerClaimEndpoints := user.NewOwnerClaimEndpoints(userRepository, verifierKey, time.Now(), &spaceCreatorAdapter{service: spaceService})
 	registerEndpoints := user.NewRegisterEndpoints(userRepository, verifierKey, config.OpenRegistration, config.MaxAccounts)
 	healthEndpoints := health.NewEndpoints("1.0.0", registerEndpoints.RegistrationOpen, config.MCPEnabled)

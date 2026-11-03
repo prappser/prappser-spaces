@@ -120,7 +120,7 @@ type UserRepository interface {
 	// ErrUsernameTaken if another account already holds that username as its
 	// password-login handle (case-insensitive). An empty accountKeyBlob or
 	// userState clears that column.
-	SetPasswordCredentials(publicKey, passwordVerifier, handle, accountKeyBlob, userState string) error
+	SetPasswordCredentials(publicKey, passwordVerifier, handle, accountKeyBlob, userState, ownKey string) error
 	// GetPasswordCredential returns "", "", nil when no PASSWORD-ENABLED
 	// account holds this username (absence is a valid state, not an error).
 	GetPasswordCredential(username string) (userPublicKey, verifier string, err error)
@@ -146,8 +146,7 @@ type UserRepository interface {
 	// /users/me/escrow, see PasswordEndpoints.ClearEscrow) - used when the
 	// account is moving its escrow elsewhere, or reclaiming its key.
 	// password_handle is deliberately left alone; idempotent, an
-	// already-clear account is not an error.
-	ClearEscrow(publicKey string) error
+	ClearEscrow(publicKey, ownKey string) error
 	// ClaimOwner creates the owner account, its first device, and its
 	// password-login credentials, then records the claim in a single
 	// transaction (see owner_claim_endpoints.go's Claim, the one-shot
@@ -186,6 +185,8 @@ type UserRepository interface {
 // when the requested username is already used for password login on this
 // space (by a different, password-enabled account).
 var ErrUsernameTaken = errors.New("username already used for password login")
+
+var ErrIdentitySpaceEscrow = errors.New("escrow cannot be cleared on the identity space")
 
 // ErrSpaceAlreadyClaimed is returned by ClaimOwner when an owner account
 // already exists for this space - the one-shot owner-claim endpoint refuses

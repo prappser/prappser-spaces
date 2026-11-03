@@ -38,7 +38,7 @@ func (noopUserRepository) RenameDevice(devicePublicKey, deviceName string) error
 func (noopUserRepository) TouchDeviceLastSeen(devicePublicKey string, ts int64) error {
 	return nil
 }
-func (noopUserRepository) SetPasswordCredentials(publicKey, passwordVerifier, handle, accountKeyBlob, userState string) error {
+func (noopUserRepository) SetPasswordCredentials(publicKey, passwordVerifier, handle, accountKeyBlob, userState, ownKey string) error {
 	return nil
 }
 func (noopUserRepository) GetPasswordCredential(username string) (string, string, error) {
@@ -51,7 +51,7 @@ func (noopUserRepository) GetEscrow(publicKey string) (string, string, error) {
 	return "", "", nil
 }
 func (noopUserRepository) UpdateUserState(publicKey, userState string) error { return nil }
-func (noopUserRepository) ClearEscrow(publicKey string) error                { return nil }
+func (noopUserRepository) ClearEscrow(publicKey, ownKey string) error        { return nil }
 func (noopUserRepository) ClaimOwner(publicKey, username, passwordVerifier, handle, accountKeyBlob, userState, devicePublicKey string, deviceName *string, createdAt int64) error {
 	return nil
 }

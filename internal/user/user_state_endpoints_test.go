@@ -30,7 +30,7 @@ func TestUpdateUserState_ShouldPersistAndBeReadableViaGetProfile(t *testing.T) {
 	// given
 	repo := newPasswordTestRepo()
 	repo.accounts["account-1"] = &User{PublicKey: "account-1", Username: "alice"}
-	pe := NewPasswordEndpoints(repo, []byte("salt-secret"), []byte("verifier-key"))
+	pe := NewPasswordEndpoints(repo, []byte("salt-secret"), []byte("verifier-key"), "")
 	blob := base64.StdEncoding.EncodeToString([]byte("sealed-user-state"))
 	ctx := newUpdateUserStateRequestCtx(t, &User{PublicKey: "account-1", DevicePublicKey: "account-1"}, updateUserStateRequest{UserState: blob})
 
@@ -61,7 +61,7 @@ func TestUpdateUserState_ShouldSucceedForSecondaryDevice(t *testing.T) {
 	// given
 	repo := newPasswordTestRepo()
 	repo.accounts["account-1"] = &User{PublicKey: "account-1", Username: "alice"}
-	pe := NewPasswordEndpoints(repo, []byte("salt-secret"), []byte("verifier-key"))
+	pe := NewPasswordEndpoints(repo, []byte("salt-secret"), []byte("verifier-key"), "")
 	blob := base64.StdEncoding.EncodeToString([]byte("sealed-user-state"))
 	ctx := newUpdateUserStateRequestCtx(t, &User{PublicKey: "account-1", DevicePublicKey: "device-2"}, updateUserStateRequest{UserState: blob})
 
@@ -77,7 +77,7 @@ func TestUpdateUserState_ShouldSucceedForSecondaryDevice(t *testing.T) {
 
 func TestUpdateUserState_ShouldReturn400ForOversizedBlob(t *testing.T) {
 	// given
-	pe := NewPasswordEndpoints(newPasswordTestRepo(), []byte("salt-secret"), []byte("verifier-key"))
+	pe := NewPasswordEndpoints(newPasswordTestRepo(), []byte("salt-secret"), []byte("verifier-key"), "")
 	oversized := base64.StdEncoding.EncodeToString(make([]byte, maxUserStateBlobLen+1))
 	ctx := newUpdateUserStateRequestCtx(t, &User{PublicKey: "account-1", DevicePublicKey: "account-1"}, updateUserStateRequest{UserState: oversized})
 
@@ -90,7 +90,7 @@ func TestUpdateUserState_ShouldReturn400ForOversizedBlob(t *testing.T) {
 
 func TestUpdateUserState_ShouldReturn400ForNonBase64Blob(t *testing.T) {
 	// given
-	pe := NewPasswordEndpoints(newPasswordTestRepo(), []byte("salt-secret"), []byte("verifier-key"))
+	pe := NewPasswordEndpoints(newPasswordTestRepo(), []byte("salt-secret"), []byte("verifier-key"), "")
 	ctx := newUpdateUserStateRequestCtx(t, &User{PublicKey: "account-1", DevicePublicKey: "account-1"}, updateUserStateRequest{UserState: "not-valid-base64!!"})
 
 	// when
@@ -106,7 +106,7 @@ func TestUpdateUserState_ShouldClearToNullOnEmptyString(t *testing.T) {
 	// given
 	repo := newPasswordTestRepo()
 	repo.accounts["account-1"] = &User{PublicKey: "account-1", Username: "alice"}
-	pe := NewPasswordEndpoints(repo, []byte("salt-secret"), []byte("verifier-key"))
+	pe := NewPasswordEndpoints(repo, []byte("salt-secret"), []byte("verifier-key"), "")
 	blob := base64.StdEncoding.EncodeToString([]byte("sealed-user-state"))
 	setCtx := newUpdateUserStateRequestCtx(t, &User{PublicKey: "account-1", DevicePublicKey: "account-1"}, updateUserStateRequest{UserState: blob})
 	pe.UpdateUserState(setCtx)
@@ -125,7 +125,7 @@ func TestUpdateUserState_ShouldClearToNullOnEmptyString(t *testing.T) {
 
 func TestUpdateUserState_ShouldReturn401WhenUnauthenticated(t *testing.T) {
 	// given
-	pe := NewPasswordEndpoints(newPasswordTestRepo(), []byte("salt-secret"), []byte("verifier-key"))
+	pe := NewPasswordEndpoints(newPasswordTestRepo(), []byte("salt-secret"), []byte("verifier-key"), "")
 	ctx := newUpdateUserStateRequestCtx(t, nil, updateUserStateRequest{UserState: ""})
 
 	// when
