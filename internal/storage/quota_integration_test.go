@@ -25,7 +25,7 @@ func newQuotaService(t *testing.T, pk string, maxFileSize, quota int64) *Service
 
 func seedQuotaUser(t *testing.T, db *sql.DB, pk string) {
 	t.Helper()
-	_, err := db.Exec(`INSERT INTO users (public_key, username, role, created_at, issuer) VALUES ($1, $1, 'user', $2, $1) ON CONFLICT DO NOTHING`, pk, time.Now().Unix())
+	_, err := db.Exec(`INSERT INTO users (public_key, username, role, created_at) VALUES ($1, $1, 'user', $2) ON CONFLICT DO NOTHING`, pk, time.Now().Unix())
 	require.NoError(t, err)
 }
 

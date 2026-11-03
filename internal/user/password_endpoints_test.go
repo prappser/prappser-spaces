@@ -55,8 +55,9 @@ func (r *passwordTestRepo) UpdateUsername(publicKey, username string) error {
 	}
 	return nil
 }
-func (r *passwordTestRepo) UpdateUserIssuer(publicKey, issuer string) error { return nil }
-func (r *passwordTestRepo) SetUserIssuer(publicKey, issuer string) error    { return nil }
+func (r *passwordTestRepo) AcceptBinding(_, _ string, _ int64, _, _ string) (string, string, bool, error) {
+	return "", "", false, nil
+}
 func (r *passwordTestRepo) EnsureDevice(devicePublicKey, userPublicKey string, deviceName *string, createdAt int64) error {
 	return nil
 }

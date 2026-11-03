@@ -147,7 +147,7 @@ func TestListAccounts_ShouldNeverExposeContent(t *testing.T) {
 	// given
 	db := newAdminDB(t)
 	seedUser(t, db, "owner-pk", "owner", 1)
-	exec(t, db, `UPDATE users SET password_verifier = 'SENT-pwv', password_handle = 'SENT-pwh', account_key_blob = 'SENT-akb', user_state_blob = 'SENT-usb', issuer = 'SENT-issuer' WHERE public_key = 'owner-pk'`)
+	exec(t, db, `UPDATE users SET password_verifier = 'SENT-pwv', password_handle = 'SENT-pwh', account_key_blob = 'SENT-akb', user_state_blob = 'SENT-usb', identity_binding = 'SENT-binding' WHERE public_key = 'owner-pk'`)
 	exec(t, db, `UPDATE user_devices SET device_name = 'SENT-device', last_seen_at = 42 WHERE device_public_key = 'owner-pk'`)
 	exec(t, db, `INSERT INTO applications (id, name, icon, created_at, updated_at) VALUES ('app', 'SENT-appname', 'SENT-appicon', 1, 1)`)
 	seedMember(t, db, "app", "owner-pk", "owner", nil)

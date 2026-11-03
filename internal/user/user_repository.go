@@ -43,8 +43,8 @@ func NewUserRepository(db *sql.DB) UserRepository {
 
 func (r *userRepository) CreateUser(user *User) error {
 	_, err := r.db.Exec(
-		"INSERT INTO users (public_key, username, role, created_at, issuer) VALUES ($1, $2, $3, $4, COALESCE(NULLIF($5,''),$1))",
-		user.PublicKey, user.Username, user.Role, user.CreatedAt, user.Issuer,
+		"INSERT INTO users (public_key, username, role, created_at) VALUES ($1, $2, $3, $4)",
+		user.PublicKey, user.Username, user.Role, user.CreatedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create user: %w", err)
@@ -54,11 +54,11 @@ func (r *userRepository) CreateUser(user *User) error {
 
 func (r *userRepository) GetUserByPublicKey(publicKey string) (*User, error) {
 	var user User
-	var avatarStorageID sql.NullString
+	var avatarStorageID, identityBinding sql.NullString
 	err := r.db.QueryRow(
-		"SELECT public_key, username, role, created_at, avatar_storage_id, issuer FROM users WHERE public_key = $1",
+		"SELECT public_key, username, role, created_at, avatar_storage_id, identity_binding, binding_iat, binding_sub FROM users WHERE public_key = $1",
 		publicKey,
-	).Scan(&user.PublicKey, &user.Username, &user.Role, &user.CreatedAt, &avatarStorageID, &user.Issuer)
+	).Scan(&user.PublicKey, &user.Username, &user.Role, &user.CreatedAt, &avatarStorageID, &identityBinding, &user.BindingIat, &user.BindingSub)
 
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -69,6 +69,7 @@ func (r *userRepository) GetUserByPublicKey(publicKey string) (*User, error) {
 	if avatarStorageID.Valid {
 		user.AvatarStorageID = &avatarStorageID.String
 	}
+	user.StoredBinding = identityBinding.String
 	return &user, nil
 }
 
@@ -123,40 +124,30 @@ func (r *userRepository) UpdateUsername(publicKey, username string) error {
 	return nil
 }
 
-// UpdateUserIssuer re-pins issuer from self to vouched. The WHERE clause is
-// the entire guard: it only ever matches a row still self-pinned
-// (issuer = public_key), so it is a no-op - not an error - for an unknown
-// account or one already vouched by someone else. See UserRepository's doc
-// comment for the full rationale.
-func (r *userRepository) UpdateUserIssuer(publicKey, issuer string) error {
-	_, err := r.db.Exec(
-		"UPDATE users SET issuer=$2 WHERE public_key=$1 AND issuer=public_key",
-		publicKey, issuer,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to update user issuer: %w", err)
+func (r *userRepository) AcceptBinding(publicKey, binding string, iat int64, sub, ownKey string) (storedBinding, storedSub string, updated bool, err error) {
+	// COLLATE "C" orders subs by bytes, matching the app. The last guard keeps no_escrow atomic against a concurrent escrow clear.
+	err = r.db.QueryRow(
+		`UPDATE users SET identity_binding=$2, binding_iat=$3, binding_sub=$4,
+		   account_key_blob  = CASE WHEN $4 = $5 THEN account_key_blob  END,
+		   user_state_blob   = CASE WHEN $4 = $5 THEN user_state_blob   END,
+		   password_verifier = CASE WHEN $4 = $5 THEN password_verifier END
+		 WHERE public_key=$1 AND (binding_iat, binding_sub COLLATE "C") < ($3, $4 COLLATE "C")
+		   AND ($4 <> $5 OR account_key_blob IS NOT NULL)
+		 RETURNING identity_binding, binding_sub`,
+		publicKey, binding, iat, sub, ownKey,
+	).Scan(&storedBinding, &storedSub)
+	if err == nil {
+		return storedBinding, storedSub, true, nil
 	}
-	return nil
-}
-
-// SetUserIssuer unconditionally overwrites issuer for an account - used only
-// by the account-key-signed rebind endpoint (#116 Phase 5, see
-// AssertionEndpoints.RebindIssuer). Unlike UpdateUserIssuer above, there is
-// no WHERE issuer=public_key guard: users.issuer is provenance-only (see
-// UserRepository's doc comment), never an authorization input, so the
-// account key is root authority and any transition it signs for is allowed
-// in either direction, including vouched->self. Do NOT relax
-// UpdateUserIssuer's guard instead of adding this method - it is
-// load-bearing for the join flow's one-way self->vouched upgrade.
-func (r *userRepository) SetUserIssuer(publicKey, issuer string) error {
-	_, err := r.db.Exec(
-		"UPDATE users SET issuer=$2 WHERE public_key=$1",
-		publicKey, issuer,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to set user issuer: %w", err)
+	if !errors.Is(err, sql.ErrNoRows) {
+		return "", "", false, fmt.Errorf("failed to accept binding: %w", err)
 	}
-	return nil
+	var current sql.NullString
+	err = r.db.QueryRow("SELECT identity_binding, binding_sub FROM users WHERE public_key = $1", publicKey).Scan(&current, &storedSub)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return "", "", false, fmt.Errorf("failed to read stored binding: %w", err)
+	}
+	return current.String, storedSub, false, nil
 }
 
 // SetPasswordCredentials sets the password-login verifier, handle, and
@@ -343,8 +334,8 @@ func (r *userRepository) ClaimOwner(publicKey, username, passwordVerifier, handl
 	defer tx.Rollback()
 
 	if _, err := tx.Exec(
-		`INSERT INTO users (public_key, username, role, created_at, issuer, password_verifier, password_handle, account_key_blob, user_state_blob)
-		 VALUES ($1, $2, 'owner', $3, $1, NULLIF($4, ''), NULLIF($5, ''), NULLIF($6, ''), NULLIF($7, ''))`,
+		`INSERT INTO users (public_key, username, role, created_at, password_verifier, password_handle, account_key_blob, user_state_blob)
+		 VALUES ($1, $2, 'owner', $3, NULLIF($4, ''), NULLIF($5, ''), NULLIF($6, ''), NULLIF($7, ''))`,
 		publicKey, username, createdAt, passwordVerifier, handle, accountKeyBlob, userState,
 	); err != nil {
 		var pqErr *pq.Error
@@ -425,8 +416,8 @@ func (r *userRepository) RegisterUser(publicKey, username, passwordVerifier, han
 	defer tx.Rollback()
 
 	if _, err := tx.Exec(
-		`INSERT INTO users (public_key, username, role, created_at, issuer, password_verifier, password_handle, account_key_blob, user_state_blob)
-		 VALUES ($1, $2, 'user', $3, $1, $4, $5, $6, NULLIF($7, ''))`,
+		`INSERT INTO users (public_key, username, role, created_at, password_verifier, password_handle, account_key_blob, user_state_blob)
+		 VALUES ($1, $2, 'user', $3, $4, $5, $6, NULLIF($7, ''))`,
 		publicKey, username, createdAt, passwordVerifier, handle, accountKeyBlob, userState,
 	); err != nil {
 		var pqErr *pq.Error

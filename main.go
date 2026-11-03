@@ -204,6 +204,8 @@ func main() {
 	invitationService.SingleUseSignup = config.SignupSingleUseInvites
 	invitationService.MaxAccounts = config.MaxAccounts
 	invitationService.ExternalURL = config.ExternalURL
+	bindings := user.NewBindings(userRepository, spacePublicKeyString)
+	invitationService.Bindings = bindings
 
 	setupEndpoints := setup.NewSetupEndpoints(db)
 
@@ -256,7 +258,7 @@ func main() {
 	ownerClaimEndpoints := user.NewOwnerClaimEndpoints(userRepository, verifierKey, time.Now(), &spaceCreatorAdapter{service: spaceService})
 	registerEndpoints := user.NewRegisterEndpoints(userRepository, verifierKey, config.OpenRegistration, config.MaxAccounts)
 	healthEndpoints := health.NewEndpoints("1.0.0", registerEndpoints.RegistrationOpen, config.MCPEnabled)
-	assertionEndpoints := user.NewAssertionEndpoints(userRepository, privateKey, spacePublicKeyString)
+	assertionEndpoints := user.NewAssertionEndpoints(userRepository, privateKey, spacePublicKeyString, bindings)
 
 	adminEndpoints := admin.NewAdminEndpoints(admin.NewRepository(db), admin.Limits{AccountQuotaBytes: config.Storage.AccountQuota, MaxAppsPerAccount: config.MaxAppsPerAccount})
 

@@ -273,6 +273,7 @@ type JoinRequest struct {
 	// Assertion is optional (#111): a cross-space identity assertion
 	// vouching for the account named in Proof, see InvitationService.Join.
 	Assertion string `json:"assertion,omitempty"`
+	Binding   string `json:"binding,omitempty"`
 	// DeviceName is optional (#127): a display name for the enrolling
 	// device, normalized (and silently dropped if invalid) by Join - never
 	// a reason to fail the join.
@@ -311,7 +312,7 @@ func (ie *InvitationEndpoints) JoinApplication(ctx *fasthttp.RequestCtx) {
 	log.Debug().Str("token", token).Msg("[JOIN] Joining application")
 
 	// Join via invitation service (handles proof verification, user creation, validation, event production)
-	result, err := ie.invitationService.Join(token, req.Proof, req.Assertion, req.DeviceName)
+	result, err := ie.invitationService.Join(token, req.Proof, req.Assertion, req.Binding, req.DeviceName)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to join application")
 
@@ -321,14 +322,27 @@ func (ie *InvitationEndpoints) JoinApplication(ctx *fasthttp.RequestCtx) {
 
 		// #110/#111: sentinel errors first - checked with errors.Is rather
 		// than by message.
+		var bindingRequired *user.BindingRequiredError
 		switch {
+		case errors.As(err, &bindingRequired):
+			body, _ := json.Marshal(struct {
+				Code    string `json:"code"`
+				Binding string `json:"binding,omitempty"`
+			}{"binding_required", bindingRequired.Binding})
+			ctx.SetContentType("application/json")
+			ctx.SetStatusCode(fasthttp.StatusUnauthorized)
+			ctx.SetBody(body)
+			return
+		case errors.Is(err, user.ErrInvalidBinding):
+			ctx.Error("invalid binding", fasthttp.StatusUnauthorized)
+			return
 		case errors.Is(err, ErrInvalidProof):
 			ctx.Error("invalid proof", fasthttp.StatusUnauthorized)
 			return
 		case errors.Is(err, user.ErrInvalidAssertion):
 			ctx.Error("invalid assertion", fasthttp.StatusUnauthorized)
 			return
-		case errors.Is(err, ErrDeviceConflict):
+		case errors.Is(err, ErrDeviceConflict), errors.Is(err, user.ErrDeviceRowConflict):
 			ctx.Error("device already registered to a different account", fasthttp.StatusConflict)
 			return
 		case errors.Is(err, ErrSingleUseInviteRequired):

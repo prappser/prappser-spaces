@@ -25,7 +25,7 @@ func getTestDB(t *testing.T) *sql.DB {
 	// other package's tests share this schema, so plain sequential inserts
 	// are enough - no need to guard against a concurrent cross-package DELETE.
 	if _, err := db.Exec(
-		"INSERT INTO users (public_key, username, role, created_at, issuer) VALUES ($1,$2,$3,$4,$1) ON CONFLICT DO NOTHING",
+		"INSERT INTO users (public_key, username, role, created_at) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING",
 		"test-user-1", "testuser", "user", time.Now().Unix(),
 	); err != nil {
 		t.Fatalf("Failed to insert test user: %v", err)

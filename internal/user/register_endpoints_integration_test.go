@@ -96,10 +96,9 @@ func TestRegister_ShouldPersistAccountAndKeepSaltStable_Integration(t *testing.T
 	// then
 	assert.Equal(t, fasthttp.StatusCreated, ctx.Response.StatusCode())
 	assert.Equal(t, saltBefore, saltAfter)
-	var role, issuer, handle string
-	assert.NoError(t, db.QueryRow("SELECT role, issuer, password_handle FROM users WHERE public_key = $1", req.PublicKey).Scan(&role, &issuer, &handle))
+	var role, handle string
+	assert.NoError(t, db.QueryRow("SELECT role, password_handle FROM users WHERE public_key = $1", req.PublicKey).Scan(&role, &handle))
 	assert.Equal(t, "user", role)
-	assert.Equal(t, req.PublicKey, issuer)
 	assert.Equal(t, strings.ToLower(username), handle)
 	assert.Equal(t, claimsBefore, countRows(t, db, "SELECT COUNT(*) FROM space_owner_claim"))
 	assert.Equal(t, spacesBefore, countRows(t, db, "SELECT COUNT(*) FROM spaces"))

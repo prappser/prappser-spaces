@@ -18,7 +18,7 @@ const agentTestURL = "https://space.test"
 func newAgentTestService(t *testing.T, db *sql.DB, userKey string) (*AgentService, *UserService) {
 	t.Helper()
 	if _, err := db.Exec(
-		"INSERT INTO users (public_key, username, role, created_at, issuer) VALUES ($1,$2,$3,$4,$1) ON CONFLICT DO NOTHING",
+		"INSERT INTO users (public_key, username, role, created_at) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING",
 		userKey, userKey, "user", time.Now().Unix(),
 	); err != nil {
 		t.Fatalf("Failed to insert test user: %v", err)

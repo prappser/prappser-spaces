@@ -255,8 +255,9 @@ func (m *mockUserRepoStorage) GetUserByPublicKey(_ string) (*user.User, error) {
 func (m *mockUserRepoStorage) UpdateUserRole(_, _ string) error                { return nil }
 func (m *mockUserRepoStorage) UpdateAvatarStorageID(_ string, _ *string) error { return nil }
 func (m *mockUserRepoStorage) UpdateUsername(_, _ string) error                { return nil }
-func (m *mockUserRepoStorage) UpdateUserIssuer(_, _ string) error              { return nil }
-func (m *mockUserRepoStorage) SetUserIssuer(_, _ string) error                 { return nil }
+func (m *mockUserRepoStorage) AcceptBinding(_, _ string, _ int64, _, _ string) (string, string, bool, error) {
+	return "", "", false, nil
+}
 func (m *mockUserRepoStorage) EnsureDevice(_, _ string, _ *string, _ int64) error {
 	return nil
 }

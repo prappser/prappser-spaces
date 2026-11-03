@@ -94,6 +94,7 @@ type InvitationService struct {
 	db             *sql.DB
 	userRepository user.UserRepository
 	eventService   EventService
+	Bindings       *user.Bindings
 	// spacePublicKey is this space's own base64-encoded Ed25519 public key -
 	// the expected audience for an assertion presented on Join (#111).
 	spacePublicKey string
@@ -113,6 +114,7 @@ func NewInvitationService(repo InvitationRepository, privateKey ed25519.PrivateK
 		db:             db,
 		userRepository: userRepository,
 		eventService:   eventService,
+		Bindings:       user.NewBindings(userRepository, spacePublicKey),
 		spacePublicKey: spacePublicKey,
 	}
 }
@@ -718,11 +720,12 @@ type JoinResult struct {
 // for the account named in proof, verified against this space's own key as
 // audience and the proof's device public key as the bound device. See the
 // doc comments below for exactly how it affects account creation and
-// issuer pinning - an assertion never adds a device to an ALREADY-known
-// account (D5). deviceName is optional (#127): a display name for the
-// enrolling device, normalized once here into *string (nil when empty or
-// invalid) - lenient, since Join never fails over a cosmetic field.
-func (s *InvitationService) Join(tokenString, proof, assertion, deviceName string) (*JoinResult, error) {
+// issuer pinning. binding is optional: with an assertion it admits a new
+// device through Bindings.VerifyAdmission/Admit; without one only a self-minted
+// assertion (iss == account key) counts. deviceName is optional (#127): the
+// enrolling device's display name, normalized once here into *string (nil when
+// empty or invalid) - lenient, since Join never fails over a cosmetic field.
+func (s *InvitationService) Join(tokenString, proof, assertion, binding, deviceName string) (*JoinResult, error) {
 	log.Debug().Msg("[INVITE] Join attempt started")
 
 	var normalizedDeviceName *string
@@ -815,13 +818,24 @@ func (s *InvitationService) Join(tokenString, proof, assertion, deviceName strin
 		return nil, ErrInvalidInviteRole
 	}
 
-	// #111: verify the assertion (if any) up front - it is never touched
-	// again below except for its Issuer, once we already know it's genuinely
-	// about userPublicKey and bound to the device presenting it.
-	assertionPresented := assertion != ""
-	var assertionIssuer string
-	if assertionPresented {
-		verifiedClaims, err := user.VerifyAssertion(assertion, s.spacePublicKey, presentedDevicePublicKey, now)
+	bindingPresented := binding != ""
+	assertionPresented := !bindingPresented && assertion != ""
+	admit := func() error { return nil }
+	if bindingPresented {
+		if assertion == "" {
+			log.Debug().Msg("[JOIN] binding presented without an assertion")
+			return nil, fmt.Errorf("invalid assertion: %w", user.ErrInvalidAssertion)
+		}
+		bindingClaims, err := s.Bindings.VerifyAdmission(userPublicKey, presentedDevicePublicKey, binding, assertion, now)
+		if err != nil {
+			log.Debug().Err(err).Msg("[JOIN] binding admission verification failed")
+			return nil, err
+		}
+		admit = func() error {
+			return s.Bindings.Admit(userPublicKey, presentedDevicePublicKey, binding, bindingClaims, normalizedDeviceName, now)
+		}
+	} else if assertionPresented {
+		verifiedClaims, err := user.VerifyAssertion(assertion, s.spacePublicKey, presentedDevicePublicKey, userPublicKey, now)
 		if err != nil {
 			log.Debug().Err(err).Msg("[JOIN] assertion verification failed")
 			return nil, fmt.Errorf("invalid assertion: %w", user.ErrInvalidAssertion)
@@ -830,8 +844,8 @@ func (s *InvitationService) Join(tokenString, proof, assertion, deviceName strin
 			log.Debug().Msg("[JOIN] assertion is for a different public key than presented")
 			return nil, fmt.Errorf("invalid assertion: %w", user.ErrInvalidAssertion)
 		}
-		assertionIssuer = verifiedClaims.Issuer
 	}
+	vouched := assertionPresented || bindingPresented
 
 	// Create user if doesn't exist (for member authentication)
 	log.Debug().Str("publicKey", userPublicKey[:min(20, len(userPublicKey))]+"...").Str("username", userName).Msg("[JOIN_SERVICE] Checking if user exists")
@@ -841,7 +855,7 @@ func (s *InvitationService) Join(tokenString, proof, assertion, deviceName strin
 	// [D6] grants_identity=false: a space that doesn't anchor new accounts
 	// must reject a brand-new, non-assertion-backed account outright -
 	// existing accounts and assertion-backed joins pass.
-	if isNewAccount && !assertionPresented && !invite.GrantsIdentity {
+	if isNewAccount && !vouched && !invite.GrantsIdentity {
 		log.Debug().Msg("[JOIN] Join failed: invitation does not grant identity to a new account")
 		return nil, ErrIdentityNotGranted
 	}
@@ -854,19 +868,26 @@ func (s *InvitationService) Join(tokenString, proof, assertion, deviceName strin
 
 	// [G2] PoP gate for every non-assertion join, not just new accounts: the
 	// presented device key must either equal the account key, or already be
-	// an enrolled, unrevoked device of that SAME account. Without this an
-	// attacker could name a victim's publicKey while only proving possession
+	// a roster-allowed device of that SAME account (RosterAllowed). Without
+	// this an attacker could name a victim's publicKey while only proving possession
 	// of their own, unrelated device key - for a known account that enrolls
 	// the attacker's device against the victim's identity; for a brand-new
 	// account it mints one nobody but the attacker can ever authenticate
 	// into again. GetDevice returns nil for a key nobody has registered, so
 	// this single gate also subsumes D5 for brand-new accounts.
-	if !assertionPresented && presentedDevicePublicKey != userPublicKey {
+	if !vouched && presentedDevicePublicKey != userPublicKey {
 		d, err := s.userRepository.GetDevice(presentedDevicePublicKey)
 		if err != nil {
 			return nil, fmt.Errorf("failed to look up device: %w", err)
 		}
-		if d == nil || d.UserPublicKey != userPublicKey || d.RevokedAt != nil {
+		allowed := false
+		if !isNewAccount {
+			allowed, err = s.Bindings.RosterAllowed(existingUser, d)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if !allowed {
 			log.Debug().Msg("[JOIN] Join failed: presented device key not proven to belong to this account")
 			return nil, ErrAccountKeyNotProven
 		}
@@ -889,7 +910,7 @@ func (s *InvitationService) Join(tokenString, proof, assertion, deviceName strin
 			return nil, fmt.Errorf("public key cannot be empty")
 		}
 
-		if assertionPresented {
+		if vouched {
 			// [G6] pre-create guard: reject if the presented device key
 			// already belongs to a different account, or has been revoked -
 			// before we ever create a row for it.
@@ -908,22 +929,14 @@ func (s *InvitationService) Join(tokenString, proof, assertion, deviceName strin
 		}
 		heldClaim = true
 
-		// Create user with guest role. Issuer stays empty (COALESCE ->
-		// self) on the plain-join path; an assertion pins it to the
-		// vouching space (or, for a self-mint, the account's own key -
-		// D9 - which is issuer==publicKey either way).
 		newUser := &user.User{
 			PublicKey: userPublicKey,
 			Username:  userName,
 			Role:      user.RoleGuest,
 			CreatedAt: now.Unix(),
 		}
-		if assertionPresented {
-			newUser.Issuer = assertionIssuer
-		}
-
 		if err := s.userRepository.CreateUser(newUser); err != nil {
-			if assertionPresented && isUniqueViolation(err) {
+			if vouched && isUniqueViolation(err) {
 				// [G9] Lost a create race to a concurrent join - fall
 				// through to the known-account path below with the row
 				// that won, instead of failing the whole join.
@@ -941,9 +954,11 @@ func (s *InvitationService) Join(tokenString, proof, assertion, deviceName strin
 			// for a BRAND-NEW account, where the caller names its own
 			// account and device together (and, with an assertion present,
 			// the dpk binding already proved possession of that device).
-			if err := s.userRepository.EnsureDevice(presentedDevicePublicKey, userPublicKey, normalizedDeviceName, now.Unix()); err != nil {
-				log.Error().Err(err).Str("username", userName).Msg("[JOIN_SERVICE] Failed to ensure device")
-				return nil, fmt.Errorf("failed to ensure device: %w", err)
+			if !bindingPresented {
+				if err := s.userRepository.EnsureDevice(presentedDevicePublicKey, userPublicKey, normalizedDeviceName, now.Unix()); err != nil {
+					log.Error().Err(err).Str("username", userName).Msg("[JOIN_SERVICE] Failed to ensure device")
+					return nil, fmt.Errorf("failed to ensure device: %w", err)
+				}
 			}
 		}
 
@@ -957,39 +972,14 @@ func (s *InvitationService) Join(tokenString, proof, assertion, deviceName strin
 		log.Debug().Str("username", userName).Msg("[JOIN_SERVICE] User already exists")
 	}
 
-	if !isNewAccount {
-		// KNOWN ACCOUNT - existing accounts always keep device #1 (their
-		// own key) regardless of what the request claims; adding further
-		// devices to an existing account must go through the delegation
-		// flow in RegisterDevice. An assertion NEVER adds a device here
-		// either (D5) - the only EnsureDevice on the assertion path is in
-		// the row-creating branch above.
-		issuer := existingUser.Issuer
-		if assertionPresented {
-			if issuer == existingUser.PublicKey && assertionIssuer != issuer {
-				// D5: one-way self->vouched re-pin. UpdateUserIssuer's own
-				// SQL guard (WHERE issuer = public_key) enforces this is
-				// only ever applied to a still-self-pinned account.
-				if err := s.userRepository.UpdateUserIssuer(existingUser.PublicKey, assertionIssuer); err != nil {
-					return nil, fmt.Errorf("failed to update user issuer: %w", err)
-				}
-				log.Info().
-					Str("publicKey", existingUser.PublicKey[:min(20, len(existingUser.PublicKey))]+"...").
-					Str("issuer", assertionIssuer).
-					Msg("[ASSERTION] Re-pinned self->vouched")
-				issuer = assertionIssuer
-			} else if issuer != existingUser.PublicKey && assertionIssuer != issuer {
-				log.Warn().
-					Str("pinnedIssuer", issuer).
-					Str("presentedIssuer", assertionIssuer).
-					Msg("[ASSERTION] Ignoring different issuer for already-pinned account")
-			}
+	if bindingPresented {
+		if err := admit(); err != nil {
+			return nil, err
 		}
+	}
 
-		// Legacy roster backfill, narrowed to self-registered accounts only
-		// (#111 G3) - a vouched account got a real device row at first
-		// contact and must never have the account key backfilled into it.
-		if issuer == existingUser.PublicKey {
+	if !isNewAccount {
+		if !bindingPresented && existingUser.BindingIat == 0 {
 			devices, err := s.userRepository.ListDevices(userPublicKey)
 			if err != nil {
 				return nil, fmt.Errorf("failed to list devices: %w", err)
@@ -1188,8 +1178,7 @@ func (s *InvitationService) signupBlocked(invite *Invitation) error {
 	return nil
 }
 
-// canPromote requires the flag, a guest account, and a joining device proven to be the account's own
-// (assertions alone don't prove it, since VerifyAssertion trusts the self-declared issuer).
+// canPromote requires the flag, a guest account, and a joining device proven to be the account's own (an assertion alone is not that proof)
 func (s *InvitationService) canPromote(invite *Invitation, acct *user.User, deviceKey string) bool {
 	if !invite.GrantsSpaceUse || acct == nil || acct.Role != user.RoleGuest {
 		return false

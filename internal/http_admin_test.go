@@ -29,7 +29,7 @@ func newRoleTestRequestHandler(t *testing.T, dbUser, jwtUser *user.User, adminEn
 }
 
 func roleTestUser(role string) *user.User {
-	return &user.User{PublicKey: "role-pk", Username: "role-user", Role: role, CreatedAt: time.Now().Unix(), Issuer: "role-pk"}
+	return &user.User{PublicKey: "role-pk", Username: "role-user", Role: role, CreatedAt: time.Now().Unix()}
 }
 
 func TestSpaceAccounts_ShouldReturn401WithoutToken(t *testing.T) {

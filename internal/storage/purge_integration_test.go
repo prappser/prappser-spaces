@@ -56,7 +56,7 @@ func TestPurgeDeletedApps_ShouldHardDeleteOnlyAppsDeletedBeyondRetention_Integra
 	old := now.Add(-31 * 24 * time.Hour).Unix()
 	recent := now.Add(-24 * time.Hour).Unix()
 
-	_, err = db.Exec(`INSERT INTO users (public_key, username, role, created_at, issuer) VALUES ('purge-pk', 'purge', 'user', $1, 'purge-pk') ON CONFLICT DO NOTHING`, now.Unix())
+	_, err = db.Exec(`INSERT INTO users (public_key, username, role, created_at) VALUES ('purge-pk', 'purge', 'user', $1) ON CONFLICT DO NOTHING`, now.Unix())
 	require.NoError(t, err)
 
 	pathA := seedPurgeApp(t, db, svc, "purge-app-a", &old)
@@ -119,7 +119,7 @@ func TestCleanupApplicationStorage_ShouldKeepRowsWhenBlobDeleteFails_Integration
 	require.NoError(t, err)
 	svc := NewService(NewRepository(db), failingDeleteBackend{backend}, 0, 0)
 
-	_, err = db.Exec(`INSERT INTO users (public_key, username, role, created_at, issuer) VALUES ('purge-pk', 'purge', 'user', $1, 'purge-pk') ON CONFLICT DO NOTHING`, time.Now().Unix())
+	_, err = db.Exec(`INSERT INTO users (public_key, username, role, created_at) VALUES ('purge-pk', 'purge', 'user', $1) ON CONFLICT DO NOTHING`, time.Now().Unix())
 	require.NoError(t, err)
 	seedPurgeApp(t, db, svc, "purge-app-fail", nil)
 
@@ -157,7 +157,7 @@ func TestPurgeUnreferenced_ShouldDeleteOnlyOldUnreferencedBlobs_Integration(t *t
 	require.NoError(t, err)
 	_, err = db.Exec(`DELETE FROM applications WHERE id = $1`, appID)
 	require.NoError(t, err)
-	_, err = db.Exec(`INSERT INTO users (public_key, username, role, created_at, issuer) VALUES ($1, 'unref', 'user', $2, $1) ON CONFLICT DO NOTHING`, userKey, now.Unix())
+	_, err = db.Exec(`INSERT INTO users (public_key, username, role, created_at) VALUES ($1, 'unref', 'user', $2) ON CONFLICT DO NOTHING`, userKey, now.Unix())
 	require.NoError(t, err)
 	_, err = db.Exec(`INSERT INTO applications (id, name, created_at, updated_at) VALUES ($1, $1, $2, $2)`, appID, now.Unix())
 	require.NoError(t, err)

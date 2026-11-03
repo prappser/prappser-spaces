@@ -71,8 +71,9 @@ func (m *mockUserRepository) UpdateAvatarStorageID(publicKey string, avatarStora
 	return nil
 }
 func (m *mockUserRepository) UpdateUsername(publicKey, username string) error { return nil }
-func (m *mockUserRepository) UpdateUserIssuer(publicKey, issuer string) error { return nil }
-func (m *mockUserRepository) SetUserIssuer(publicKey, issuer string) error    { return nil }
+func (m *mockUserRepository) AcceptBinding(_, _ string, _ int64, _, _ string) (string, string, bool, error) {
+	return "", "", false, nil
+}
 func (m *mockUserRepository) EnsureDevice(devicePublicKey, userPublicKey string, deviceName *string, createdAt int64) error {
 	return nil
 }

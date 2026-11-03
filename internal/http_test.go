@@ -23,8 +23,9 @@ func (noopUserRepository) UpdateAvatarStorageID(publicKey string, avatarStorageI
 	return nil
 }
 func (noopUserRepository) UpdateUsername(publicKey, username string) error { return nil }
-func (noopUserRepository) UpdateUserIssuer(publicKey, issuer string) error { return nil }
-func (noopUserRepository) SetUserIssuer(publicKey, issuer string) error    { return nil }
+func (noopUserRepository) AcceptBinding(_, _ string, _ int64, _, _ string) (string, string, bool, error) {
+	return "", "", false, nil
+}
 func (noopUserRepository) EnsureDevice(devicePublicKey, userPublicKey string, deviceName *string, createdAt int64) error {
 	return nil
 }

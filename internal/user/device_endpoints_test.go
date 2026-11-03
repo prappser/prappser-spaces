@@ -56,8 +56,9 @@ func (r *deviceTestRepo) UpdateUsername(publicKey, username string) error {
 	}
 	return nil
 }
-func (r *deviceTestRepo) UpdateUserIssuer(publicKey, issuer string) error { return nil }
-func (r *deviceTestRepo) SetUserIssuer(publicKey, issuer string) error    { return nil }
+func (r *deviceTestRepo) AcceptBinding(_, _ string, _ int64, _, _ string) (string, string, bool, error) {
+	return "", "", false, nil
+}
 
 func (r *deviceTestRepo) EnsureDevice(devicePublicKey, userPublicKey string, deviceName *string, createdAt int64) error {
 	if _, exists := r.devices[devicePublicKey]; exists {
