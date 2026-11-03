@@ -52,12 +52,12 @@ func (r *userRepository) GetDevice(devicePublicKey string) (*Device, error) {
 	return &d, nil
 }
 
-// ListDevices returns the non-revoked devices for an account.
-func (r *userRepository) ListDevices(userPublicKey string) ([]*Device, error) {
+// ListDevices returns the devices for an account; revoked ones only when includeRevoked is set.
+func (r *userRepository) ListDevices(userPublicKey string, includeRevoked bool) ([]*Device, error) {
 	rows, err := r.db.Query(
 		`SELECT device_public_key, user_public_key, device_name, created_at, last_seen_at, revoked_at, kind
-		 FROM user_devices WHERE user_public_key = $1 AND revoked_at IS NULL`,
-		userPublicKey,
+		 FROM user_devices WHERE user_public_key = $1 AND ($2 OR revoked_at IS NULL)`,
+		userPublicKey, includeRevoked,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list devices: %w", err)

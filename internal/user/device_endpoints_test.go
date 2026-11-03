@@ -75,10 +75,10 @@ func (r *deviceTestRepo) EnsureDevice(devicePublicKey, userPublicKey string, dev
 func (r *deviceTestRepo) GetDevice(devicePublicKey string) (*Device, error) {
 	return r.devices[devicePublicKey], nil
 }
-func (r *deviceTestRepo) ListDevices(userPublicKey string) ([]*Device, error) {
+func (r *deviceTestRepo) ListDevices(userPublicKey string, includeRevoked bool) ([]*Device, error) {
 	var out []*Device
 	for _, d := range r.devices {
-		if d.UserPublicKey == userPublicKey && d.RevokedAt == nil {
+		if d.UserPublicKey == userPublicKey && (includeRevoked || d.RevokedAt == nil) {
 			out = append(out, d)
 		}
 	}
@@ -410,6 +410,80 @@ func TestRevokeDevice_ShouldReturn204OnSuccess(t *testing.T) {
 	// then
 	assert.Equal(t, fasthttp.StatusNoContent, ctx.Response.StatusCode())
 	assert.NotNil(t, repo.devices["device-other"].RevokedAt)
+}
+
+func TestRevokeDevice_ShouldDisconnectRevokedDevice(t *testing.T) {
+	// given
+	repo := newDeviceTestRepo()
+	repo.devices["device-other"] = &Device{DevicePublicKey: "device-other", UserPublicKey: "account-1"}
+	de := NewDeviceEndpoints(repo, nil, "space-key")
+	var gotAccount, gotDevice string
+	de.Disconnect = func(account, device string) { gotAccount, gotDevice = account, device }
+
+	ctx := &fasthttp.RequestCtx{}
+	ctx.Request.SetRequestURI("/users/devices?devicePublicKey=device-other")
+	ctx.SetUserValue("user", &User{PublicKey: "account-1", DevicePublicKey: "device-current"})
+
+	// when
+	de.RevokeDevice(ctx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusNoContent, ctx.Response.StatusCode())
+	assert.Equal(t, "account-1", gotAccount)
+	assert.Equal(t, "device-other", gotDevice)
+}
+
+func listDevicesResponse(t *testing.T, de *DeviceEndpoints, uri string) []deviceResponse {
+	t.Helper()
+	ctx := &fasthttp.RequestCtx{}
+	ctx.Request.SetRequestURI(uri)
+	ctx.SetUserValue("user", &User{PublicKey: "account-1", DevicePublicKey: "device-live"})
+	de.ListDevices(ctx)
+	assert.Equal(t, fasthttp.StatusOK, ctx.Response.StatusCode())
+	var resp []deviceResponse
+	assert.NoError(t, json.Unmarshal(ctx.Response.Body(), &resp))
+	return resp
+}
+
+func revokedDeviceEndpoints() *DeviceEndpoints {
+	repo := newDeviceTestRepo()
+	revokedAt := int64(1700000000)
+	repo.devices["device-live"] = &Device{DevicePublicKey: "device-live", UserPublicKey: "account-1"}
+	repo.devices["device-gone"] = &Device{DevicePublicKey: "device-gone", UserPublicKey: "account-1", RevokedAt: &revokedAt}
+	return NewDeviceEndpoints(repo, nil, "space-key")
+}
+
+func TestListDevices_ShouldOmitRevokedByDefault(t *testing.T) {
+	// given
+	de := revokedDeviceEndpoints()
+
+	// when
+	resp := listDevicesResponse(t, de, "/users/devices")
+
+	// then
+	assert.Len(t, resp, 1)
+	assert.Equal(t, "device-live", resp[0].DevicePublicKey)
+	assert.Nil(t, resp[0].RevokedAt)
+}
+
+func TestListDevices_ShouldIncludeRevokedWhenRequested(t *testing.T) {
+	// given
+	de := revokedDeviceEndpoints()
+
+	// when
+	resp := listDevicesResponse(t, de, "/users/devices?includeRevoked=1")
+
+	// then
+	assert.Len(t, resp, 2)
+	for _, d := range resp {
+		if d.DevicePublicKey == "device-gone" {
+			if assert.NotNil(t, d.RevokedAt) {
+				assert.Equal(t, int64(1700000000), *d.RevokedAt)
+			}
+		} else {
+			assert.Nil(t, d.RevokedAt)
+		}
+	}
 }
 
 // newRegisterDeviceRequestCtx marshals body as the POST /users/devices

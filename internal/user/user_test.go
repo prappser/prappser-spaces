@@ -78,7 +78,7 @@ func (m *mockUserRepository) EnsureDevice(devicePublicKey, userPublicKey string,
 	return nil
 }
 func (m *mockUserRepository) GetDevice(devicePublicKey string) (*Device, error) { return nil, nil }
-func (m *mockUserRepository) ListDevices(userPublicKey string) ([]*Device, error) {
+func (m *mockUserRepository) ListDevices(userPublicKey string, includeRevoked bool) ([]*Device, error) {
 	return nil, nil
 }
 func (m *mockUserRepository) RevokeDevice(devicePublicKey string, ts int64) error   { return nil }

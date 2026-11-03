@@ -62,7 +62,7 @@ func (r *passwordTestRepo) EnsureDevice(devicePublicKey, userPublicKey string, d
 	return nil
 }
 func (r *passwordTestRepo) GetDevice(devicePublicKey string) (*Device, error) { return nil, nil }
-func (r *passwordTestRepo) ListDevices(userPublicKey string) ([]*Device, error) {
+func (r *passwordTestRepo) ListDevices(userPublicKey string, includeRevoked bool) ([]*Device, error) {
 	return nil, nil
 }
 func (r *passwordTestRepo) RevokeDevice(devicePublicKey string, ts int64) error        { return nil }

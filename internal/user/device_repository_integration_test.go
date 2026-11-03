@@ -34,7 +34,7 @@ func TestUserRepository_EnsureDevice_ShouldBeIdempotent_Integration(t *testing.T
 	// then: no error either time, exactly one row
 	assert.NoError(t, err1)
 	assert.NoError(t, err2)
-	devices, err := repo.ListDevices("test-devrepo-ensure-user")
+	devices, err := repo.ListDevices("test-devrepo-ensure-user", false)
 	assert.NoError(t, err)
 	assert.Len(t, devices, 1)
 	assert.Equal(t, "test-devrepo-ensure-device", devices[0].DevicePublicKey)
@@ -102,12 +102,16 @@ func TestUserRepository_ListDevices_ShouldHideRevoked_Integration(t *testing.T) 
 	assert.NoError(t, repo.RevokeDevice("test-devrepo-list-device-1", time.Now().Unix()))
 
 	// when
-	devices, err := repo.ListDevices("test-devrepo-list-user")
+	devices, err := repo.ListDevices("test-devrepo-list-user", false)
 
 	// then: only the non-revoked device is returned
 	assert.NoError(t, err)
 	assert.Len(t, devices, 1)
 	assert.Equal(t, "test-devrepo-list-device-2", devices[0].DevicePublicKey)
+
+	all, err := repo.ListDevices("test-devrepo-list-user", true)
+	assert.NoError(t, err)
+	assert.Len(t, all, 2)
 }
 
 func TestUserRepository_RenameDevice_ShouldPersistNewName_Integration(t *testing.T) {
@@ -211,7 +215,7 @@ func TestUserRepository_ListDevices_ShouldReturnKind_Integration(t *testing.T) {
 	}
 
 	// when
-	devices, err := repo.ListDevices("test-devrepo-kind-user")
+	devices, err := repo.ListDevices("test-devrepo-kind-user", false)
 
 	// then
 	assert.NoError(t, err)
