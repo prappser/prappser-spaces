@@ -6,6 +6,8 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"net"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -212,6 +214,10 @@ var ErrDeviceKeyTaken = errors.New("device key already registered on this space"
 // already has a users row.
 var ErrAccountExists = errors.New("account already exists")
 
+// ErrAudienceMismatch is returned by verifyUserAuthJWS when the login JWS was
+// signed for a different space than this one (login-phishing replay).
+var ErrAudienceMismatch = errors.New("login audience does not match this space")
+
 // SpaceCreator creates a default space for new owners.
 type SpaceCreator interface {
 	CreateSpace(name string, userPublicKey *string) error
@@ -234,6 +240,12 @@ type UserEndpoints struct {
 type Config struct {
 	JWTExpirationHours int
 	ChallengeTTLSec    int
+	// ExternalURL (EXTERNAL_URL, already resolved) is the URL device logins
+	// are bound to via the JWS aud claim; empty falls back to the request Host.
+	ExternalURL string
+	// TrustProxyHeaders lets X-Forwarded-Proto pick the scheme of the
+	// request-derived URL.
+	TrustProxyHeaders bool
 }
 
 // JWS claims for user authentication
@@ -241,6 +253,7 @@ type userAuthJWSClaims struct {
 	PublicKey string `json:"publicKey"` // User's public key (unique identifier)
 	Challenge string `json:"challenge"` // Prevents replay attacks
 	IssuedAt  int64  `json:"iat"`       // For TTL validation
+	Audience  string `json:"aud"`       // Space URL the login is bound to; empty when absent
 }
 
 type JWTClaims struct {
@@ -422,10 +435,14 @@ func (ue UserEndpoints) UserAuth(ctx *fasthttp.RequestCtx) {
 	}
 
 	log.Debug().Msg("[AUTH] Verifying JWS signature")
-	claims, device, err := ue.verifyUserAuthJWS(jws, ue.config.ChallengeTTLSec)
+	claims, device, err := ue.verifyUserAuthJWS(jws, ue.config.ChallengeTTLSec, ue.expectedSpaceURL(ctx))
 	if err != nil {
 		log.Error().Err(err).Msg("[AUTH] Failed to verify JWS")
-		ctx.Error("Failed to verify JWS", fasthttp.StatusBadRequest)
+		status := fasthttp.StatusBadRequest
+		if errors.Is(err, ErrAudienceMismatch) {
+			status = fasthttp.StatusUnauthorized
+		}
+		ctx.Error("Failed to verify JWS", status)
 		return
 	}
 
@@ -489,7 +506,57 @@ func extractJWSFromAuthorizationHeader(authHeader string) (string, error) {
 	return parts[1], nil
 }
 
-func (ue UserEndpoints) verifyUserAuthJWS(signedJWT string, ttlSec int) (*userAuthJWSClaims, *Device, error) {
+// normalizeSpaceURL reduces a space URL to scheme://host[:port]: lowercase,
+// default port dropped, path/query/fragment ignored.
+func normalizeSpaceURL(raw string) (string, error) {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", fmt.Errorf("invalid space URL: %w", err)
+	}
+	scheme := strings.ToLower(u.Scheme)
+	if (scheme != "http" && scheme != "https") || u.Hostname() == "" || u.User != nil {
+		return "", fmt.Errorf("invalid space URL: need http(s) scheme and host, no userinfo")
+	}
+	host := strings.ToLower(u.Hostname())
+	port := u.Port()
+	if (scheme == "http" && port == "80") || (scheme == "https" && port == "443") {
+		port = ""
+	}
+	if port != "" {
+		host = net.JoinHostPort(host, port)
+	} else if strings.Contains(host, ":") {
+		host = "[" + host + "]"
+	}
+	return scheme + "://" + host, nil
+}
+
+// expectedSpaceURL is the normalized URL a login JWS must carry as aud, or ""
+// when it cannot be determined. It reads Host, never X-Forwarded-Host: a
+// client can send that header and Cloudflare passes it through, which would let
+// an attacker space name itself as the audience.
+func (ue UserEndpoints) expectedSpaceURL(ctx *fasthttp.RequestCtx) string {
+	raw := ue.config.ExternalURL
+	if raw == "" {
+		scheme := "http"
+		if ctx.IsTLS() {
+			scheme = "https"
+		}
+		if ue.config.TrustProxyHeaders {
+			if proto := strings.TrimSpace(strings.Split(string(ctx.Request.Header.Peek("X-Forwarded-Proto")), ",")[0]); proto != "" {
+				scheme = proto
+			}
+		}
+		raw = scheme + "://" + string(ctx.Host())
+	}
+	normalized, err := normalizeSpaceURL(raw)
+	if err != nil {
+		log.Warn().Err(err).Msg("[AUTH] Cannot determine this space's URL")
+		return ""
+	}
+	return normalized
+}
+
+func (ue UserEndpoints) verifyUserAuthJWS(signedJWT string, ttlSec int, expectedAud string) (*userAuthJWSClaims, *Device, error) {
 	log.Debug().Msg("[VERIFY] Parsing JWT")
 
 	// Parse JWT without verification first to get claims
@@ -516,6 +583,7 @@ func (ue UserEndpoints) verifyUserAuthJWS(signedJWT string, ttlSec int) (*userAu
 	if iat, ok := mapClaims["iat"].(float64); ok {
 		claims.IssuedAt = int64(iat)
 	}
+	rawAud, hasAud := mapClaims["aud"]
 
 	publicKeyPrefix := claims.PublicKey[:min(50, len(claims.PublicKey))] + "..."
 	log.Debug().Str("publicKey", publicKeyPrefix).Msg("[VERIFY] JWT claims extracted")
@@ -601,6 +669,19 @@ func (ue UserEndpoints) verifyUserAuthJWS(signedJWT string, ttlSec int) (*userAu
 	if expired {
 		log.Error().Str("publicKey", publicKeyPrefix).Msg("[VERIFY] Challenge has expired")
 		return nil, nil, fmt.Errorf("challenge has expired")
+	}
+
+	// The challenge is already burned above, so a mismatched attempt can't be retried.
+	if hasAud {
+		aud, _ := rawAud.(string)
+		normalized, err := normalizeSpaceURL(aud)
+		if err != nil || expectedAud == "" || normalized != expectedAud {
+			log.Error().Str("publicKey", publicKeyPrefix).Str("expectedAud", expectedAud).Str("presentedAud", aud).Msg("[VERIFY] Audience mismatch")
+			return nil, nil, ErrAudienceMismatch
+		}
+		claims.Audience = normalized
+	} else {
+		log.Info().Str("publicKey", publicKeyPrefix).Msg("[AUTH] Login JWS has no aud, accepting for old clients")
 	}
 
 	log.Debug().Str("publicKey", publicKeyPrefix).Msg("[VERIFY] All verifications passed successfully")

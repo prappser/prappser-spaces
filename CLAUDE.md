@@ -26,7 +26,7 @@ docker compose up -d && go test -tags=integration ./internal/... .  # Integratio
 | `DATABASE_URL` | Yes | — | PostgreSQL connection string |
 | `MASTER_PASSWORD` | No | — | Legacy. Only used once to migrate an existing space's encrypted `space_keys` row into the key file, and to allow rollback to an older image |
 | `PORT` | No | `4545` | HTTP listen port |
-| `EXTERNAL_URL` | No | — | Public URL for invite links |
+| `EXTERNAL_URL` | No | — | Public URL for invite links; also the URL device logins are bound to (`aud`). Unset = request `Host` header (`X-Forwarded-Host` ignored); set it if a proxy rewrites Host or the space has several hostnames |
 | `ALLOWED_ORIGINS` | No | prappser.app + localhost:* | Comma-separated CORS origins |
 | `LOG_LEVEL` | No | `info` | debug/info/warn/error |
 | `STORAGE_TYPE` | No | `local` | `local` or `s3` |
