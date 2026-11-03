@@ -676,7 +676,7 @@ func (ue UserEndpoints) verifyUserAuthJWS(signedJWT string, ttlSec int, expected
 		aud, _ := rawAud.(string)
 		normalized, err := normalizeSpaceURL(aud)
 		if err != nil || expectedAud == "" || normalized != expectedAud {
-			log.Error().Str("publicKey", publicKeyPrefix).Msg("[VERIFY] Audience mismatch")
+			log.Error().Str("publicKey", publicKeyPrefix).Str("expectedAud", expectedAud).Str("presentedAud", aud).Msg("[VERIFY] Audience mismatch")
 			return nil, nil, ErrAudienceMismatch
 		}
 		claims.Audience = normalized
