@@ -61,16 +61,30 @@ func TestChallengeStore_ConsumeIsAtomicAcrossConcurrentCallers(t *testing.T) {
 func TestChallengeStore_ShouldConsumeTwoChallengesOfOneDevice(t *testing.T) {
 	// given
 	store := newChallengeStore()
-	store.store("c1", liveChallenge("pk"))
-	store.store("c2", liveChallenge("pk"))
+	var wg sync.WaitGroup
+	for _, c := range []string{"c1", "c2"} {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			store.store(c, liveChallenge("pk"))
+		}()
+	}
+	wg.Wait()
 
 	// when
-	err1 := store.consume("c1", "pk")
-	err2 := store.consume("c2", "pk")
+	errs := make([]error, 2)
+	for i, c := range []string{"c1", "c2"} {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errs[i] = store.consume(c, "pk")
+		}()
+	}
+	wg.Wait()
 
 	// then
-	assert.NoError(t, err1)
-	assert.NoError(t, err2)
+	assert.NoError(t, errs[0])
+	assert.NoError(t, errs[1])
 }
 
 func TestChallengeStore_ShouldFailAndBurnOnKeyMismatch(t *testing.T) {

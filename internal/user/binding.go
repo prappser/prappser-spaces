@@ -151,6 +151,13 @@ func (b *Bindings) Admit(account, devicePublicKey, binding string, adm *Admissio
 		if err := b.repo.EnsureDevice(devicePublicKey, account, deviceName, now.Unix()); err != nil {
 			return fmt.Errorf("failed to ensure device: %w", err)
 		}
+		d, err = b.repo.GetDevice(devicePublicKey)
+		if err != nil {
+			return fmt.Errorf("failed to re-read device: %w", err)
+		}
+		if d == nil || d.UserPublicKey != account || d.RevokedAt != nil {
+			return ErrDeviceRowConflict
+		}
 		return nil
 	}
 	if d.UserPublicKey != account {

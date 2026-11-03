@@ -254,6 +254,19 @@ func TestUserAuth_BindingPath_ShouldReviveRevokedRowOnlyForAssertionNewerThanRev
 	assert.NotNil(t, f.repo.devices[f.dev].RevokedAt)
 }
 
+func TestUserAuth_BindingPath_ShouldReturn401WhenAnotherAccountClaimsTheDeviceRowFirst(t *testing.T) {
+	// given
+	f := newAuthFixture(t)
+	f.ep.Bindings = NewBindings(&racingEnsureRepo{f.repo}, f.space)
+
+	// when
+	ctx := f.login(t, f.bindingBody(t, f.acctPriv, time.Now().Unix()))
+
+	// then
+	assert.Equal(t, fasthttp.StatusUnauthorized, ctx.Response.StatusCode())
+	assert.NotContains(t, string(ctx.Response.Body()), "token")
+}
+
 func TestValidateJWT_ShouldRejectStaleBindingVersionAndAcceptCurrent(t *testing.T) {
 	// given
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)

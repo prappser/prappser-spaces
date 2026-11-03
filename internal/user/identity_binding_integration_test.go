@@ -183,13 +183,40 @@ func TestIdentityBinding_ShouldGiveRevokedDeviceNoAssertionOnIdentitySpace_Integ
 	token := tokenOf(t, w.o.login(t, w.d2Priv, w.d2, ""))
 	require.NoError(t, w.o.repo.RevokeDevice(w.d2, time.Now().Unix()))
 
-	// when
-	_, errJWT := w.o.svc.ValidateJWT(token)
+	// when: the router gate (RequireAuth) runs ahead of IssueAssertion
+	ctx := &fasthttp.RequestCtx{}
+	ctx.Request.Header.Set("Authorization", "Bearer "+token)
+	ctx.Request.SetBodyString(`{"audience":"` + w.e.key + `"}`)
+	u, errJWT := w.o.svc.ValidateJWTFromRequest(ctx)
+	if errJWT == nil {
+		ctx.SetUserValue("user", u)
+		w.o.ae.IssueAssertion(ctx)
+	}
 	rosterLogin := w.o.login(t, w.d2Priv, w.d2, "")
 
 	// then
 	assert.Error(t, errJWT)
+	assert.Empty(t, ctx.Response.Body())
 	assert.Equal(t, fasthttp.StatusUnauthorized, rosterLogin.Response.StatusCode())
+}
+
+func TestIdentityBinding_ShouldAdvanceBindingIatEvenWhenRevokedRowRefusesLogin_Integration(t *testing.T) {
+	// given: D2 has a row on E revoked after the assertion was minted
+	w := newITWorld(t)
+	iat := time.Now().Unix() - 10
+	binding := w.putBinding(t, w.o, iat, w.o.key)
+	assertion := w.o.assertionFor(t, w.o.rosterUser(t, w.d2Priv, w.d2), w.e.key)
+	require.NoError(t, w.e.repo.EnsureDevice(w.d2, w.acct, nil, time.Now().Unix()-1000))
+	require.NoError(t, w.e.repo.RevokeDevice(w.d2, time.Now().Unix()+1000))
+
+	// when
+	ctx := w.e.login(t, w.d2Priv, w.d2, authBody(t, assertion, binding))
+
+	// then
+	assert.Equal(t, fasthttp.StatusUnauthorized, ctx.Response.StatusCode())
+	acct, err := w.e.repo.GetUserByPublicKey(w.acct)
+	assert.NoError(t, err)
+	assert.Equal(t, iat, acct.BindingIat)
 }
 
 func TestIdentityBinding_ShouldReviveDeviceRevokedOnlyOnExternalSpace_Integration(t *testing.T) {

@@ -366,7 +366,7 @@ func (ue UserEndpoints) GetChallenge(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	expiresAt := time.Now().Add(time.Duration(ue.config.ChallengeTTLSec) * time.Second)
+	expiresAt := timeNowFunc().Add(time.Duration(ue.config.ChallengeTTLSec) * time.Second)
 
 	ue.challenges.store(challenge, challengeInfo{
 		publicKey: publicKeyStr,
@@ -449,9 +449,9 @@ func (ue UserEndpoints) UserAuth(ctx *fasthttp.RequestCtx) {
 
 	var user *User
 	if req.Binding != "" {
-		user, err = ue.bindingLogin(ctx, deviceKey, req, now)
+		user = ue.bindingLogin(ctx, deviceKey, req, now)
 	} else {
-		user, err = ue.rosterLogin(ctx, deviceKey)
+		user = ue.rosterLogin(ctx, deviceKey)
 	}
 	if user == nil {
 		return
@@ -472,24 +472,24 @@ func (ue UserEndpoints) UserAuth(ctx *fasthttp.RequestCtx) {
 	writeJSON(ctx, fasthttp.StatusOK, LoginResponse{Token: token, ExpiresAt: expiresAt})
 }
 
-func (ue UserEndpoints) bindingLogin(ctx *fasthttp.RequestCtx, deviceKey string, req userAuthRequest, now time.Time) (*User, error) {
+func (ue UserEndpoints) bindingLogin(ctx *fasthttp.RequestCtx, deviceKey string, req userAuthRequest, now time.Time) *User {
 	iss := bindingIssuer(req.Binding)
 	acct, err := ue.userRepository.GetUserByPublicKey(iss)
 	if err != nil {
 		log.Error().Err(err).Msg("[AUTH] Failed to get account")
 		ctx.Error("Internal server error", fasthttp.StatusInternalServerError)
-		return nil, err
+		return nil
 	}
 	if acct == nil {
 		log.Error().Msg("[AUTH] Binding names an unknown account")
 		refuseAuth(ctx, nil)
-		return nil, nil
+		return nil
 	}
 	adm, err := ue.Bindings.VerifyAdmission(iss, deviceKey, req.Binding, req.Assertion, now)
 	if err != nil {
 		log.Error().Err(err).Msg("[AUTH] Binding admission refused")
 		refuseAuth(ctx, nil)
-		return nil, nil
+		return nil
 	}
 	err = ue.Bindings.Admit(iss, deviceKey, req.Binding, adm, nil, now)
 	var required *BindingRequiredError
@@ -497,53 +497,48 @@ func (ue UserEndpoints) bindingLogin(ctx *fasthttp.RequestCtx, deviceKey string,
 	case errors.As(err, &required):
 		log.Error().Msg("[AUTH] Presented binding is not the stored one")
 		refuseAuth(ctx, bindingResponse{Code: "binding_required", Binding: required.Binding})
-		return nil, nil
+		return nil
 	case errors.Is(err, ErrDeviceRowConflict):
 		log.Error().Msg("[AUTH] Device row conflicts with this admission")
 		refuseAuth(ctx, nil)
-		return nil, nil
+		return nil
 	case err != nil:
 		log.Error().Err(err).Msg("[AUTH] Failed to admit device")
 		ctx.Error("Internal server error", fasthttp.StatusInternalServerError)
-		return nil, err
+		return nil
 	}
-	acct, err = ue.userRepository.GetUserByPublicKey(iss)
-	if err != nil || acct == nil {
-		log.Error().Err(err).Msg("[AUTH] Failed to re-read account")
-		ctx.Error("Internal server error", fasthttp.StatusInternalServerError)
-		return nil, err
-	}
-	return acct, nil
+	acct.BindingIat = max(acct.BindingIat, adm.claims.IssuedAt)
+	return acct
 }
 
-func (ue UserEndpoints) rosterLogin(ctx *fasthttp.RequestCtx, deviceKey string) (*User, error) {
+func (ue UserEndpoints) rosterLogin(ctx *fasthttp.RequestCtx, deviceKey string) *User {
 	d, err := ue.userRepository.GetDevice(deviceKey)
 	if err != nil {
 		log.Error().Err(err).Msg("[AUTH] Failed to get device")
 		ctx.Error("Internal server error", fasthttp.StatusInternalServerError)
-		return nil, err
+		return nil
 	}
 	if d == nil {
 		log.Error().Msg("[AUTH] Device not found")
 		refuseAuth(ctx, nil)
-		return nil, nil
+		return nil
 	}
 	acct, err := ue.userRepository.GetUserByPublicKey(d.UserPublicKey)
 	if err != nil {
 		log.Error().Err(err).Msg("[AUTH] Failed to get account")
 		ctx.Error("Internal server error", fasthttp.StatusInternalServerError)
-		return nil, err
+		return nil
 	}
 	if acct == nil {
 		log.Error().Msg("[AUTH] Account not found")
 		refuseAuth(ctx, nil)
-		return nil, nil
+		return nil
 	}
 	allowed, err := ue.Bindings.RosterAllowed(acct, d)
 	if err != nil {
 		log.Error().Err(err).Msg("[AUTH] Failed to check roster login")
 		ctx.Error("Internal server error", fasthttp.StatusInternalServerError)
-		return nil, err
+		return nil
 	}
 	if !allowed {
 		log.Error().Msg("[AUTH] Roster login refused")
@@ -552,9 +547,9 @@ func (ue UserEndpoints) rosterLogin(ctx *fasthttp.RequestCtx, deviceKey string) 
 		} else {
 			refuseAuth(ctx, nil)
 		}
-		return nil, nil
+		return nil
 	}
-	return acct, nil
+	return acct
 }
 
 // VerifyJWT middleware for protecting routes

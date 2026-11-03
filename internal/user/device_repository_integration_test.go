@@ -260,3 +260,47 @@ func TestUserRepository_RevokeDevice_ShouldDeleteAgentRefreshToken_Integration(t
 	assert.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM agent_refresh_tokens WHERE device_public_key = $1`, "test-devrepo-kind-rt-agent").Scan(&n))
 	assert.Equal(t, 0, n)
 }
+
+func TestUserRepository_ReviveDevice_ShouldNotReviveWhenRevokedAtEqualsCutoff_Integration(t *testing.T) {
+	// given
+	db := getTestDB(t)
+	defer db.Close()
+	repo := NewUserRepository(db)
+	_, err := db.Exec(
+		"INSERT INTO users (public_key, username, role, created_at) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING",
+		"test-devrepo-revive-user", "alice", "user", time.Now().Unix(),
+	)
+	assert.NoError(t, err)
+	assert.NoError(t, repo.EnsureDevice("test-devrepo-revive-equal", "test-devrepo-revive-user", nil, 1))
+	assert.NoError(t, repo.RevokeDevice("test-devrepo-revive-equal", 1000))
+
+	// when
+	revived, err := repo.ReviveDevice("test-devrepo-revive-equal", "test-devrepo-revive-user", 1000)
+
+	// then
+	assert.NoError(t, err)
+	assert.False(t, revived)
+	d, err := repo.GetDevice("test-devrepo-revive-equal")
+	assert.NoError(t, err)
+	assert.NotNil(t, d.RevokedAt)
+}
+
+func TestUserRepository_ReviveDevice_ShouldReturnTrueForAlreadyLiveRow_Integration(t *testing.T) {
+	// given
+	db := getTestDB(t)
+	defer db.Close()
+	repo := NewUserRepository(db)
+	_, err := db.Exec(
+		"INSERT INTO users (public_key, username, role, created_at) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING",
+		"test-devrepo-revive-user", "alice", "user", time.Now().Unix(),
+	)
+	assert.NoError(t, err)
+	assert.NoError(t, repo.EnsureDevice("test-devrepo-revive-live", "test-devrepo-revive-user", nil, 1))
+
+	// when
+	revived, err := repo.ReviveDevice("test-devrepo-revive-live", "test-devrepo-revive-user", 1000)
+
+	// then
+	assert.NoError(t, err)
+	assert.True(t, revived)
+}

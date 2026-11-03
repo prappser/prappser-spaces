@@ -384,6 +384,30 @@ func TestAdmit_ShouldReviveRevokedRowOnlyWhenAssertionIsNewerThanRevocation(t *t
 	assert.NotNil(t, repo.devices["older"].RevokedAt)
 }
 
+type racingEnsureRepo struct {
+	*bindingTestRepo
+}
+
+func (r *racingEnsureRepo) EnsureDevice(deviceKey, _ string, _ *string, createdAt int64) error {
+	r.devices[deviceKey] = &Device{DevicePublicKey: deviceKey, UserPublicKey: "other", CreatedAt: createdAt}
+	return nil
+}
+
+func TestAdmit_ShouldRejectDeviceRowThatAnotherAccountInsertedConcurrently(t *testing.T) {
+	// given
+	_, space := newTestKey(t)
+	_, subj := newTestKey(t)
+	repo := &racingEnsureRepo{&bindingTestRepo{devices: map[string]*Device{}}}
+	b := NewBindings(repo, space)
+	adm := &Admission{claims: &bindingClaims{Subject: subj, IssuedAt: 100}, assertedAt: 100}
+
+	// when
+	err := b.Admit("acct", "dev", "jws", adm, nil, time.Now())
+
+	// then
+	assert.ErrorIs(t, err, ErrDeviceRowConflict)
+}
+
 func newPutBindingCtx(t *testing.T, u *User, binding string) *fasthttp.RequestCtx {
 	t.Helper()
 	body, err := json.Marshal(putBindingRequest{Binding: binding})
