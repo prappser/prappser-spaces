@@ -262,7 +262,7 @@ func (m *mockUserRepoStorage) EnsureDevice(_, _ string, _ *string, _ int64) erro
 	return nil
 }
 func (m *mockUserRepoStorage) GetDevice(_ string) (*user.Device, error)     { return nil, nil }
-func (m *mockUserRepoStorage) ListDevices(_ string) ([]*user.Device, error) { return nil, nil }
+func (m *mockUserRepoStorage) ListDevices(_ string, _ bool) ([]*user.Device, error) { return nil, nil }
 func (m *mockUserRepoStorage) RevokeDevice(_ string, _ int64) error         { return nil }
 func (m *mockUserRepoStorage) RenameDevice(_, _ string) error               { return nil }
 func (m *mockUserRepoStorage) TouchDeviceLastSeen(_ string, _ int64) error  { return nil }

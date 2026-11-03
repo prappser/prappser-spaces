@@ -105,8 +105,8 @@ type UserRepository interface {
 	EnsureDevice(devicePublicKey, userPublicKey string, deviceName *string, createdAt int64) error
 	// GetDevice returns nil, nil when no device with that key exists.
 	GetDevice(devicePublicKey string) (*Device, error)
-	// ListDevices returns the non-revoked devices for an account.
-	ListDevices(userPublicKey string) ([]*Device, error)
+	// ListDevices returns the devices for an account; revoked ones only when includeRevoked is set.
+	ListDevices(userPublicKey string, includeRevoked bool) ([]*Device, error)
 	// RevokeDevice soft-revokes a device and deletes its push subscriptions.
 	RevokeDevice(devicePublicKey string, ts int64) error
 	// RenameDevice updates a device's display name. Ownership is checked by

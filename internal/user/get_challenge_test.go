@@ -60,7 +60,7 @@ func (r *getChallengeTestRepo) GetDevice(devicePublicKey string) (*Device, error
 	}
 	return d, nil
 }
-func (r *getChallengeTestRepo) ListDevices(userPublicKey string) ([]*Device, error)   { return nil, nil }
+func (r *getChallengeTestRepo) ListDevices(userPublicKey string, includeRevoked bool) ([]*Device, error)   { return nil, nil }
 func (r *getChallengeTestRepo) RevokeDevice(devicePublicKey string, ts int64) error   { return nil }
 func (r *getChallengeTestRepo) RenameDevice(devicePublicKey, deviceName string) error { return nil }
 func (r *getChallengeTestRepo) TouchDeviceLastSeen(devicePublicKey string, ts int64) error {

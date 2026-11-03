@@ -107,6 +107,7 @@ type DeviceEndpoints struct {
 	// spacePublicKey is this space's own base64-encoded Ed25519 public key -
 	// a delegation JWS's aud claim must equal it (see delegationClaims).
 	spacePublicKey string
+	Disconnect     func(account, device string)
 }
 
 // NewDeviceEndpoints creates a new DeviceEndpoints. spacePublicKey is this
@@ -422,10 +423,11 @@ type deviceResponse struct {
 	LastSeenAt      *int64  `json:"lastSeenAt,omitempty"`
 	IsCurrent       bool    `json:"isCurrent"`
 	Kind            string  `json:"kind"`
+	RevokedAt       *int64  `json:"revokedAt,omitempty"`
 }
 
 // ListDevices handles GET /users/devices. Requires auth; returns the
-// authenticated account's non-revoked devices.
+// authenticated account's non-revoked devices, plus revoked ones with ?includeRevoked=1.
 func (de *DeviceEndpoints) ListDevices(ctx *fasthttp.RequestCtx) {
 	authenticatedUser, ok := ctx.UserValue("user").(*User)
 	if !ok || authenticatedUser == nil {
@@ -434,7 +436,7 @@ func (de *DeviceEndpoints) ListDevices(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	devices, err := de.userRepository.ListDevices(authenticatedUser.PublicKey)
+	devices, err := de.userRepository.ListDevices(authenticatedUser.PublicKey, ctx.QueryArgs().GetBool("includeRevoked"))
 	if err != nil {
 		log.Error().Err(err).Msg("[DEVICE] Failed to list devices")
 		ctx.Error("internal server error", fasthttp.StatusInternalServerError)
@@ -454,6 +456,7 @@ func (de *DeviceEndpoints) ListDevices(ctx *fasthttp.RequestCtx) {
 			CreatedAt:       d.CreatedAt,
 			LastSeenAt:      d.LastSeenAt,
 			IsCurrent:       d.DevicePublicKey == authenticatedUser.DevicePublicKey,
+			RevokedAt:       d.RevokedAt,
 		})
 	}
 
@@ -499,6 +502,10 @@ func (de *DeviceEndpoints) RevokeDevice(ctx *fasthttp.RequestCtx) {
 		log.Error().Err(err).Msg("[DEVICE] Failed to revoke device")
 		ctx.Error("internal server error", fasthttp.StatusInternalServerError)
 		return
+	}
+
+	if de.Disconnect != nil {
+		de.Disconnect(authenticatedUser.PublicKey, targetDevicePublicKey)
 	}
 
 	log.Debug().Str("devicePublicKey", targetDevicePublicKey).Msg("[DEVICE] Device revoked")

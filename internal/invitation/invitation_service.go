@@ -980,7 +980,7 @@ func (s *InvitationService) Join(tokenString, proof, assertion, binding, deviceN
 
 	if !isNewAccount {
 		if !bindingPresented && existingUser.BindingIat == 0 {
-			devices, err := s.userRepository.ListDevices(userPublicKey)
+			devices, err := s.userRepository.ListDevices(userPublicKey, false)
 			if err != nil {
 				return nil, fmt.Errorf("failed to list devices: %w", err)
 			}

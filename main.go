@@ -205,6 +205,7 @@ func main() {
 	invitationService.MaxAccounts = config.MaxAccounts
 	invitationService.ExternalURL = config.ExternalURL
 	bindings := user.NewBindings(userRepository, spacePublicKeyString)
+	bindings.Disconnect = wsHub.Disconnect
 	invitationService.Bindings = bindings
 
 	setupEndpoints := setup.NewSetupEndpoints(db)
@@ -254,6 +255,7 @@ func main() {
 	// user.DerivePasswordSecrets).
 	saltSecret, verifierKey := user.DerivePasswordSecrets(privateKey.Seed())
 	deviceEndpoints := user.NewDeviceEndpoints(userRepository, verifierKey, spacePublicKeyString)
+	deviceEndpoints.Disconnect = wsHub.Disconnect
 	passwordEndpoints := user.NewPasswordEndpoints(userRepository, saltSecret, verifierKey, spacePublicKeyString)
 	ownerClaimEndpoints := user.NewOwnerClaimEndpoints(userRepository, verifierKey, time.Now(), &spaceCreatorAdapter{service: spaceService})
 	registerEndpoints := user.NewRegisterEndpoints(userRepository, verifierKey, config.OpenRegistration, config.MaxAccounts)
@@ -295,6 +297,8 @@ func main() {
 	log.Info().Str("addr", serverAddr).Msg("Starting HTTP server")
 	server := &fasthttp.Server{
 		Handler: handler,
+		// Without this, closing a hijacked websocket conn is a no-op; Hub.Disconnect and WritePump rely on a real close.
+		KeepHijackedConns: true,
 		// A low file cap must not also cap event and text bodies.
 		MaxRequestBodySize: int(max(config.Storage.MaxFileSize, 50*1024*1024)),
 	}

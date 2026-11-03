@@ -111,7 +111,7 @@ internal/
     auth.go                — AuthMiddleware: RequireAuth(), RequireRole()
     cors.go                — CORSMiddleware: Handle()
   websocket/
-    hub.go                 — Hub: manages connected clients, BroadcastToApplication()
+    hub.go                 — Hub: manages connected clients, BroadcastToApplication(), Disconnect(account, device)
     client.go              — Client: per-connection read/write pumps
     handler.go             — Handler: upgrades HTTP to WebSocket
     message.go             — WebSocket message types

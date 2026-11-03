@@ -8,12 +8,15 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+type disconnectReq struct{ account, device string }
+
 type Hub struct {
 	clients       map[*Client]bool
 	byUser        map[string][]*Client // publicKey -> clients
 	byApp         map[string][]*Client // applicationId -> subscribers
 	register      chan *Client
 	unregister    chan *Client
+	disconnect    chan disconnectReq
 	broadcast     chan *BroadcastMessage
 	userBroadcast chan *UserBroadcastMessage
 	mu            sync.RWMutex
@@ -28,6 +31,7 @@ func NewHub(appRepo application.ApplicationRepository) *Hub {
 		byApp:         make(map[string][]*Client),
 		register:      make(chan *Client),
 		unregister:    make(chan *Client),
+		disconnect:    make(chan disconnectReq),
 		broadcast:     make(chan *BroadcastMessage, 256),
 		userBroadcast: make(chan *UserBroadcastMessage, 256),
 	}
@@ -41,6 +45,9 @@ func (h *Hub) Run() {
 
 		case client := <-h.unregister:
 			h.unregisterClient(client)
+
+		case req := <-h.disconnect:
+			h.disconnectClients(req)
 
 		case message := <-h.broadcast:
 			h.broadcastToApp(message)
@@ -96,6 +103,24 @@ func (h *Hub) unregisterClient(client *Client) {
 		Str("userPublicKey", client.user.PublicKey[:20]+"...").
 		Int("totalClients", len(h.clients)).
 		Msg("[WS] Client unregistered")
+}
+
+func (h *Hub) disconnectClients(req disconnectReq) {
+	h.mu.RLock()
+	clients := make([]*Client, len(h.byUser[req.account]))
+	copy(clients, h.byUser[req.account])
+	h.mu.RUnlock()
+
+	closed := 0
+	for _, c := range clients {
+		if req.device == "" || c.user.DevicePublicKey == req.device {
+			// close the conn, not send: ReadPump may still write to send
+			c.conn.Close()
+			closed++
+		}
+	}
+
+	log.Debug().Int("closed", closed).Msg("[WS] Clients disconnected")
 }
 
 func (h *Hub) removeFromAppSubscribers(client *Client, appID string) {
@@ -222,6 +247,11 @@ func (h *Hub) Register(client *Client) {
 
 func (h *Hub) Unregister(client *Client) {
 	h.unregister <- client
+}
+
+// Disconnect closes the account's sockets for one device; an empty device means every socket of the account.
+func (h *Hub) Disconnect(account, device string) {
+	h.disconnect <- disconnectReq{account: account, device: device}
 }
 
 func (h *Hub) BroadcastToApplication(applicationID string, ev *event.Event) {

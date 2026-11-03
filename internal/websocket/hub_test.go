@@ -1,13 +1,19 @@
 package websocket
 
 import (
+	"errors"
+	"net"
 	"testing"
 	"time"
 
+	gws "github.com/fasthttp/websocket"
 	"github.com/prappser/prappser-spaces/internal/application"
 	"github.com/prappser/prappser-spaces/internal/event"
 	"github.com/prappser/prappser-spaces/internal/user"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/valyala/fasthttp"
+	"github.com/valyala/fasthttp/fasthttputil"
 )
 
 const (
@@ -240,4 +246,86 @@ func TestBroadcast_ShouldKeepOtherAppWhenRemovedFromOne(t *testing.T) {
 func expiresIn(d time.Duration) *int64 {
 	at := time.Now().Add(d).Unix()
 	return &at
+}
+
+type wsFixture struct {
+	hub  *Hub
+	dial func(t *testing.T, account, device string) *gws.Conn
+}
+
+func newWSFixture(t *testing.T) *wsFixture {
+	t.Helper()
+	hub := NewHub(application.NewMemoryRepository())
+	go hub.Run()
+	ln := fasthttputil.NewInmemoryListener()
+	srv := &fasthttp.Server{KeepHijackedConns: true, Handler: func(ctx *fasthttp.RequestCtx) {
+		u := &user.User{
+			PublicKey:       string(ctx.QueryArgs().Peek("account")),
+			DevicePublicKey: string(ctx.QueryArgs().Peek("device")),
+		}
+		_ = upgrader.Upgrade(ctx, func(conn *gws.Conn) {
+			client := NewClient(hub, conn, u)
+			hub.Register(client)
+			go client.WritePump()
+			client.ReadPump()
+		})
+	}}
+	go srv.Serve(ln)
+	t.Cleanup(func() { _ = srv.Shutdown(); _ = ln.Close() })
+
+	d := gws.Dialer{NetDial: func(_, _ string) (net.Conn, error) { return ln.Dial() }}
+	return &wsFixture{hub: hub, dial: func(t *testing.T, account, device string) *gws.Conn {
+		conn, _, err := d.Dial("ws://test/ws?account="+account+"&device="+device, nil)
+		require.NoError(t, err)
+		t.Cleanup(func() { conn.Close() })
+		return conn
+	}}
+}
+
+func readOutcome(conn *gws.Conn, wait time.Duration) (timedOut bool) {
+	_ = conn.SetReadDeadline(time.Now().Add(wait))
+	_, _, err := conn.ReadMessage()
+	var te interface{ Timeout() bool }
+	return errors.As(err, &te) && te.Timeout()
+}
+
+func clientCount(hub *Hub) int {
+	n, _ := hub.GetStats()
+	return n
+}
+
+func TestDisconnect_ShouldCloseOnlyMatchingDevice(t *testing.T) {
+	// given
+	f := newWSFixture(t)
+	a1 := f.dial(t, ownerKey, "device-1-000000000000")
+	a2 := f.dial(t, ownerKey, "device-2-000000000000")
+	b1 := f.dial(t, otherKey, "device-1-000000000000")
+	assert.Eventually(t, func() bool { return clientCount(f.hub) == 3 }, 2*time.Second, 10*time.Millisecond)
+
+	// when
+	f.hub.Disconnect(ownerKey, "device-1-000000000000")
+
+	// then
+	assert.False(t, readOutcome(a1, 2*time.Second))
+	assert.True(t, readOutcome(a2, 200*time.Millisecond))
+	assert.True(t, readOutcome(b1, 200*time.Millisecond))
+	assert.Eventually(t, func() bool { return clientCount(f.hub) == 2 }, 2*time.Second, 10*time.Millisecond)
+}
+
+func TestDisconnect_ShouldCloseAllAccountSocketsWhenDeviceEmpty(t *testing.T) {
+	// given
+	f := newWSFixture(t)
+	a1 := f.dial(t, ownerKey, "device-1-000000000000")
+	a2 := f.dial(t, ownerKey, "device-2-000000000000")
+	b1 := f.dial(t, otherKey, "device-1-000000000000")
+	assert.Eventually(t, func() bool { return clientCount(f.hub) == 3 }, 2*time.Second, 10*time.Millisecond)
+
+	// when
+	f.hub.Disconnect(ownerKey, "")
+
+	// then
+	assert.False(t, readOutcome(a1, 2*time.Second))
+	assert.False(t, readOutcome(a2, 2*time.Second))
+	assert.True(t, readOutcome(b1, 200*time.Millisecond))
+	assert.Eventually(t, func() bool { return clientCount(f.hub) == 1 }, 2*time.Second, 10*time.Millisecond)
 }

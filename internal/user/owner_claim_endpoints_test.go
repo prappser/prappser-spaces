@@ -60,7 +60,7 @@ func (r *ownerClaimTestRepo) EnsureDevice(devicePublicKey, userPublicKey string,
 func (r *ownerClaimTestRepo) GetDevice(devicePublicKey string) (*Device, error) {
 	return r.devices[devicePublicKey], nil
 }
-func (r *ownerClaimTestRepo) ListDevices(userPublicKey string) ([]*Device, error) { return nil, nil }
+func (r *ownerClaimTestRepo) ListDevices(userPublicKey string, includeRevoked bool) ([]*Device, error) { return nil, nil }
 func (r *ownerClaimTestRepo) RevokeDevice(devicePublicKey string, ts int64) error { return nil }
 func (r *ownerClaimTestRepo) RenameDevice(devicePublicKey, deviceName string) error {
 	return nil

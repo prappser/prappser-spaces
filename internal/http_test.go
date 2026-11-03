@@ -30,7 +30,7 @@ func (noopUserRepository) EnsureDevice(devicePublicKey, userPublicKey string, de
 	return nil
 }
 func (noopUserRepository) GetDevice(devicePublicKey string) (*user.Device, error) { return nil, nil }
-func (noopUserRepository) ListDevices(userPublicKey string) ([]*user.Device, error) {
+func (noopUserRepository) ListDevices(userPublicKey string, includeRevoked bool) ([]*user.Device, error) {
 	return nil, nil
 }
 func (noopUserRepository) RevokeDevice(devicePublicKey string, ts int64) error   { return nil }

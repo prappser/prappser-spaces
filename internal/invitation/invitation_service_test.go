@@ -140,10 +140,10 @@ func (r *fakeUserRepo) EnsureDevice(devicePublicKey, userPublicKey string, devic
 func (r *fakeUserRepo) GetDevice(devicePublicKey string) (*user.Device, error) {
 	return r.devices[devicePublicKey], nil
 }
-func (r *fakeUserRepo) ListDevices(userPublicKey string) ([]*user.Device, error) {
+func (r *fakeUserRepo) ListDevices(userPublicKey string, includeRevoked bool) ([]*user.Device, error) {
 	var out []*user.Device
 	for _, d := range r.devices {
-		if d.UserPublicKey == userPublicKey && d.RevokedAt == nil {
+		if d.UserPublicKey == userPublicKey && (includeRevoked || d.RevokedAt == nil) {
 			out = append(out, d)
 		}
 	}
