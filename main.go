@@ -207,6 +207,7 @@ func main() {
 	bindings := user.NewBindings(userRepository, spacePublicKeyString)
 	bindings.Disconnect = wsHub.Disconnect
 	invitationService.Bindings = bindings
+	userEndpoints.Bindings = bindings
 
 	setupEndpoints := setup.NewSetupEndpoints(db)
 

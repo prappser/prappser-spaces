@@ -1085,3 +1085,7 @@ func TestListDevices_ShouldIncludeKind(t *testing.T) {
 	assert.Equal(t, DeviceKindHuman, kinds["device-human"])
 	assert.Equal(t, DeviceKindAgent, kinds["device-agent"])
 }
+
+func (r *deviceTestRepo) ReviveDevice(_, _ string, _ int64) (bool, error) {
+	return false, nil
+}

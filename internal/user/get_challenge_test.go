@@ -117,9 +117,7 @@ func TestGetChallenge_ShouldReturnAndStoreChallengeForWellFormedKey(t *testing.T
 	assert.NotZero(t, resp.ExpiresAt)
 	assert.NotEmpty(t, resp.SpacePublicKey)
 
-	stored, ok := ep.challenges.get(key)
-	assert.True(t, ok)
-	assert.Equal(t, resp.Challenge, stored.challenge)
+	assert.NoError(t, ep.challenges.consume(resp.Challenge, key))
 }
 
 func TestGetChallenge_ShouldReturn400ForMalformedKeyWithoutStoringChallenge(t *testing.T) {
@@ -132,6 +130,9 @@ func TestGetChallenge_ShouldReturn400ForMalformedKeyWithoutStoringChallenge(t *t
 
 	// then
 	assert.Equal(t, fasthttp.StatusBadRequest, ctx.Response.StatusCode())
-	_, ok := ep.challenges.get("does-not-exist")
-	assert.False(t, ok)
+	assert.Empty(t, ep.challenges.data)
+}
+
+func (r *getChallengeTestRepo) ReviveDevice(_, _ string, _ int64) (bool, error) {
+	return false, nil
 }

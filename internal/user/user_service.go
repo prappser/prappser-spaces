@@ -77,6 +77,7 @@ func (us *UserService) GenerateJWT(user *User, deviceKey string) (string, int64,
 		Username:        user.Username,
 		Role:            user.Role,
 		SpaceID:         spaceID,
+		BindingVersion:  user.BindingIat,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Unix(expiresAt, 0)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -113,6 +114,9 @@ func (us *UserService) ValidateJWT(tokenString string) (*User, error) {
 		}
 		if user == nil {
 			return nil, fmt.Errorf("user not found")
+		}
+		if claims.BindingVersion < user.BindingIat {
+			return nil, fmt.Errorf("token predates the account's current binding")
 		}
 		user.SpaceID = claims.SpaceID
 

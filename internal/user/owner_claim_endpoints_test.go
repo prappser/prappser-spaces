@@ -422,3 +422,7 @@ func TestClaim_ShouldIgnoreLegacyMasterPasswordKeysInBody(t *testing.T) {
 	// then
 	assert.Equal(t, fasthttp.StatusCreated, ctx.Response.StatusCode())
 }
+
+func (r *ownerClaimTestRepo) ReviveDevice(_, _ string, _ int64) (bool, error) {
+	return false, nil
+}

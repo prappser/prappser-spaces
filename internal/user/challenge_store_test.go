@@ -10,49 +10,35 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// TestChallengeStore_ConcurrentAccess exercises store/get/delete/consume from
-// many goroutines at once. UserEndpoints methods use value receivers, so
-// challenges must be held behind a pointer to a mutex-guarded struct rather
-// than a plain map field - this test is the guard against that regressing.
-// Run with -race to catch data races on the underlying map.
+func liveChallenge(key string) challengeInfo {
+	return challengeInfo{publicKey: key, expiresAt: time.Now().Add(time.Minute)}
+}
+
+// Run with -race: guards against challenges regressing to an unguarded map.
 func TestChallengeStore_ConcurrentAccess(t *testing.T) {
 	store := newChallengeStore()
 
 	var wg sync.WaitGroup
 	for i := 0; i < 100; i++ {
-		key := fmt.Sprintf("public-key-%d", i%10)
+		challenge := fmt.Sprintf("challenge-%d", i%10)
 
-		wg.Add(4)
+		wg.Add(2)
 		go func() {
 			defer wg.Done()
-			store.store(key, challengeInfo{challenge: "c", expiresAt: time.Now().Add(time.Minute)})
+			store.store(challenge, liveChallenge("pk"))
 		}()
 		go func() {
 			defer wg.Done()
-			store.get(key)
-		}()
-		go func() {
-			defer wg.Done()
-			store.delete(key)
-		}()
-		go func() {
-			defer wg.Done()
-			store.consume(key)
+			_ = store.consume(challenge, "pk")
 		}()
 	}
 	wg.Wait()
 }
 
-// TestChallengeStore_ConsumeIsAtomicAcrossConcurrentCallers guards against
-// the TOCTOU that a separate get()-then-delete() would have: many goroutines
-// race to consume the exact same challenge, and exactly one of them must
-// observe it as present. A get()+delete() pair (two lock acquisitions) would
-// let every concurrent caller see the challenge as present, allowing a signed
-// JWS to be replayed to mint more than one JWT from a single challenge.
 func TestChallengeStore_ConsumeIsAtomicAcrossConcurrentCallers(t *testing.T) {
 	// given
 	store := newChallengeStore()
-	store.store("pk", challengeInfo{challenge: "c", expiresAt: time.Now().Add(time.Minute)})
+	store.store("c", liveChallenge("pk"))
 
 	const attempts = 50
 	var wg sync.WaitGroup
@@ -61,32 +47,86 @@ func TestChallengeStore_ConsumeIsAtomicAcrossConcurrentCallers(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if _, exists, _ := store.consume("pk"); exists {
+			if store.consume("c", "pk") == nil {
 				atomic.AddInt32(&successCount, 1)
 			}
 		}()
 	}
 	wg.Wait()
 
-	// then - exactly one goroutine redeemed the challenge, the rest found it
-	// already gone
+	// then
 	assert.Equal(t, int32(1), successCount)
-	_, stillExists := store.get("pk")
-	assert.False(t, stillExists)
 }
 
-func TestChallengeStore_StorePrunesExpiredEntries(t *testing.T) {
+func TestChallengeStore_ShouldConsumeTwoChallengesOfOneDevice(t *testing.T) {
 	// given
 	store := newChallengeStore()
-	store.store("expired", challengeInfo{challenge: "old", expiresAt: time.Now().Add(-time.Minute)})
+	store.store("c1", liveChallenge("pk"))
+	store.store("c2", liveChallenge("pk"))
 
-	// when - storing a new entry triggers the opportunistic prune sweep
-	store.store("fresh", challengeInfo{challenge: "new", expiresAt: time.Now().Add(time.Minute)})
+	// when
+	err1 := store.consume("c1", "pk")
+	err2 := store.consume("c2", "pk")
 
 	// then
-	_, expiredExists := store.get("expired")
-	fresh, freshExists := store.get("fresh")
-	assert.False(t, expiredExists)
-	assert.True(t, freshExists)
-	assert.Equal(t, "new", fresh.challenge)
+	assert.NoError(t, err1)
+	assert.NoError(t, err2)
+}
+
+func TestChallengeStore_ShouldFailAndBurnOnKeyMismatch(t *testing.T) {
+	// given
+	store := newChallengeStore()
+	store.store("c", liveChallenge("pk"))
+
+	// when
+	errWrong := store.consume("c", "other")
+	errRetry := store.consume("c", "pk")
+
+	// then
+	assert.Error(t, errWrong)
+	assert.Error(t, errRetry)
+}
+
+func TestChallengeStore_ShouldFailOnExpiredOrUnknownChallenge(t *testing.T) {
+	// given
+	store := newChallengeStore()
+	store.store("old", challengeInfo{publicKey: "pk", expiresAt: time.Now().Add(-time.Minute)})
+
+	// when / then
+	assert.Error(t, store.consume("old", "pk"))
+	assert.Error(t, store.consume("never-issued", "pk"))
+}
+
+func TestChallengeStore_ShouldSweepExpiredBeforeEvictingWhenFull(t *testing.T) {
+	// given
+	store := newChallengeStore()
+	store.max = 3
+	store.store("expired", challengeInfo{publicKey: "pk", expiresAt: time.Now().Add(-time.Minute)})
+	store.store("live1", liveChallenge("pk"))
+	store.store("live2", liveChallenge("pk"))
+
+	// when
+	store.store("new", liveChallenge("pk"))
+
+	// then
+	assert.Len(t, store.data, 3)
+	assert.NoError(t, store.consume("live1", "pk"))
+	assert.NoError(t, store.consume("live2", "pk"))
+	assert.NoError(t, store.consume("new", "pk"))
+}
+
+func TestChallengeStore_ShouldEvictOneEntryWhenFullOfLiveChallenges(t *testing.T) {
+	// given
+	store := newChallengeStore()
+	store.max = 3
+	for _, c := range []string{"a", "b", "c"} {
+		store.store(c, liveChallenge("pk"))
+	}
+
+	// when
+	store.store("d", liveChallenge("pk"))
+
+	// then
+	assert.Len(t, store.data, 3)
+	assert.NoError(t, store.consume("d", "pk"))
 }

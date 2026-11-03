@@ -114,7 +114,12 @@ func (b *Bindings) RosterAllowed(acct *User, d *Device) (bool, error) {
 	return b.IsIdentitySpace(acct)
 }
 
-func (b *Bindings) VerifyAdmission(accountKey, devicePublicKey, binding, assertion string, now time.Time) (*bindingClaims, error) {
+type Admission struct {
+	claims     *bindingClaims
+	assertedAt int64
+}
+
+func (b *Bindings) VerifyAdmission(accountKey, devicePublicKey, binding, assertion string, now time.Time) (*Admission, error) {
 	c, err := verifyBinding(binding, accountKey, now)
 	if err != nil {
 		return nil, err
@@ -126,15 +131,15 @@ func (b *Bindings) VerifyAdmission(accountKey, devicePublicKey, binding, asserti
 	if a.UserID != accountKey {
 		return nil, ErrInvalidAssertion
 	}
-	return c, nil
+	return &Admission{claims: c, assertedAt: a.IssuedAt}, nil
 }
 
-func (b *Bindings) Admit(account, devicePublicKey, binding string, c *bindingClaims, deviceName *string, now time.Time) error {
-	storedJWS, storedSub, err := b.Accept(account, binding, c)
+func (b *Bindings) Admit(account, devicePublicKey, binding string, adm *Admission, deviceName *string, now time.Time) error {
+	storedJWS, storedSub, err := b.Accept(account, binding, adm.claims)
 	if err != nil {
 		return err
 	}
-	if storedSub != c.Subject {
+	if storedSub != adm.claims.Subject {
 		return &BindingRequiredError{Binding: storedJWS}
 	}
 
@@ -142,16 +147,39 @@ func (b *Bindings) Admit(account, devicePublicKey, binding string, c *bindingCla
 	if err != nil {
 		return fmt.Errorf("failed to look up device: %w", err)
 	}
-	if d != nil {
-		if d.UserPublicKey != account || d.RevokedAt != nil {
-			return ErrDeviceRowConflict
+	if d == nil {
+		if err := b.repo.EnsureDevice(devicePublicKey, account, deviceName, now.Unix()); err != nil {
+			return fmt.Errorf("failed to ensure device: %w", err)
 		}
 		return nil
 	}
-	if err := b.repo.EnsureDevice(devicePublicKey, account, deviceName, now.Unix()); err != nil {
-		return fmt.Errorf("failed to ensure device: %w", err)
+	if d.UserPublicKey != account {
+		return ErrDeviceRowConflict
+	}
+	if d.RevokedAt == nil {
+		return nil
+	}
+	revived, err := b.repo.ReviveDevice(devicePublicKey, account, adm.assertedAt)
+	if err != nil {
+		return fmt.Errorf("failed to revive device: %w", err)
+	}
+	if !revived {
+		return ErrDeviceRowConflict
 	}
 	return nil
+}
+
+func bindingIssuer(signed string) string {
+	token, _, err := jwt.NewParser().ParseUnverified(signed, jwt.MapClaims{})
+	if err != nil {
+		return ""
+	}
+	mc, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return ""
+	}
+	iss, _ := mc["iss"].(string)
+	return iss
 }
 
 func isCanonicalPublicKey(s string) bool {

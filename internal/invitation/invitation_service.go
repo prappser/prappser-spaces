@@ -826,13 +826,13 @@ func (s *InvitationService) Join(tokenString, proof, assertion, binding, deviceN
 			log.Debug().Msg("[JOIN] binding presented without an assertion")
 			return nil, fmt.Errorf("invalid assertion: %w", user.ErrInvalidAssertion)
 		}
-		bindingClaims, err := s.Bindings.VerifyAdmission(userPublicKey, presentedDevicePublicKey, binding, assertion, now)
+		admission, err := s.Bindings.VerifyAdmission(userPublicKey, presentedDevicePublicKey, binding, assertion, now)
 		if err != nil {
 			log.Debug().Err(err).Msg("[JOIN] binding admission verification failed")
 			return nil, err
 		}
 		admit = func() error {
-			return s.Bindings.Admit(userPublicKey, presentedDevicePublicKey, binding, bindingClaims, normalizedDeviceName, now)
+			return s.Bindings.Admit(userPublicKey, presentedDevicePublicKey, binding, admission, normalizedDeviceName, now)
 		}
 	} else if assertionPresented {
 		verifiedClaims, err := user.VerifyAssertion(assertion, s.spacePublicKey, presentedDevicePublicKey, userPublicKey, now)

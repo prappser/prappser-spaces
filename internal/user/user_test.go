@@ -388,3 +388,7 @@ func TestGetProfile_ShouldOmitUserStateBlob_WhenLookupErrors(t *testing.T) {
 	assert.Empty(t, resp.UserStateBlob)
 	assert.NotContains(t, string(ctx.Response.Body()), "userStateBlob")
 }
+
+func (m *mockUserRepository) ReviveDevice(_, _ string, _ int64) (bool, error) {
+	return false, nil
+}
