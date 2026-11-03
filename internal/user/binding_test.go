@@ -24,6 +24,25 @@ type bindingTestRepo struct {
 	iat     int64
 	sub     string
 	devices map[string]*Device
+	acct    string
+}
+
+func (r *bindingTestRepo) GetUserByPublicKey(key string) (*User, error) {
+	if key != r.acct {
+		return nil, nil
+	}
+	return &User{PublicKey: key, Username: "alice", Role: RoleUser, BindingIat: r.iat, BindingSub: r.sub, StoredBinding: r.binding}, nil
+}
+
+func (r *bindingTestRepo) TouchDeviceLastSeen(string, int64) error { return nil }
+
+func (r *bindingTestRepo) ReviveDevice(device, account string, before int64) (bool, error) {
+	d := r.devices[device]
+	if d == nil || d.UserPublicKey != account || d.RevokedAt == nil || *d.RevokedAt >= before {
+		return false, nil
+	}
+	d.RevokedAt = nil
+	return true, nil
 }
 
 func (r *bindingTestRepo) GetEscrow(string) (string, string, error) { return r.escrow, "", nil }
@@ -269,7 +288,8 @@ func TestVerifyAdmission_ShouldAcceptAssertionFromBindingSubject(t *testing.T) {
 
 	// then
 	assert.NoError(t, err)
-	assert.Equal(t, subj, c.Subject)
+	assert.Equal(t, subj, c.claims.Subject)
+	assert.Equal(t, now.Unix(), c.assertedAt)
 }
 
 func TestVerifyAdmission_ShouldRejectAssertionFromOtherIssuerOrForOtherAccount(t *testing.T) {
@@ -306,8 +326,8 @@ func TestAdmit_ShouldRegisterNewDeviceAndReportBindingRequiredForLowerBinding(t 
 	now := time.Now()
 
 	// when
-	errHigh := b.Admit("acct", "dev-1", "jws-high", &bindingClaims{Subject: subjA, IssuedAt: 200}, nil, now)
-	errLow := b.Admit("acct", "dev-2", "jws-low", &bindingClaims{Subject: subjB, IssuedAt: 100}, nil, now)
+	errHigh := b.Admit("acct", "dev-1", "jws-high", &Admission{claims: &bindingClaims{Subject: subjA, IssuedAt: 200}}, nil, now)
+	errLow := b.Admit("acct", "dev-2", "jws-low", &Admission{claims: &bindingClaims{Subject: subjB, IssuedAt: 100}}, nil, now)
 
 	// then
 	assert.NoError(t, errHigh)
@@ -318,27 +338,74 @@ func TestAdmit_ShouldRegisterNewDeviceAndReportBindingRequiredForLowerBinding(t 
 	assert.Nil(t, repo.devices["dev-2"])
 }
 
-func TestAdmit_ShouldRejectDeviceRowOfAnotherAccountOrRevoked(t *testing.T) {
+func TestAdmit_ShouldRejectDeviceRowOfAnotherAccount(t *testing.T) {
 	// given
 	_, space := newTestKey(t)
 	_, subj := newTestKey(t)
 	repo := &bindingTestRepo{devices: map[string]*Device{
-		"theirs":  {DevicePublicKey: "theirs", UserPublicKey: "other"},
-		"revoked": {DevicePublicKey: "revoked", UserPublicKey: "acct", RevokedAt: new(int64)},
-		"ours":    {DevicePublicKey: "ours", UserPublicKey: "acct"},
+		"theirs": {DevicePublicKey: "theirs", UserPublicKey: "other"},
+		"ours":   {DevicePublicKey: "ours", UserPublicKey: "acct"},
 	}}
 	b := NewBindings(repo, space)
-	c := &bindingClaims{Subject: subj, IssuedAt: 100}
+	adm := &Admission{claims: &bindingClaims{Subject: subj, IssuedAt: 100}, assertedAt: 100}
 
 	// when
-	errTheirs := b.Admit("acct", "theirs", "jws", c, nil, time.Now())
-	errRevoked := b.Admit("acct", "revoked", "jws", c, nil, time.Now())
-	errOurs := b.Admit("acct", "ours", "jws", c, nil, time.Now())
+	errTheirs := b.Admit("acct", "theirs", "jws", adm, nil, time.Now())
+	errOurs := b.Admit("acct", "ours", "jws", adm, nil, time.Now())
 
 	// then
 	assert.ErrorIs(t, errTheirs, ErrDeviceRowConflict)
-	assert.ErrorIs(t, errRevoked, ErrDeviceRowConflict)
 	assert.NoError(t, errOurs)
+}
+
+func TestAdmit_ShouldReviveRevokedRowOnlyWhenAssertionIsNewerThanRevocation(t *testing.T) {
+	// given
+	_, space := newTestKey(t)
+	_, subj := newTestKey(t)
+	revokedAt := int64(1000)
+	repo := &bindingTestRepo{devices: map[string]*Device{
+		"newer": {DevicePublicKey: "newer", UserPublicKey: "acct", RevokedAt: &revokedAt},
+		"older": {DevicePublicKey: "older", UserPublicKey: "acct", RevokedAt: &revokedAt},
+		"equal": {DevicePublicKey: "equal", UserPublicKey: "acct", RevokedAt: &revokedAt},
+	}}
+	b := NewBindings(repo, space)
+	claims := &bindingClaims{Subject: subj, IssuedAt: 100}
+
+	// when
+	errNewer := b.Admit("acct", "newer", "jws", &Admission{claims: claims, assertedAt: 1001}, nil, time.Now())
+	errOlder := b.Admit("acct", "older", "jws", &Admission{claims: claims, assertedAt: 999}, nil, time.Now())
+	errEqual := b.Admit("acct", "equal", "jws", &Admission{claims: claims, assertedAt: 1000}, nil, time.Now())
+
+	// then
+	assert.NoError(t, errNewer)
+	assert.Nil(t, repo.devices["newer"].RevokedAt)
+	assert.ErrorIs(t, errOlder, ErrDeviceRowConflict)
+	assert.ErrorIs(t, errEqual, ErrDeviceRowConflict)
+	assert.NotNil(t, repo.devices["older"].RevokedAt)
+}
+
+type racingEnsureRepo struct {
+	*bindingTestRepo
+}
+
+func (r *racingEnsureRepo) EnsureDevice(deviceKey, _ string, _ *string, createdAt int64) error {
+	r.devices[deviceKey] = &Device{DevicePublicKey: deviceKey, UserPublicKey: "other", CreatedAt: createdAt}
+	return nil
+}
+
+func TestAdmit_ShouldRejectDeviceRowThatAnotherAccountInsertedConcurrently(t *testing.T) {
+	// given
+	_, space := newTestKey(t)
+	_, subj := newTestKey(t)
+	repo := &racingEnsureRepo{&bindingTestRepo{devices: map[string]*Device{}}}
+	b := NewBindings(repo, space)
+	adm := &Admission{claims: &bindingClaims{Subject: subj, IssuedAt: 100}, assertedAt: 100}
+
+	// when
+	err := b.Admit("acct", "dev", "jws", adm, nil, time.Now())
+
+	// then
+	assert.ErrorIs(t, err, ErrDeviceRowConflict)
 }
 
 func newPutBindingCtx(t *testing.T, u *User, binding string) *fasthttp.RequestCtx {

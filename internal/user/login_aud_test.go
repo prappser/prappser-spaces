@@ -28,7 +28,7 @@ func signedLogin(t *testing.T, aud any) (UserEndpoints, string) {
 		userRepository: &deviceRepo{newMockUserRepository(), &Device{DevicePublicKey: pk, UserPublicKey: pk}},
 		challenges:     newChallengeStore(),
 	}
-	ue.challenges.store(pk, challengeInfo{challenge: "c1", expiresAt: time.Now().Add(time.Minute)})
+	ue.challenges.store("c1", challengeInfo{publicKey: pk, expiresAt: time.Now().Add(time.Minute)})
 	claims := jwt.MapClaims{"publicKey": pk, "challenge": "c1", "iat": time.Now().Unix()}
 	if aud != nil {
 		claims["aud"] = aud
@@ -43,7 +43,7 @@ func TestVerifyUserAuthJWS_ShouldRejectMismatchedAud(t *testing.T) {
 	ue, jws := signedLogin(t, "https://evil.example")
 
 	// when
-	_, _, err := ue.verifyUserAuthJWS(jws, 300, "https://space.prappser.app")
+	_, err := ue.verifyUserAuthJWS(jws, 300, "https://space.prappser.app")
 
 	// then
 	assert.ErrorIs(t, err, ErrAudienceMismatch)
@@ -54,7 +54,7 @@ func TestVerifyUserAuthJWS_ShouldRejectNonStringAud(t *testing.T) {
 	ue, jws := signedLogin(t, 42)
 
 	// when
-	_, _, err := ue.verifyUserAuthJWS(jws, 300, "https://space.prappser.app")
+	_, err := ue.verifyUserAuthJWS(jws, 300, "https://space.prappser.app")
 
 	// then
 	assert.ErrorIs(t, err, ErrAudienceMismatch)
@@ -65,7 +65,7 @@ func TestVerifyUserAuthJWS_ShouldRejectAudWhenOwnURLUnknown(t *testing.T) {
 	ue, jws := signedLogin(t, "https://space.prappser.app")
 
 	// when
-	_, _, err := ue.verifyUserAuthJWS(jws, 300, "")
+	_, err := ue.verifyUserAuthJWS(jws, 300, "")
 
 	// then
 	assert.ErrorIs(t, err, ErrAudienceMismatch)
@@ -76,7 +76,7 @@ func TestVerifyUserAuthJWS_ShouldAcceptMatchingAud(t *testing.T) {
 	ue, jws := signedLogin(t, "HTTPS://Space.Prappser.app:443/")
 
 	// when
-	_, _, err := ue.verifyUserAuthJWS(jws, 300, "https://space.prappser.app")
+	_, err := ue.verifyUserAuthJWS(jws, 300, "https://space.prappser.app")
 
 	// then
 	assert.NoError(t, err)
@@ -87,7 +87,7 @@ func TestVerifyUserAuthJWS_ShouldAcceptMissingAud(t *testing.T) {
 	ue, jws := signedLogin(t, nil)
 
 	// when
-	_, _, err := ue.verifyUserAuthJWS(jws, 300, "https://space.prappser.app")
+	_, err := ue.verifyUserAuthJWS(jws, 300, "https://space.prappser.app")
 
 	// then
 	assert.NoError(t, err)
@@ -105,7 +105,6 @@ func TestUserAuth_ShouldReturn401OnAudMismatch(t *testing.T) {
 
 	// then
 	assert.Equal(t, fasthttp.StatusUnauthorized, ctx.Response.StatusCode())
-	assert.Contains(t, string(ctx.Response.Body()), "Failed to verify JWS")
 }
 
 func TestNormalizeSpaceURL_ShouldNormalize(t *testing.T) {

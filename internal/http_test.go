@@ -191,3 +191,7 @@ func TestRateLimiting_RegisterIsCappedPerIPIncludingRefusals(t *testing.T) {
 	assert.Equal(t, fasthttp.StatusTooManyRequests, ctx.Response.StatusCode())
 	assert.NotEmpty(t, ctx.Response.Header.Peek("Retry-After"))
 }
+
+func (noopUserRepository) ReviveDevice(_, _ string, _ int64) (bool, error) {
+	return false, nil
+}

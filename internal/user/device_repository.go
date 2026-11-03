@@ -21,6 +21,22 @@ func (r *userRepository) EnsureDevice(devicePublicKey, userPublicKey string, dev
 	return nil
 }
 
+func (r *userRepository) ReviveDevice(devicePublicKey, userPublicKey string, revokedBefore int64) (bool, error) {
+	res, err := r.db.Exec(
+		`UPDATE user_devices SET revoked_at = NULL
+		 WHERE device_public_key = $1 AND user_public_key = $2 AND (revoked_at IS NULL OR revoked_at < $3)`,
+		devicePublicKey, userPublicKey, revokedBefore,
+	)
+	if err != nil {
+		return false, fmt.Errorf("failed to revive device: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("failed to revive device: %w", err)
+	}
+	return n == 1, nil
+}
+
 // GetDevice returns nil, nil when no device with that key exists.
 func (r *userRepository) GetDevice(devicePublicKey string) (*Device, error) {
 	var d Device

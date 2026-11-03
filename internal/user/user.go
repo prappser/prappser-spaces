@@ -103,6 +103,7 @@ type UserRepository interface {
 	AcceptBinding(publicKey, binding string, iat int64, sub, ownKey string) (storedBinding, storedSub string, updated bool, err error)
 	// EnsureDevice registers a device for an account if it doesn't already exist (no-op otherwise).
 	EnsureDevice(devicePublicKey, userPublicKey string, deviceName *string, createdAt int64) error
+	ReviveDevice(devicePublicKey, userPublicKey string, revokedBefore int64) (bool, error)
 	// GetDevice returns nil, nil when no device with that key exists.
 	GetDevice(devicePublicKey string) (*Device, error)
 	// ListDevices returns the devices for an account; revoked ones only when includeRevoked is set.
@@ -205,6 +206,8 @@ var ErrAccountExists = errors.New("account already exists")
 // signed for a different space than this one (login-phishing replay).
 var ErrAudienceMismatch = errors.New("login audience does not match this space")
 
+var errMalformedLogin = errors.New("malformed login")
+
 // SpaceCreator creates a default space for new owners.
 type SpaceCreator interface {
 	CreateSpace(name string, userPublicKey *string) error
@@ -222,6 +225,7 @@ type UserEndpoints struct {
 	// field - a plain sync.Mutex field would be copied per call and its lock
 	// would never actually protect the shared map.
 	challenges *challengeStore
+	Bindings   *Bindings
 }
 
 type Config struct {
@@ -252,6 +256,7 @@ type JWTClaims struct {
 	Username        string `json:"username"`
 	Role            string `json:"role"`
 	SpaceID         string `json:"spaceId"`
+	BindingVersion  int64  `json:"bv,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -267,67 +272,57 @@ type LoginResponse struct {
 }
 
 type challengeInfo struct {
-	challenge string
+	publicKey string
 	expiresAt time.Time
 }
 
-// challengeStore is a mutex-guarded map of in-flight login challenges, keyed
-// by user public key. It must always be held behind a pointer (see the
-// comment on UserEndpoints.challenges).
+const maxChallenges = 10000
+
 type challengeStore struct {
 	mu   sync.Mutex
 	data map[string]challengeInfo
+	max  int
 }
 
 func newChallengeStore() *challengeStore {
-	return &challengeStore{data: make(map[string]challengeInfo)}
+	return &challengeStore{data: make(map[string]challengeInfo), max: maxChallenges}
 }
 
-func (s *challengeStore) store(publicKey string, info challengeInfo) {
+func (s *challengeStore) store(challenge string, info challengeInfo) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.data[publicKey] = info
-	// ponytail: opportunistic O(n) sweep on every store keeps the map from
-	// growing unbounded without a background goroutine; fine at this scale,
-	// switch to a ticking janitor if the challenge volume ever makes this sweep matter.
-	now := timeNowFunc()
-	for key, entry := range s.data {
-		if entry.expiresAt.Before(now) {
-			delete(s.data, key)
+	if len(s.data) >= s.max {
+		now := timeNowFunc()
+		for key, entry := range s.data {
+			if entry.expiresAt.Before(now) {
+				delete(s.data, key)
+			}
+		}
+		if len(s.data) >= s.max {
+			for key := range s.data {
+				delete(s.data, key)
+				break
+			}
 		}
 	}
+	s.data[challenge] = info
 }
 
-func (s *challengeStore) get(publicKey string) (challengeInfo, bool) {
+func (s *challengeStore) consume(challenge, publicKey string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	info, ok := s.data[publicKey]
-	return info, ok
-}
-
-func (s *challengeStore) delete(publicKey string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	delete(s.data, publicKey)
-}
-
-// consume atomically retrieves and removes a challenge under a single lock
-// acquisition, so a challenge can be redeemed exactly once even if two
-// requests race to verify the same signed JWS concurrently - a separate
-// get() then delete() (two lock acquisitions) would let both see the
-// challenge as present and both succeed. exists reports whether a challenge
-// was found at all; expired reports whether it had already passed its TTL
-// (only meaningful when exists is true). Either way the entry is gone after
-// this call.
-func (s *challengeStore) consume(publicKey string) (info challengeInfo, exists bool, expired bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	info, exists = s.data[publicKey]
-	if !exists {
-		return challengeInfo{}, false, false
+	info, ok := s.data[challenge]
+	if !ok {
+		return errors.New("no such challenge")
 	}
-	delete(s.data, publicKey)
-	return info, true, info.expiresAt.Before(timeNowFunc())
+	delete(s.data, challenge)
+	if info.publicKey != publicKey {
+		return errors.New("challenge issued to another key")
+	}
+	if info.expiresAt.Before(timeNowFunc()) {
+		return errors.New("challenge has expired")
+	}
+	return nil
 }
 
 var timeNowFunc = time.Now
@@ -341,6 +336,7 @@ func NewEndpoints(userRepository UserRepository, config Config, privateKey ed255
 		userService:    userService,
 		spaceCreator:   spaceCreator,
 		challenges:     newChallengeStore(),
+		Bindings:       NewBindings(userRepository, base64.StdEncoding.EncodeToString(publicKey)),
 	}
 }
 
@@ -370,10 +366,10 @@ func (ue UserEndpoints) GetChallenge(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	expiresAt := time.Now().Add(time.Duration(ue.config.ChallengeTTLSec) * time.Second)
+	expiresAt := timeNowFunc().Add(time.Duration(ue.config.ChallengeTTLSec) * time.Second)
 
-	ue.challenges.store(publicKeyStr, challengeInfo{
-		challenge: challenge,
+	ue.challenges.store(challenge, challengeInfo{
+		publicKey: publicKeyStr,
 		expiresAt: expiresAt,
 	})
 
@@ -393,9 +389,35 @@ func (ue UserEndpoints) GetChallenge(ctx *fasthttp.RequestCtx) {
 	json.NewEncoder(ctx).Encode(response)
 }
 
-// UserAuth handles user authentication with challenge verification
+type userAuthRequest struct {
+	Assertion string `json:"assertion"`
+	Binding   string `json:"binding"`
+}
+
+func refuseAuth(ctx *fasthttp.RequestCtx, body any) {
+	if body == nil {
+		ctx.Error("Unauthorized", fasthttp.StatusUnauthorized)
+		return
+	}
+	writeJSON(ctx, fasthttp.StatusUnauthorized, body)
+}
+
 func (ue UserEndpoints) UserAuth(ctx *fasthttp.RequestCtx) {
 	log.Debug().Msg("[AUTH] Starting user authentication")
+
+	var req userAuthRequest
+	if body := strings.TrimSpace(string(ctx.PostBody())); body != "" {
+		if err := json.Unmarshal([]byte(body), &req); err != nil {
+			log.Error().Err(err).Msg("[AUTH] Malformed request body")
+			ctx.Error("invalid request body", fasthttp.StatusBadRequest)
+			return
+		}
+	}
+	if (req.Assertion == "") != (req.Binding == "") {
+		log.Error().Msg("[AUTH] Assertion and binding must be sent together")
+		ctx.Error("assertion and binding must be sent together", fasthttp.StatusBadRequest)
+		return
+	}
 
 	authHeader := ctx.Request.Header.Peek(headerAuthorization)
 	if authHeader == nil {
@@ -411,62 +433,123 @@ func (ue UserEndpoints) UserAuth(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	log.Debug().Msg("[AUTH] Verifying JWS signature")
-	claims, device, err := ue.verifyUserAuthJWS(jws, ue.config.ChallengeTTLSec, ue.expectedSpaceURL(ctx))
+	claims, err := ue.verifyUserAuthJWS(jws, ue.config.ChallengeTTLSec, ue.expectedSpaceURL(ctx))
 	if err != nil {
 		log.Error().Err(err).Msg("[AUTH] Failed to verify JWS")
-		status := fasthttp.StatusBadRequest
-		if errors.Is(err, ErrAudienceMismatch) {
-			status = fasthttp.StatusUnauthorized
+		if errors.Is(err, errMalformedLogin) {
+			ctx.Error("Failed to verify JWS", fasthttp.StatusBadRequest)
+		} else {
+			ctx.Error("Unauthorized", fasthttp.StatusUnauthorized)
 		}
-		ctx.Error("Failed to verify JWS", status)
 		return
 	}
+	deviceKey := claims.PublicKey
+	publicKeyPrefix := deviceKey[:min(50, len(deviceKey))] + "..."
+	now := timeNowFunc()
 
-	publicKeyPrefix := claims.PublicKey[:min(50, len(claims.PublicKey))] + "..."
-	log.Debug().Str("publicKey", publicKeyPrefix).Msg("[AUTH] JWS verified, fetching account")
-
-	// Fetch the account owning the verified device (claims.PublicKey is the
-	// DEVICE key; device.UserPublicKey is the account key).
-	user, err := ue.userRepository.GetUserByPublicKey(device.UserPublicKey)
-	if err != nil {
-		log.Error().Err(err).Str("publicKey", publicKeyPrefix).Msg("[AUTH] Failed to get user")
-		ctx.Error("Internal server error", fasthttp.StatusInternalServerError)
-		return
+	var user *User
+	if req.Binding != "" {
+		user = ue.bindingLogin(ctx, deviceKey, req, now)
+	} else {
+		user = ue.rosterLogin(ctx, deviceKey)
 	}
 	if user == nil {
-		log.Error().Str("publicKey", publicKeyPrefix).Msg("[AUTH] User not found")
-		ctx.Error("User not found", fasthttp.StatusNotFound)
 		return
 	}
 
-	log.Debug().Str("username", user.Username).Str("role", user.Role).Msg("[AUTH] User found, generating JWT")
-
-	// Generate JWT token
-	token, expiresAt, err := ue.userService.GenerateJWT(user, device.DevicePublicKey)
+	token, expiresAt, err := ue.userService.GenerateJWT(user, deviceKey)
 	if err != nil {
 		log.Error().Err(err).Msg("[AUTH] Failed to generate JWT")
 		ctx.Error("Internal server error", fasthttp.StatusInternalServerError)
 		return
 	}
 
-	if err := ue.userRepository.TouchDeviceLastSeen(device.DevicePublicKey, time.Now().Unix()); err != nil {
+	if err := ue.userRepository.TouchDeviceLastSeen(deviceKey, time.Now().Unix()); err != nil {
 		log.Warn().Err(err).Str("publicKey", publicKeyPrefix).Msg("[AUTH] Failed to touch device last seen")
 	}
 
-	// Challenge is already consumed (deleted) by verifyUserAuthJWS's atomic
-	// consume() call above - no separate cleanup needed here.
-
 	log.Debug().Str("username", user.Username).Msg("[AUTH] Authentication successful")
+	writeJSON(ctx, fasthttp.StatusOK, LoginResponse{Token: token, ExpiresAt: expiresAt})
+}
 
-	response := LoginResponse{
-		Token:     token,
-		ExpiresAt: expiresAt,
+func (ue UserEndpoints) bindingLogin(ctx *fasthttp.RequestCtx, deviceKey string, req userAuthRequest, now time.Time) *User {
+	iss := bindingIssuer(req.Binding)
+	acct, err := ue.userRepository.GetUserByPublicKey(iss)
+	if err != nil {
+		log.Error().Err(err).Msg("[AUTH] Failed to get account")
+		ctx.Error("Internal server error", fasthttp.StatusInternalServerError)
+		return nil
 	}
+	if acct == nil {
+		log.Error().Msg("[AUTH] Binding names an unknown account")
+		refuseAuth(ctx, nil)
+		return nil
+	}
+	adm, err := ue.Bindings.VerifyAdmission(iss, deviceKey, req.Binding, req.Assertion, now)
+	if err != nil {
+		log.Error().Err(err).Msg("[AUTH] Binding admission refused")
+		refuseAuth(ctx, nil)
+		return nil
+	}
+	err = ue.Bindings.Admit(iss, deviceKey, req.Binding, adm, nil, now)
+	var required *BindingRequiredError
+	switch {
+	case errors.As(err, &required):
+		log.Error().Msg("[AUTH] Presented binding is not the stored one")
+		refuseAuth(ctx, bindingResponse{Code: "binding_required", Binding: required.Binding})
+		return nil
+	case errors.Is(err, ErrDeviceRowConflict):
+		log.Error().Msg("[AUTH] Device row conflicts with this admission")
+		refuseAuth(ctx, nil)
+		return nil
+	case err != nil:
+		log.Error().Err(err).Msg("[AUTH] Failed to admit device")
+		ctx.Error("Internal server error", fasthttp.StatusInternalServerError)
+		return nil
+	}
+	acct.BindingIat = max(acct.BindingIat, adm.claims.IssuedAt)
+	return acct
+}
 
-	ctx.SetStatusCode(fasthttp.StatusOK)
-	ctx.SetContentType("application/json")
-	json.NewEncoder(ctx).Encode(response)
+func (ue UserEndpoints) rosterLogin(ctx *fasthttp.RequestCtx, deviceKey string) *User {
+	d, err := ue.userRepository.GetDevice(deviceKey)
+	if err != nil {
+		log.Error().Err(err).Msg("[AUTH] Failed to get device")
+		ctx.Error("Internal server error", fasthttp.StatusInternalServerError)
+		return nil
+	}
+	if d == nil {
+		log.Error().Msg("[AUTH] Device not found")
+		refuseAuth(ctx, nil)
+		return nil
+	}
+	acct, err := ue.userRepository.GetUserByPublicKey(d.UserPublicKey)
+	if err != nil {
+		log.Error().Err(err).Msg("[AUTH] Failed to get account")
+		ctx.Error("Internal server error", fasthttp.StatusInternalServerError)
+		return nil
+	}
+	if acct == nil {
+		log.Error().Msg("[AUTH] Account not found")
+		refuseAuth(ctx, nil)
+		return nil
+	}
+	allowed, err := ue.Bindings.RosterAllowed(acct, d)
+	if err != nil {
+		log.Error().Err(err).Msg("[AUTH] Failed to check roster login")
+		ctx.Error("Internal server error", fasthttp.StatusInternalServerError)
+		return nil
+	}
+	if !allowed {
+		log.Error().Msg("[AUTH] Roster login refused")
+		if acct.BindingIat > 0 {
+			refuseAuth(ctx, bindingResponse{Code: "binding_required", Binding: acct.StoredBinding})
+		} else {
+			refuseAuth(ctx, nil)
+		}
+		return nil
+	}
+	return acct
 }
 
 // VerifyJWT middleware for protecting routes
@@ -533,136 +616,64 @@ func (ue UserEndpoints) expectedSpaceURL(ctx *fasthttp.RequestCtx) string {
 	return normalized
 }
 
-func (ue UserEndpoints) verifyUserAuthJWS(signedJWT string, ttlSec int, expectedAud string) (*userAuthJWSClaims, *Device, error) {
-	log.Debug().Msg("[VERIFY] Parsing JWT")
-
-	// Parse JWT without verification first to get claims
+func (ue UserEndpoints) verifyUserAuthJWS(signedJWT string, ttlSec int, expectedAud string) (*userAuthJWSClaims, error) {
 	token, _, err := jwt.NewParser().ParseUnverified(signedJWT, jwt.MapClaims{})
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to parse JWT: %w", err)
+		return nil, fmt.Errorf("%w: %v", errMalformedLogin, err)
 	}
-
 	mapClaims, ok := token.Claims.(jwt.MapClaims)
 	if !ok {
-		return nil, nil, fmt.Errorf("invalid JWT claims format")
+		return nil, fmt.Errorf("%w: invalid claims format", errMalformedLogin)
 	}
 
 	var claims userAuthJWSClaims
-	// claims.PublicKey identifies a DEVICE key (see device_repository.go);
-	// pre-device-roster clients pass the account key directly, which still
-	// resolves because device #1's key equals the account key.
-	if pk, ok := mapClaims["publicKey"].(string); ok {
-		claims.PublicKey = pk
-	}
-	if ch, ok := mapClaims["challenge"].(string); ok {
-		claims.Challenge = ch
-	}
+	claims.PublicKey, _ = mapClaims["publicKey"].(string)
+	claims.Challenge, _ = mapClaims["challenge"].(string)
 	if iat, ok := mapClaims["iat"].(float64); ok {
 		claims.IssuedAt = int64(iat)
 	}
 	rawAud, hasAud := mapClaims["aud"]
 
+	if !isPublicKey(claims.PublicKey) {
+		return nil, fmt.Errorf("%w: bad publicKey", errMalformedLogin)
+	}
 	publicKeyPrefix := claims.PublicKey[:min(50, len(claims.PublicKey))] + "..."
-	log.Debug().Str("publicKey", publicKeyPrefix).Msg("[VERIFY] JWT claims extracted")
 
-	// Check if the JWT is expired
-	var timeNow = timeNowFunc()
-	var issuedAtTime = time.Unix(claims.IssuedAt, 0)
-	if issuedAtTime.Add(time.Duration(ttlSec) * time.Second).Before(timeNow) {
-		log.Debug().Str("publicKey", publicKeyPrefix).Msg("[VERIFY] JWT has expired")
-		return nil, nil, fmt.Errorf("JWT has expired")
+	if time.Unix(claims.IssuedAt, 0).Add(time.Duration(ttlSec) * time.Second).Before(timeNowFunc()) {
+		return nil, fmt.Errorf("JWT has expired")
 	}
 
-	log.Debug().Str("publicKey", publicKeyPrefix).Msg("[VERIFY] Looking up device in database")
-	// 1. Get the device by its public key
-	device, err := ue.userRepository.GetDevice(claims.PublicKey)
-	if err != nil {
-		log.Debug().Str("publicKey", publicKeyPrefix).Msg("[VERIFY] Failed to get device from database")
-		return nil, nil, fmt.Errorf("device not found: %w", err)
-	}
-	if device == nil {
-		log.Debug().Str("publicKey", publicKeyPrefix).Msg("[VERIFY] Device not found in database")
-		return nil, nil, fmt.Errorf("device not found")
-	}
-	if device.RevokedAt != nil {
-		log.Debug().Str("publicKey", publicKeyPrefix).Msg("[VERIFY] Device has been revoked")
-		return nil, nil, fmt.Errorf("device revoked")
-	}
-
-	log.Debug().Str("publicKey", publicKeyPrefix).Msg("[VERIFY] Device found, validating public key")
-
-	// 2. Parse the device's Ed25519 public key from base64
-	publicKeyBytes, err := base64.StdEncoding.DecodeString(claims.PublicKey)
-	if err != nil {
-		log.Error().Err(err).Str("publicKey", publicKeyPrefix).Msg("[VERIFY] Failed to decode public key base64")
-		return nil, nil, fmt.Errorf("failed to decode public key: %w", err)
-	}
-
-	if len(publicKeyBytes) != ed25519.PublicKeySize {
-		log.Error().Int("size", len(publicKeyBytes)).Msg("[VERIFY] Invalid Ed25519 public key size")
-		return nil, nil, fmt.Errorf("invalid public key size: expected %d, got %d", ed25519.PublicKeySize, len(publicKeyBytes))
-	}
-
-	ed25519PublicKey := ed25519.PublicKey(publicKeyBytes)
-
-	log.Debug().Str("publicKey", publicKeyPrefix).Msg("[VERIFY] Public key parsed, verifying JWT signature")
-
-	// 3. Verify the JWT signature using the device's Ed25519 public key
+	publicKeyBytes, _ := base64.StdEncoding.DecodeString(claims.PublicKey)
 	verifiedToken, err := jwt.Parse(signedJWT, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodEd25519); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
-		return ed25519PublicKey, nil
+		return ed25519.PublicKey(publicKeyBytes), nil
 	})
-
 	if err != nil {
-		log.Error().Err(err).Str("publicKey", publicKeyPrefix).Msg("[VERIFY] JWT signature verification failed")
-		return nil, nil, fmt.Errorf("failed to verify JWT signature: %w", err)
+		return nil, fmt.Errorf("failed to verify JWT signature: %w", err)
 	}
-
 	if !verifiedToken.Valid {
-		log.Error().Str("publicKey", publicKeyPrefix).Msg("[VERIFY] JWT is not valid")
-		return nil, nil, fmt.Errorf("JWT signature verification failed")
+		return nil, errors.New("JWT signature verification failed")
 	}
 
-	log.Debug().Str("publicKey", publicKeyPrefix).Msg("[VERIFY] JWT signature verified, checking challenge")
-
-	// 4. Verify that the challenge matches what was issued (keyed by publicKey).
-	// consume() retrieves and deletes it in one lock acquisition, so the
-	// challenge is redeemed exactly once - two concurrent replays of the same
-	// signed JWS can't both see it as present and both mint a JWT.
-	storedChallenge, exists, expired := ue.challenges.consume(claims.PublicKey)
-	if !exists {
-		log.Error().Str("publicKey", publicKeyPrefix).Msg("[VERIFY] No challenge found for device")
-		return nil, nil, fmt.Errorf("no challenge found for device")
+	if err := ue.challenges.consume(claims.Challenge, claims.PublicKey); err != nil {
+		return nil, err
 	}
 
-	if storedChallenge.challenge != claims.Challenge {
-		log.Error().Str("publicKey", publicKeyPrefix).Msg("[VERIFY] Challenge mismatch")
-		return nil, nil, fmt.Errorf("challenge mismatch")
-	}
-
-	// Check if challenge has expired
-	if expired {
-		log.Error().Str("publicKey", publicKeyPrefix).Msg("[VERIFY] Challenge has expired")
-		return nil, nil, fmt.Errorf("challenge has expired")
-	}
-
-	// The challenge is already burned above, so a mismatched attempt can't be retried.
 	if hasAud {
 		aud, _ := rawAud.(string)
 		normalized, err := normalizeSpaceURL(aud)
 		if err != nil || expectedAud == "" || normalized != expectedAud {
 			log.Error().Str("publicKey", publicKeyPrefix).Str("expectedAud", expectedAud).Str("presentedAud", aud).Msg("[VERIFY] Audience mismatch")
-			return nil, nil, ErrAudienceMismatch
+			return nil, ErrAudienceMismatch
 		}
 		claims.Audience = normalized
 	} else {
 		log.Info().Str("publicKey", publicKeyPrefix).Msg("[AUTH] Login JWS has no aud, accepting for old clients")
 	}
 
-	log.Debug().Str("publicKey", publicKeyPrefix).Msg("[VERIFY] All verifications passed successfully")
-	return &claims, device, nil
+	return &claims, nil
 }
 
 func isPublicKey(s string) bool {

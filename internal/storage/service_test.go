@@ -707,3 +707,7 @@ func TestUploadAndInitChunked_ShouldRejectBadStorageID(t *testing.T) {
 func TestValidateStorageID_ShouldAcceptUUID(t *testing.T) {
 	assert.NoError(t, validateStorageID("3f2b8c1e-9d4a-4e7b-8a61-0c5d2f9e7a10"))
 }
+
+func (m *mockUserRepoStorage) ReviveDevice(_, _ string, _ int64) (bool, error) {
+	return false, nil
+}

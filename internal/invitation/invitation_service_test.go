@@ -1792,6 +1792,7 @@ type bindingJoin struct {
 	binding   string
 	userRepo  *fakeUserRepo
 	acctB64   string
+	deviceB64 string
 }
 
 // newBindingJoin builds a join by a new device of account A, bound to space K:
@@ -1835,6 +1836,7 @@ func newBindingJoin(t *testing.T, invite *Invitation, userRepo *fakeUserRepo, as
 		binding:   binding,
 		userRepo:  userRepo,
 		acctB64:   acctB64,
+		deviceB64: deviceB64,
 	}
 }
 
@@ -1851,6 +1853,35 @@ func TestJoin_WithBinding_KnownAccountNewDevice_ShouldAdmitAndPromote(t *testing
 	assert.Len(t, userRepo.ensureDeviceCalls, 1)
 	assert.Equal(t, j.acctB64, userRepo.ensureDeviceCalls[0].userPublicKey)
 	assert.Equal(t, user.RoleUser, userRepo.existingUser.Role)
+}
+
+func TestJoin_WithBinding_RevokedRowAndNewerAssertion_ShouldReviveDevice(t *testing.T) {
+	// given: the device was revoked before the assertion was minted
+	userRepo := &fakeUserRepo{existingUser: &user.User{Username: "joiner", Role: user.RoleGuest}}
+	j := newBindingJoin(t, spaceUseInvite(true), userRepo, nil)
+	revokedAt := int64(1)
+	userRepo.devices = map[string]*user.Device{j.deviceB64: {DevicePublicKey: j.deviceB64, UserPublicKey: j.acctB64, RevokedAt: &revokedAt}}
+
+	// when
+	_, err := j.svc.Join(j.token, j.proof, j.assertion, j.binding, "")
+
+	// then
+	assert.NoError(t, err)
+	assert.Nil(t, userRepo.devices[j.deviceB64].RevokedAt)
+}
+
+func TestJoin_WithBinding_RevokedAfterAssertion_ShouldReturnDeviceRowConflict(t *testing.T) {
+	// given: the revocation is newer than the assertion
+	userRepo := &fakeUserRepo{existingUser: &user.User{Username: "joiner", Role: user.RoleGuest}}
+	j := newBindingJoin(t, spaceUseInvite(true), userRepo, nil)
+	revokedAt := time.Now().Unix() + 1000
+	userRepo.devices = map[string]*user.Device{j.deviceB64: {DevicePublicKey: j.deviceB64, UserPublicKey: j.acctB64, RevokedAt: &revokedAt}}
+
+	// when
+	_, err := j.svc.Join(j.token, j.proof, j.assertion, j.binding, "")
+
+	// then
+	assert.ErrorIs(t, err, user.ErrDeviceRowConflict)
 }
 
 func TestJoin_WithBinding_BadAssertion_ShouldLeaveNoUserRow(t *testing.T) {
@@ -1916,4 +1947,13 @@ func TestJoin_NonAccountDeviceWithoutBinding_AfterBindingStored_ShouldBeRejected
 
 	// then
 	assert.ErrorIs(t, err, ErrAccountKeyNotProven)
+}
+
+func (r *fakeUserRepo) ReviveDevice(device, account string, before int64) (bool, error) {
+	d := r.devices[device]
+	if d == nil || d.UserPublicKey != account || d.RevokedAt == nil || *d.RevokedAt >= before {
+		return false, nil
+	}
+	d.RevokedAt = nil
+	return true, nil
 }

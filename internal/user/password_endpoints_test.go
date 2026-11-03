@@ -687,3 +687,7 @@ func TestSetPassword_ShouldReturn204WhenNonEmptyBlobAndBindingNamesOwnKey(t *tes
 	// then
 	assert.Equal(t, fasthttp.StatusNoContent, ctx.Response.StatusCode())
 }
+
+func (r *passwordTestRepo) ReviveDevice(_, _ string, _ int64) (bool, error) {
+	return false, nil
+}
