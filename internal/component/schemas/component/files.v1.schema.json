@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://prappser.app/schemas/component/files.v1.schema.json",
   "title": "Files component data",
-  "description": "File list.",
+  "description": "File list. Lists uploaded files in items. Agents cannot add files: an item needs a storageId from a file upload, which MCP does not offer, so items is read-only for agents. Run-mode behaviour is set by allowAddInRunMode, allowDeleteInRunMode and layout.",
   "type": "object",
   "properties": {
     "items": {
@@ -10,50 +10,67 @@
       "items": {
         "$ref": "#/$defs/item"
       },
-      "x-merge": "single"
+      "description": "The uploaded files, each per $defs/item. Read-only for agents: an item needs a storageId from a file upload, which MCP does not offer.",
+      "x-merge": "single",
+      "x-access": "none"
     },
     "allowAddInRunMode": {
       "type": "boolean",
-      "x-merge": "single"
+      "description": "When true, members may add files in run mode. App default true.",
+      "x-merge": "single",
+      "x-access": "manage"
     },
     "allowDeleteInRunMode": {
       "type": "boolean",
-      "description": "Also gates editing captions in run mode.",
-      "x-merge": "single"
+      "description": "When true, members may delete files in run mode. Also gates editing captions. App default false.",
+      "x-merge": "single",
+      "x-access": "manage"
     },
     "maxVisibleItems": {
       "type": "integer",
       "minimum": 0,
-      "description": "0 means unlimited.",
-      "x-merge": "single"
+      "description": "Maximum number of files shown. 0 means unlimited. Example: 6.",
+      "x-merge": "single",
+      "x-access": "manage"
     },
     "layout": {
       "enum": [
         "grid",
         "list"
       ],
-      "x-merge": "single"
+      "description": "How files are displayed: grid or list.",
+      "x-merge": "single",
+      "x-access": "manage"
     },
     "_title": {
       "type": "string",
-      "description": "Panel title. '' clears it (tombstone).",
-      "x-merge": "single"
+      "description": "Panel title shown above the component. '' clears it. Example: \"Groceries\".",
+      "x-merge": "single",
+      "x-access": "manage"
     },
     "_sectionBreak": {
       "type": "boolean",
-      "x-merge": "single"
+      "description": "true starts a new visual section, with a bigger gap above and a stronger separator.",
+      "x-merge": "single",
+      "x-access": "manage"
     },
     "_width": {
       "type": "number",
-      "x-merge": "single"
+      "description": "Preferred width in logical pixels. Default 600, minimum 300.",
+      "x-merge": "single",
+      "x-access": "manage"
     },
     "_spaceAbove": {
       "type": "number",
-      "x-merge": "single"
+      "description": "Legacy spacing above in pixels, no longer written. When _sectionBreak is absent, a value of 16 or more reads as a section break.",
+      "x-merge": "single",
+      "x-access": "manage"
     },
     "_spaceBelow": {
       "type": "number",
-      "x-merge": "single"
+      "description": "Legacy spacing below in pixels, no longer written.",
+      "x-merge": "single",
+      "x-access": "manage"
     }
   },
   "required": [
@@ -61,8 +78,9 @@
   ],
   "patternProperties": {
     "^_": {
-      "description": "Layout and UI keys. Any value.",
-      "x-merge": "single"
+      "description": "Other layout and UI keys starting with _. Any value.",
+      "x-merge": "single",
+      "x-access": "manage"
     }
   },
   "additionalProperties": false,
@@ -72,39 +90,46 @@
       "properties": {
         "id": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "description": "Item id."
         },
         "storageId": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "description": "Id of the uploaded file in storage. Comes from a file upload."
         },
         "index": {
-          "type": "integer"
+          "type": "integer",
+          "description": "Sort position among the files, lower first."
         },
         "caption": {
           "type": [
             "string",
             "null"
-          ]
+          ],
+          "description": "Caption text, or null."
         },
         "filename": {
           "type": [
             "string",
             "null"
-          ]
+          ],
+          "description": "Original file name, or null. Example: \"report.pdf\"."
         },
         "contentType": {
           "type": [
             "string",
             "null"
-          ]
+          ],
+          "description": "MIME type, or null. Example: \"application/pdf\"."
         },
         "sizeBytes": {
           "type": [
             "integer",
             "null"
           ],
-          "minimum": 0
+          "minimum": 0,
+          "description": "File size in bytes, or null."
         }
       },
       "required": [

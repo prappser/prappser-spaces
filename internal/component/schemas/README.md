@@ -25,7 +25,7 @@ Rules that hold for every schema:
 - Required fields equal what the Dart `fromJson` requires. Fields with a Dart default are optional.
 - Unknown keys are rejected here even though the Dart decoders ignore them.
 
-The schemas are stricter than the app's decoders on purpose. They are the contract for what we write and what we accept from outside (MCP, templates), and the strictness makes Dart and Go drift show up as a failing test. The decoders stay tolerant so a newer client does not break an older one. Today only `create_app` validates against these files. Anything that validates the event path later has to decide for itself whether this strictness fits.
+The schemas are stricter than the app's decoders on purpose. They are the contract for what we write and what we accept from outside (MCP, templates), and the strictness makes Dart and Go drift show up as a failing test. The decoders stay tolerant so a newer client does not break an older one. Today the space server validates only MCP writes (`create_app` and the checklist tools) against these files. The app and event ingestion do not validate, so a limit does not reject data already stored or synced, but it can make an MCP write fail. The app's checklist title field has no 1000 cap, so an existing longer title makes an agent write of that item (for example a toggle) fail validation. Anything that validates the event path later has to decide for itself whether this strictness fits.
 
 ## Sync model and `x-merge`
 
@@ -44,7 +44,36 @@ Decisions behind this (#270):
 - Rich text (`document`, checklist `detailsDocument`) is a single value. Concurrent edits are last writer wins, not merged.
 - Checklist items are `item_<id>` keys (`per-entry`), the value omits the id. The old whole-list `items` key is deprecated (`"deprecated": true`, `single`): clients still read it as a read-only base and never write it. Templates may not carry `items`.
 - Keys are never deleted by sync. A removed entry is a tombstone: `''` for string cells, `null` for countdown `customColor`. Schemas accept the tombstone.
-- `x-merge` is an annotation. Validators ignore it. A tripwire test checks that none is missing and that the chat, poll and expenses key families keep their mode.
+- `x-merge` is an annotation. Validators ignore it. A tripwire test checks that none is missing and that the chat, poll and expenses key families keep their mode. It covers `x-access` the same way.
+
+## Write access and `x-access`
+
+Every top-level `properties` entry and every `patternProperties` entry carries an `x-access` annotation. It says who may write the key through MCP:
+
+| Value | Meaning |
+|---|---|
+| `manage` | Owner and admin only. |
+| `member` | Any member that is not a viewer. |
+| `none` | Nobody through MCP (read-only or app-managed). |
+| object | Member level plus the checks below. Any of the keys that follow. |
+| `gate` | Name of a boolean property of the same schema. |
+| `fields` | Map of inner field name to a boolean property name, or `null` for open. |
+| `append` | `true`: the key may only be created. |
+| `author` | Name of a field inside the decoded value that holds the writer's public key. |
+| `content` | Name of a `$defs` entry the decoded value must satisfy. |
+| `unless` | Name of a boolean property of the same schema. The key is blocked while it is true. |
+
+Rules:
+
+- `gate`: members may write only when the flag's current value is not `false`. When the flag is absent, its schema `default` applies (every gate flag declares a boolean `default`). Owner and admin bypass the gate.
+- `fields`: when the old and new values are both objects, each changed inner field is checked against `fields[field]` if listed (`null` means open), otherwise against `gate`. Creates, tombstones and non-object values use `gate`.
+- `unless`: the key is blocked for every role, owner and admin included, while the flag's current value is true. When the flag is absent, its schema `default` applies. There is no bypass.
+- `append`: the key must not exist yet, and no tombstone. Applies to all roles.
+- `author`: the decoded value's field must equal the caller's public key. When the key already exists, the old decoded value's field must too, so a tombstone or an edit of someone else's entry is rejected. Applies to all roles.
+- `content`: a non-empty value must be a JSON string that decodes and validates against `<$id>#/$defs/<name>`. `''` is a tombstone and skips this check (`append` and `author` still apply).
+- Per-member keys (`x-merge: per-member`) need nothing extra: for all roles the key must match the pattern with its trailing `.+$` replaced by the caller's quoted public key plus `$`.
+- Viewers cannot write through MCP at all.
+- `x-access` is an annotation for MCP writes. Validators ignore it. The app's own UI enforces its rules separately.
 
 ## Versioning
 
@@ -76,7 +105,8 @@ A consumer validates `data` against `schema` (the case override if present) and 
 The consumer enforces these, they are not checked here:
 
 - Byte limits: a template file is at most 256 KiB and the template document at most 64 KiB.
-- Chat message body at most 4000 UTF-16 units. The app checks this only when sending, not when decoding.
+- The chat body (4000) and checklist title (1000) `maxLength` count code points while the app counts UTF-16 units, so for astral characters the schema is up to 2x looser. ponytail: ceiling is 2x the limit for astral characters; add a UTF-16 length check in the MCP tool if it matters.
+- A member can create a checklist item with `checked: true` while `allowToggleInUsage` is false, because creates are checked against `gate` only.
 - Chat reaction at most 32 UTF-16 units, checked by the app's controller and decoders.
 - Checklist `attachmentIds`, chat attachment ids and Files `storageId` pointing at something that exists.
 - Member references in a template: Map marker `createdBy` and `createdAtMs` and checklist `assignedMemberId` (and `attachmentIds`) let a template name a member or file. The schema allows them, so `create_app` must strip or reject them. The app's own template strip already clears them on export and import (Map `stripForTemplate` sets `createdBy` to `''`, `createdAtMs` to 0 and drops `otherUsers`; the checklist strip clears `assignedMemberId`, `attachmentIds` and `checked`).
@@ -88,5 +118,5 @@ The consumer enforces these, they are not checked here:
 ## Changing a schema
 
 1. Edit the schema and add or adjust vectors in the same change. Every new rule needs a valid and an invalid case.
-2. Run `flutter test test/schemas`. It covers the vectors, payloads from the real write paths, the built-in templates, and the tripwires (type registry, `x-merge`, icon list).
+2. Run `flutter test test/schemas`. It covers the vectors, payloads from the real write paths, the built-in templates, and the tripwires (type registry, `x-merge`, `x-access`, icon list).
 3. Copy the files to prappser-spaces unchanged.

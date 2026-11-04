@@ -2,22 +2,30 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://prappser.app/schemas/component/countdown.v1.schema.json",
   "title": "Countdown component data",
-  "description": "Countdown to an instant.",
+  "description": "Countdown to an instant. targetAt is the target time in epoch ms (it cannot be cleared once set); the other keys style the card. Members may edit the countdown fields in run mode only when runEditable is true (default false); owner and admin always may, and only they may change runEditable itself.",
   "type": "object",
   "properties": {
     "v": {
       "const": 1,
-      "description": "Wire format version. Absent means 1.",
-      "x-merge": "single"
+      "description": "Wire format version, written by the app. Absent means 1.",
+      "x-merge": "single",
+      "x-access": "none"
     },
     "targetAt": {
       "type": "integer",
-      "description": "Epoch ms. Cannot be cleared once set.",
-      "x-merge": "single"
+      "description": "Target time in epoch milliseconds. Cannot be cleared once set. Example: 1798761600000. Members may change it only when runEditable is true; owner and admin always may.",
+      "x-merge": "single",
+      "x-access": {
+        "gate": "runEditable"
+      }
     },
     "what": {
       "type": "string",
-      "x-merge": "single"
+      "description": "Label of the event being counted down to. Example: \"Holiday\". Members may change it only when runEditable is true; owner and admin always may.",
+      "x-merge": "single",
+      "x-access": {
+        "gate": "runEditable"
+      }
     },
     "style": {
       "enum": [
@@ -30,11 +38,19 @@
         "dusk",
         "slate"
       ],
-      "x-merge": "single"
+      "description": "Colour preset of the card: ember, amber, punch, lagoon, iris, fern, dusk or slate. Members may change it only when runEditable is true; owner and admin always may.",
+      "x-merge": "single",
+      "x-access": {
+        "gate": "runEditable"
+      }
     },
     "emoji": {
       "type": "string",
-      "x-merge": "single"
+      "description": "Sticker shown on the card. '' means none. Example: \"🎉\". Members may change it only when runEditable is true; owner and admin always may.",
+      "x-merge": "single",
+      "x-access": {
+        "gate": "runEditable"
+      }
     },
     "precision": {
       "enum": [
@@ -44,7 +60,11 @@
         "minutes",
         "seconds"
       ],
-      "x-merge": "single"
+      "description": "Smallest unit shown: auto, days, hours, minutes or seconds. Members may change it only when runEditable is true; owner and admin always may.",
+      "x-merge": "single",
+      "x-access": {
+        "gate": "runEditable"
+      }
     },
     "size": {
       "enum": [
@@ -52,11 +72,18 @@
         "medium",
         "large"
       ],
-      "x-merge": "single"
+      "description": "Card size: small, medium or large. Members may change it only when runEditable is true; owner and admin always may.",
+      "x-merge": "single",
+      "x-access": {
+        "gate": "runEditable"
+      }
     },
     "runEditable": {
       "type": "boolean",
-      "x-merge": "single"
+      "default": false,
+      "description": "When true, members may edit the countdown fields in run mode. Default false. Only owner and admin may change this flag.",
+      "x-merge": "single",
+      "x-access": "manage"
     },
     "customColor": {
       "type": [
@@ -65,35 +92,48 @@
       ],
       "minimum": 0,
       "maximum": 4294967295,
-      "description": "ARGB. null clears it (tombstone).",
-      "x-merge": "single"
+      "description": "ARGB colour as an integer, overriding style. null clears it. Example: 4294198070. Members may change it only when runEditable is true; owner and admin always may.",
+      "x-merge": "single",
+      "x-access": {
+        "gate": "runEditable"
+      }
     },
     "_title": {
       "type": "string",
-      "description": "Panel title. '' clears it (tombstone).",
-      "x-merge": "single"
+      "description": "Panel title shown above the component. '' clears it. Example: \"Groceries\".",
+      "x-merge": "single",
+      "x-access": "manage"
     },
     "_sectionBreak": {
       "type": "boolean",
-      "x-merge": "single"
+      "description": "true starts a new visual section, with a bigger gap above and a stronger separator.",
+      "x-merge": "single",
+      "x-access": "manage"
     },
     "_width": {
       "type": "number",
-      "x-merge": "single"
+      "description": "Preferred width in logical pixels. Default 600, minimum 300.",
+      "x-merge": "single",
+      "x-access": "manage"
     },
     "_spaceAbove": {
       "type": "number",
-      "x-merge": "single"
+      "description": "Legacy spacing above in pixels, no longer written. When _sectionBreak is absent, a value of 16 or more reads as a section break.",
+      "x-merge": "single",
+      "x-access": "manage"
     },
     "_spaceBelow": {
       "type": "number",
-      "x-merge": "single"
+      "description": "Legacy spacing below in pixels, no longer written.",
+      "x-merge": "single",
+      "x-access": "manage"
     }
   },
   "patternProperties": {
     "^_": {
-      "description": "Layout and UI keys. Any value.",
-      "x-merge": "single"
+      "description": "Other layout and UI keys starting with _. Any value.",
+      "x-merge": "single",
+      "x-access": "manage"
     }
   },
   "additionalProperties": false
