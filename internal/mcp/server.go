@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"encoding/json"
 	"errors"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -38,9 +39,8 @@ func newServer(d Deps) *sdk.Server {
 	addGetApp(s, d)
 	addCreateInvite(s, d)
 	addCreateApp(s, d)
-	addPostChatMessage(s, d)
-	addAddChecklistItem(s, d)
-	addUpdateChecklistItem(s, d)
+	addDescribeComponent(s, d)
+	addUpdateComponent(s, d)
 	return s
 }
 
@@ -80,4 +80,21 @@ func roleOf(app *application.Application, publicKey string) string {
 		}
 	}
 	return ""
+}
+
+func errorResult(body any) *sdk.CallToolResult {
+	b, _ := json.Marshal(body)
+	return &sdk.CallToolResult{IsError: true, Content: []sdk.Content{&sdk.TextContent{Text: string(b)}}}
+}
+
+func fieldsResult(what string, fields []component.FieldError) *sdk.CallToolResult {
+	return errorResult(map[string]any{"note": untrustedNote, "error": what, "untrusted": map[string]any{"fields": fields}})
+}
+
+func validationResult(err error, what string) (*sdk.CallToolResult, bool) {
+	var ve component.ValidationErrors
+	if !errors.As(err, &ve) {
+		return nil, false
+	}
+	return fieldsResult(what, ve), true
 }

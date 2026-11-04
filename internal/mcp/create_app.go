@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf16"
 
 	"github.com/google/uuid"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -21,6 +22,9 @@ import (
 const (
 	maxTemplateDocBytes = 64 * 1024
 	maxAppNameUnits     = 64
+
+	checklistComponentName = "Checklist"
+	itemKeyPrefix          = "item_"
 )
 
 type createAppIn struct {
@@ -39,6 +43,10 @@ func createAppResult(app *application.Application, eventErr error) createAppOut 
 		out.Warning = "The app was created, but announcing it to your other devices failed, so they may not see it until they resync. The app exists: do not retry create_app, a retry would create a second app."
 	}
 	return out
+}
+
+func utf16Len(s string) int {
+	return len(utf16.Encode([]rune(s)))
 }
 
 func newID() string {

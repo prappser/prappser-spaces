@@ -130,34 +130,49 @@ func (e *env) app(owner *user.User, chats int, members ...*user.User) string {
 	return appID
 }
 
-func (e *env) makeAdmin(appID string, u *user.User) {
+func (e *env) makeRole(appID string, u *user.User, role application.MemberRole) {
 	e.t.Helper()
-	_, err := e.db.Exec(`UPDATE members SET role = $1 WHERE application_id = $2 AND public_key = $3`, string(application.MemberRoleAdmin), appID, u.PublicKey)
+	_, err := e.db.Exec(`UPDATE members SET role = $1 WHERE application_id = $2 AND public_key = $3`, string(role), appID, u.PublicKey)
 	require.NoError(e.t, err)
 }
 
-func (e *env) checklistApp(owner *user.User, checklists int, data map[string]any, members ...*user.User) string {
+func (e *env) componentApp(owner *user.User, typ string, data map[string]any, members ...*user.User) (appID, compID string) {
 	e.t.Helper()
-	appID := e.app(owner, 0, members...)
-	_, err := e.db.Exec(`DELETE FROM components WHERE application_id = $1`, appID)
+	appID = e.app(owner, 0, members...)
+	compID = appID + "-comp"
+	raw, _ := json.Marshal(data)
+	_, err := e.db.Exec(`INSERT INTO components (id, component_group_id, application_id, name, data, index_order) VALUES ($1, $2, $3, $4, $5, 0)`,
+		compID, appID+"-g", appID, typ, string(raw))
 	require.NoError(e.t, err)
-	for i := 0; i < checklists; i++ {
-		raw, _ := json.Marshal(data)
-		_, err = e.db.Exec(`INSERT INTO components (id, component_group_id, application_id, name, data, index_order) VALUES ($1, $2, $3, 'Checklist', $4, $5)`,
-			appID+"-list"+string(rune('a'+i)), appID+"-g", appID, string(raw), i)
-		require.NoError(e.t, err)
-	}
-	return appID
+	return appID, compID
 }
 
-func (e *env) listData(appID string) map[string]any {
+func (e *env) compData(compID string) map[string]any {
 	e.t.Helper()
 	var raw string
-	require.NoError(e.t, e.db.QueryRow(`SELECT data FROM components WHERE id = $1`, appID+"-lista").Scan(&raw))
+	require.NoError(e.t, e.db.QueryRow(`SELECT data FROM components WHERE id = $1`, compID).Scan(&raw))
 	var out map[string]any
 	require.NoError(e.t, json.Unmarshal([]byte(raw), &out))
 	return out
 }
+
+func (e *env) eventCount(appID string) int {
+	e.t.Helper()
+	var n int
+	require.NoError(e.t, e.db.QueryRow(`SELECT COUNT(*) FROM events WHERE application_id = $1`, appID).Scan(&n))
+	return n
+}
+
+func update(t *testing.T, s *sdk.ClientSession, appID, compID string, set map[string]any) (*sdk.CallToolResult, map[string]any) {
+	t.Helper()
+	return call(t, s, "update_component", map[string]any{"appId": appID, "componentId": compID, "set": set})
+}
+
+func chatMsg(sender, body string) string {
+	return toJSON(map[string]any{"v": 1, "sender": sender, "ts": time.Now().UnixMilli(), "body": body})
+}
+
+func newMsgKey() string { return "m_" + uuid.NewString() }
 
 type bearer string
 
@@ -219,73 +234,13 @@ func TestMCP_ListAndGetApp_ShouldWrapMemberTextAsUntrusted(t *testing.T) {
 	assert.Equal(t, "Trip", content["name"])
 	assert.Len(t, content["componentGroups"], 1)
 	assert.NotContains(t, get, "name")
-	assert.NotContains(t, toJSON(get), "ublicKey")
+	assert.Equal(t, owner.PublicKey, get["myPublicKey"])
+	assert.Contains(t, toJSON(content["members"]), owner.PublicKey)
 }
 
 func toJSON(v any) string {
 	b, _ := json.Marshal(v)
 	return string(b)
-}
-
-func TestMCP_PostChatMessage_ShouldPersistAsCallerAndBroadcast(t *testing.T) {
-	// given
-	e := newEnv(t)
-	owner, member := e.account(), e.account()
-	appID := e.app(owner, 1, member)
-	session, _ := e.connect(member)
-
-	// when
-	res, out := call(t, session, "post_chat_message", map[string]any{"appId": appID, "text": "  hello team  "})
-
-	// then
-	require.False(t, res.IsError, toJSON(out))
-	key := out["messageId"].(string)
-	assert.True(t, strings.HasPrefix(key, "m_"))
-	var count int
-	require.NoError(t, e.db.QueryRow(`SELECT COUNT(*) FROM events WHERE application_id = $1 AND id = $2 AND creator_public_key = $3`, appID, out["eventId"], member.PublicKey).Scan(&count))
-	assert.Equal(t, 1, count)
-	var data string
-	require.NoError(t, e.db.QueryRow(`SELECT data FROM components WHERE id = $1`, appID+"-chata").Scan(&data))
-	var comp map[string]any
-	require.NoError(t, json.Unmarshal([]byte(data), &comp))
-	var msg map[string]any
-	require.NoError(t, json.Unmarshal([]byte(comp[key].(string)), &msg))
-	assert.Equal(t, member.PublicKey, msg["sender"])
-	assert.Equal(t, "hello team", msg["body"])
-	assert.True(t, e.bc.saw(appID))
-}
-
-func TestMCP_PostChatMessage_ShouldListChatsWhenSeveralAndNoComponentID(t *testing.T) {
-	// given
-	e := newEnv(t)
-	owner := e.account()
-	appID := e.app(owner, 2)
-	session, _ := e.connect(owner)
-
-	// when
-	res, out := call(t, session, "post_chat_message", map[string]any{"appId": appID, "text": "hi"})
-
-	// then
-	assert.True(t, res.IsError)
-	assert.Equal(t, untrustedNote, out["note"])
-	assert.Len(t, out["untrusted"].(map[string]any)["chats"], 2)
-	assert.Contains(t, toJSON(out), appID+"-chata")
-	assert.Contains(t, toJSON(out), appID+"-chatb")
-}
-
-func TestMCP_PostChatMessage_ShouldFailWhenChatIsOff(t *testing.T) {
-	// given
-	e := newEnv(t)
-	owner := e.account()
-	appID := e.app(owner, 0)
-	session, _ := e.connect(owner)
-
-	// when
-	res, _ := call(t, session, "post_chat_message", map[string]any{"appId": appID, "text": "hi"})
-
-	// then
-	assert.True(t, res.IsError)
-	assert.Contains(t, errText(res), "chat is off for this app")
 }
 
 func TestMCP_CreateInvite_ShouldReturnJoinURL(t *testing.T) {
@@ -349,7 +304,7 @@ func TestMCP_AgentReadOff_ShouldHideAppFromMemberAgentButNotOwnerAgent(t *testin
 	// when
 	_, memberList := call(t, memberSession, "list_apps", nil)
 	getRes, _ := call(t, memberSession, "get_app", map[string]any{"appId": appID})
-	postRes, _ := call(t, memberSession, "post_chat_message", map[string]any{"appId": appID, "text": "hi"})
+	postRes, _ := update(t, memberSession, appID, appID+"-chata", map[string]any{newMsgKey(): chatMsg(member.PublicKey, "hi")})
 	_, ownerList := call(t, ownerSession, "list_apps", nil)
 
 	// then
@@ -365,7 +320,7 @@ func TestMCP_AgentReadOff_ShouldDenyAdminAgentInviteAndAnswerLikeMissingApp(t *t
 	e := newEnv(t)
 	owner, admin := e.account(), e.account()
 	appID := e.app(owner, 0, admin)
-	e.makeAdmin(appID, admin)
+	e.makeRole(appID, admin, application.MemberRoleAdmin)
 	require.NoError(t, e.apps.SetAgentRead(appID, owner, false))
 	session, _ := e.connect(admin)
 
@@ -394,40 +349,6 @@ func TestMCP_CreateInvite_ShouldAnswerNonMemberAgentLikeMissingApp(t *testing.T)
 	assert.True(t, notMember.IsError)
 	assert.Equal(t, "app not found or not open to agents", errText(notMember))
 	assert.Equal(t, errText(missing), errText(notMember))
-}
-
-func TestMCP_AgentReadOff_ShouldLetOwnerAgentPostChat(t *testing.T) {
-	// given
-	e := newEnv(t)
-	owner := e.account()
-	appID := e.app(owner, 1)
-	require.NoError(t, e.apps.SetAgentRead(appID, owner, false))
-	session, _ := e.connect(owner)
-
-	// when
-	res, out := call(t, session, "post_chat_message", map[string]any{"appId": appID, "text": "hi"})
-
-	// then
-	require.False(t, res.IsError, toJSON(out))
-	assert.NotEmpty(t, out["messageId"])
-}
-
-func TestMCP_GetApp_ShouldReturnChatMessagesUnderUntrusted(t *testing.T) {
-	// given
-	e := newEnv(t)
-	owner := e.account()
-	appID := e.app(owner, 1)
-	session, _ := e.connect(owner)
-	call(t, session, "post_chat_message", map[string]any{"appId": appID, "text": "hello team"})
-
-	// when
-	_, get := call(t, session, "get_app", map[string]any{"appId": appID})
-
-	// then
-	assert.NotContains(t, get, "componentGroups")
-	untrusted := get["untrusted"].(map[string]any)
-	assert.Contains(t, toJSON(untrusted["componentGroups"]), "hello team")
-	assert.Contains(t, toJSON(untrusted["componentGroups"]), owner.PublicKey)
 }
 
 func rawPost(t *testing.T, url, token string) *http.Response {
@@ -497,7 +418,7 @@ func TestMCP_ToolCalls_ShouldNotUpdateLastSeen(t *testing.T) {
 
 	// when
 	call(t, session, "list_apps", nil)
-	call(t, session, "post_chat_message", map[string]any{"appId": appID, "text": "hi"})
+	update(t, session, appID, appID+"-chata", map[string]any{newMsgKey(): chatMsg(owner.PublicKey, "hi")})
 
 	// then
 	var lastSeen sql.NullInt64
@@ -520,169 +441,6 @@ func TestMCP_OtherPaths_ShouldFallThrough(t *testing.T) {
 	// then
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 	assert.Contains(t, body.String(), "fallthrough")
-}
-
-func TestMCP_AddChecklistItem_ShouldWriteOnlyTheNewKeyAndBroadcast(t *testing.T) {
-	// given
-	e := newEnv(t)
-	owner, friend := e.account(), e.account()
-	appID := e.checklistApp(owner, 1, map[string]any{"title": "Packing", "item_f": map[string]any{"title": "friend", "checked": false, "order": 4.5}}, friend)
-	session, _ := e.connect(owner)
-	friendItem := map[string]any{"title": "friend edit", "checked": true, "order": 4.5}
-	ev := event.Event{ID: uuid.NewString(), Type: event.EventTypeComponentDataChanged, Version: 1, CreatedAt: time.Now().UnixMilli(), Data: map[string]interface{}{
-		"version": float64(1), "applicationId": appID, "componentId": appID + "-lista", "componentGroupId": appID + "-g",
-		"changedFields": map[string]interface{}{"item_f": map[string]interface{}{"oldValue": nil, "newValue": friendItem}},
-	}}
-	_, err := e.events.AcceptEvent(context.Background(), &ev, friend)
-	require.NoError(t, err)
-
-	// when
-	res, out := call(t, session, "add_checklist_item", map[string]any{"appId": appID, "title": "  sunscreen "})
-
-	// then
-	require.False(t, res.IsError, toJSON(out))
-	key := "item_" + out["itemId"].(string)
-	data := e.listData(appID)
-	assert.Equal(t, map[string]any{"title": "sunscreen", "checked": false, "order": 5.5}, data[key])
-	assert.Equal(t, friendItem, data["item_f"])
-	assert.Equal(t, "Packing", data["title"])
-	assert.Len(t, data, 3)
-	assert.True(t, e.bc.saw(appID))
-}
-
-func TestMCP_UpdateChecklistItem_ShouldWriteLegacyItemUnderItsOwnKey(t *testing.T) {
-	// given
-	e := newEnv(t)
-	owner := e.account()
-	legacy := []any{map[string]any{"id": "a", "title": "x", "checked": false}}
-	appID := e.checklistApp(owner, 1, map[string]any{"items": legacy})
-	session, _ := e.connect(owner)
-
-	// when
-	res, out := call(t, session, "update_checklist_item", map[string]any{"appId": appID, "itemId": "a", "checked": true})
-
-	// then
-	require.False(t, res.IsError, toJSON(out))
-	data := e.listData(appID)
-	assert.Equal(t, map[string]any{"title": "x", "checked": true, "order": 0.0}, data["item_a"])
-	assert.Equal(t, legacy, data["items"])
-}
-
-func TestMCP_UpdateChecklistItem_ShouldRenameKeyedItemAndRejectUnknownOrDeleted(t *testing.T) {
-	// given
-	e := newEnv(t)
-	owner := e.account()
-	appID := e.checklistApp(owner, 1, map[string]any{
-		"item_a": map[string]any{"title": "old", "checked": true, "order": 1.0},
-		"item_d": "",
-	})
-	session, _ := e.connect(owner)
-
-	// when
-	ok, okOut := call(t, session, "update_checklist_item", map[string]any{"appId": appID, "itemId": "a", "title": "new"})
-	unknown, _ := call(t, session, "update_checklist_item", map[string]any{"appId": appID, "itemId": "zzz", "title": "n"})
-	deleted, _ := call(t, session, "update_checklist_item", map[string]any{"appId": appID, "itemId": "d", "checked": true})
-	empty, _ := call(t, session, "update_checklist_item", map[string]any{"appId": appID, "itemId": "a"})
-
-	// then
-	require.False(t, ok.IsError, toJSON(okOut))
-	assert.Equal(t, map[string]any{"title": "new", "checked": true, "order": 1.0}, e.listData(appID)["item_a"])
-	assert.Contains(t, errText(unknown), "item not found")
-	assert.Contains(t, errText(deleted), "item not found")
-	assert.True(t, empty.IsError)
-}
-
-func TestMCP_ChecklistTools_ShouldEnforceRolesAndUsageFlags(t *testing.T) {
-	// given
-	e := newEnv(t)
-	owner, member, viewer, admin := e.account(), e.account(), e.account(), e.account()
-	appID := e.checklistApp(owner, 1, map[string]any{
-		"allowToggleInUsage": false,
-		"allowAddInUsage":    false,
-		"item_a":             map[string]any{"title": "x", "checked": false, "order": 0.0},
-	}, member, viewer, admin)
-	e.makeAdmin(appID, admin)
-	_, err := e.db.Exec(`UPDATE members SET role = 'viewer' WHERE application_id = $1 AND public_key = $2`, appID, viewer.PublicKey)
-	require.NoError(t, err)
-	memberSession, _ := e.connect(member)
-	viewerSession, _ := e.connect(viewer)
-	adminSession, _ := e.connect(admin)
-
-	// when
-	viewed, _ := call(t, viewerSession, "add_checklist_item", map[string]any{"appId": appID, "title": "t"})
-	added, _ := call(t, memberSession, "add_checklist_item", map[string]any{"appId": appID, "title": "t"})
-	renamed, _ := call(t, memberSession, "update_checklist_item", map[string]any{"appId": appID, "itemId": "a", "title": "t"})
-	checked, _ := call(t, memberSession, "update_checklist_item", map[string]any{"appId": appID, "itemId": "a", "checked": true})
-	byAdmin, adminOut := call(t, adminSession, "update_checklist_item", map[string]any{"appId": appID, "itemId": "a", "checked": true})
-
-	// then
-	assert.Contains(t, errText(viewed), "viewers cannot edit")
-	assert.Contains(t, errText(added), "does not allow adding")
-	assert.Contains(t, errText(renamed), "does not allow renaming")
-	assert.Contains(t, errText(checked), "does not allow checking")
-	assert.False(t, byAdmin.IsError, toJSON(adminOut))
-}
-
-func TestMCP_ChecklistTools_ShouldHideAppWhenAgentReadIsOff(t *testing.T) {
-	// given
-	e := newEnv(t)
-	owner, member := e.account(), e.account()
-	appID := e.checklistApp(owner, 1, map[string]any{}, member)
-	require.NoError(t, e.apps.SetAgentRead(appID, owner, false))
-	session, _ := e.connect(member)
-
-	// when
-	res, _ := call(t, session, "add_checklist_item", map[string]any{"appId": appID, "title": "t"})
-
-	// then
-	assert.Equal(t, "app not found or not open to agents", errText(res))
-}
-
-func TestMCP_AgentReadOff_ShouldLetOwnerAgentAddChecklistItem(t *testing.T) {
-	// given
-	e := newEnv(t)
-	owner := e.account()
-	appID := e.checklistApp(owner, 1, map[string]any{})
-	require.NoError(t, e.apps.SetAgentRead(appID, owner, false))
-	session, _ := e.connect(owner)
-
-	// when
-	res, out := call(t, session, "add_checklist_item", map[string]any{"appId": appID, "title": "t"})
-
-	// then
-	require.False(t, res.IsError, toJSON(out))
-	assert.NotEmpty(t, out["itemId"])
-}
-
-func TestMCP_UpdateChecklistItem_ShouldReportFieldPathWhenPatchIsInvalid(t *testing.T) {
-	// given
-	e := newEnv(t)
-	owner := e.account()
-	appID := e.checklistApp(owner, 1, map[string]any{"item_a": map[string]any{"title": "x", "checked": false, "bogus": 1.0}})
-	session, _ := e.connect(owner)
-
-	// when
-	res, out := call(t, session, "update_checklist_item", map[string]any{"appId": appID, "itemId": "a", "checked": true})
-
-	// then
-	assert.True(t, res.IsError)
-	assert.Equal(t, "invalid data", out["error"])
-	assert.Contains(t, toJSON(out["untrusted"]), "/item_a")
-}
-
-func TestMCP_ChecklistTools_ShouldListChecklistsWhenSeveralAndNoComponentID(t *testing.T) {
-	// given
-	e := newEnv(t)
-	owner := e.account()
-	appID := e.checklistApp(owner, 2, map[string]any{})
-	session, _ := e.connect(owner)
-
-	// when
-	res, out := call(t, session, "add_checklist_item", map[string]any{"appId": appID, "title": "t"})
-
-	// then
-	assert.True(t, res.IsError)
-	assert.Len(t, out["untrusted"].(map[string]any)["checklists"], 2)
 }
 
 func templateDoc(name string, comps ...map[string]any) map[string]any {
@@ -808,4 +566,580 @@ func TestMCP_CreateApp_ShouldRefuseWhenAppLimitIsReached(t *testing.T) {
 	assert.Equal(t, "you have reached your app limit", out["error"])
 	assert.Equal(t, map[string]any{"fields": []any{}}, out["untrusted"])
 	assert.Equal(t, 1, e.appCount(owner))
+}
+
+func TestMCP_GetApp_ShouldReturnIndexesAndPublicKeys(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner, member := e.account(), e.account()
+	appID, _ := e.componentApp(owner, "Text", map[string]any{}, member)
+	session, _ := e.connect(member)
+
+	// when
+	_, get := call(t, session, "get_app", map[string]any{"appId": appID})
+
+	// then
+	assert.Equal(t, member.PublicKey, get["myPublicKey"])
+	content := get["untrusted"].(map[string]any)
+	group := content["componentGroups"].([]any)[0].(map[string]any)
+	assert.Contains(t, group, "index")
+	assert.Contains(t, group["components"].([]any)[0], "index")
+	var keys []string
+	for _, m := range content["members"].([]any) {
+		keys = append(keys, m.(map[string]any)["publicKey"].(string))
+	}
+	assert.ElementsMatch(t, []string{owner.PublicKey, member.PublicKey}, keys)
+}
+
+func TestMCP_DescribeComponent_ShouldListTypesAndReturnSchemaForAnySignedInCaller(t *testing.T) {
+	// given
+	e := newEnv(t)
+	session, _ := e.connect(e.account())
+
+	// when
+	_, list := call(t, session, "describe_component", nil)
+	_, chat := call(t, session, "describe_component", map[string]any{"type": "Chat"})
+	unknown, _ := call(t, session, "describe_component", map[string]any{"type": "Nope"})
+
+	// then
+	listed := toJSON(list["types"])
+	assert.Contains(t, listed, `"Chat"`)
+	assert.Contains(t, listed, `"Checklist"`)
+	assert.Contains(t, listed, `"Poll"`)
+	assert.NotContains(t, listed, `"Common"`)
+	assert.Equal(t, "Chat", chat["type"])
+	assert.Contains(t, toJSON(chat["schema"]), "x-access")
+	assert.True(t, unknown.IsError)
+	assert.Contains(t, errText(unknown), "unknown component type")
+}
+
+func TestMCP_UpdateComponent_ShouldPersistChatMessageAsCallerAndBroadcast(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner, member := e.account(), e.account()
+	appID := e.app(owner, 1, member)
+	session, _ := e.connect(member)
+
+	// when
+	res, out := update(t, session, appID, appID+"-chata", map[string]any{"m_*": chatMsg(member.PublicKey, "hello team")})
+
+	// then
+	require.False(t, res.IsError, toJSON(out))
+	key := out["keys"].([]any)[0].(string)
+	assert.True(t, strings.HasPrefix(key, "m_"))
+	var count int
+	require.NoError(t, e.db.QueryRow(`SELECT COUNT(*) FROM events WHERE application_id = $1 AND creator_public_key = $2`, appID, member.PublicKey).Scan(&count))
+	assert.Equal(t, 1, count)
+	var msg map[string]any
+	require.NoError(t, json.Unmarshal([]byte(e.compData(appID + "-chata")[key].(string)), &msg))
+	assert.Equal(t, member.PublicKey, msg["sender"])
+	assert.True(t, e.bc.saw(appID))
+}
+
+func TestMCP_UpdateComponent_ShouldReturnWrittenChatMessagesUnderUntrusted(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner := e.account()
+	appID := e.app(owner, 1)
+	session, _ := e.connect(owner)
+	update(t, session, appID, appID+"-chata", map[string]any{"m_*": chatMsg(owner.PublicKey, "hello team")})
+
+	// when
+	_, get := call(t, session, "get_app", map[string]any{"appId": appID})
+
+	// then
+	assert.NotContains(t, get, "componentGroups")
+	groups := get["untrusted"].(map[string]any)["componentGroups"]
+	assert.Contains(t, toJSON(groups), "hello team")
+}
+
+func TestMCP_UpdateComponent_ShouldHideAppWhenAgentReadIsOff(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner, member := e.account(), e.account()
+	appID, compID := e.componentApp(owner, "Checklist", map[string]any{}, member)
+	require.NoError(t, e.apps.SetAgentRead(appID, owner, false))
+	session, _ := e.connect(member)
+
+	// when
+	res, _ := update(t, session, appID, compID, map[string]any{"item_*": map[string]any{"title": "t", "checked": false}})
+
+	// then
+	assert.Equal(t, "app not found or not open to agents", errText(res))
+}
+
+func TestMCP_UpdateComponent_ShouldRejectNonMember(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner, stranger := e.account(), e.account()
+	appID, compID := e.componentApp(owner, "Checklist", map[string]any{})
+	session, _ := e.connect(stranger)
+
+	// when
+	res, _ := update(t, session, appID, compID, map[string]any{"item_*": map[string]any{"title": "t", "checked": false}})
+
+	// then
+	assert.Equal(t, "app not found or not open to agents", errText(res))
+	assert.Equal(t, 0, e.eventCount(appID))
+}
+
+func TestMCP_UpdateComponent_ShouldLetOwnerAgentWriteWhenAgentReadIsOff(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner := e.account()
+	appID, compID := e.componentApp(owner, "Checklist", map[string]any{})
+	require.NoError(t, e.apps.SetAgentRead(appID, owner, false))
+	session, _ := e.connect(owner)
+
+	// when
+	res, out := update(t, session, appID, compID, map[string]any{"item_*": map[string]any{"title": "t", "checked": false}})
+
+	// then
+	require.False(t, res.IsError, toJSON(out))
+	assert.NotEmpty(t, out["keys"])
+}
+
+func TestMCP_UpdateComponent_ShouldRejectViewerAndWriteNothing(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner, viewer := e.account(), e.account()
+	appID, compID := e.componentApp(owner, "Poll", map[string]any{"question": "q", "options": []any{}}, viewer)
+	e.makeRole(appID, viewer, application.MemberRoleViewer)
+	session, _ := e.connect(viewer)
+
+	// when
+	res, _ := update(t, session, appID, compID, map[string]any{"vote_" + viewer.PublicKey: "a"})
+
+	// then
+	assert.Contains(t, errText(res), "viewers cannot change this app")
+	assert.Equal(t, 0, e.eventCount(appID))
+}
+
+func TestMCP_UpdateComponent_ShouldRejectUnknownComponentAndUnknownKey(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner := e.account()
+	appID, compID := e.componentApp(owner, "Text", map[string]any{})
+	session, _ := e.connect(owner)
+
+	// when
+	noComp, _ := update(t, session, appID, "nope", map[string]any{"document": []any{}})
+	noKey, _ := update(t, session, appID, compID, map[string]any{"bogus": 1})
+	empty, _ := update(t, session, appID, compID, map[string]any{})
+
+	// then
+	assert.Contains(t, errText(noComp), "component not found")
+	assert.Contains(t, errText(noKey), "not a key of Text")
+	assert.Contains(t, errText(empty), "set is empty")
+}
+
+func TestMCP_UpdateComponent_ShouldWriteOnlyTheNewKeyAndKeepConcurrentEdits(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner, friend := e.account(), e.account()
+	friendItem := map[string]any{"title": "friend edit", "checked": true, "order": 4.5}
+	appID, compID := e.componentApp(owner, "Checklist", map[string]any{"title": "Packing", "item_f": friendItem}, friend)
+	session, _ := e.connect(owner)
+
+	// when
+	res, out := update(t, session, appID, compID, map[string]any{"item_*": map[string]any{"title": "sunscreen", "checked": false, "order": 5.5}})
+
+	// then
+	require.False(t, res.IsError, toJSON(out))
+	data := e.compData(compID)
+	assert.Equal(t, map[string]any{"title": "sunscreen", "checked": false, "order": 5.5}, data[out["keys"].([]any)[0].(string)])
+	assert.Equal(t, friendItem, data["item_f"])
+	assert.Equal(t, "Packing", data["title"])
+	assert.Len(t, data, 3)
+	assert.True(t, e.bc.saw(appID))
+}
+
+func TestMCP_UpdateComponent_ShouldWriteKeyedItemAndLeaveLegacyItemsAlone(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner := e.account()
+	legacy := []any{map[string]any{"id": "a", "title": "x", "checked": false}}
+	appID, compID := e.componentApp(owner, "Checklist", map[string]any{"items": legacy})
+	session, _ := e.connect(owner)
+
+	// when
+	res, out := update(t, session, appID, compID, map[string]any{"item_a": map[string]any{"title": "x", "checked": true, "order": 0}})
+
+	// then
+	require.False(t, res.IsError, toJSON(out))
+	data := e.compData(compID)
+	assert.Equal(t, map[string]any{"title": "x", "checked": true, "order": 0.0}, data["item_a"])
+	assert.Equal(t, legacy, data["items"])
+}
+
+func TestMCP_UpdateComponent_ShouldReportFieldPathWhenValueIsInvalid(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner := e.account()
+	appID, compID := e.componentApp(owner, "Checklist", map[string]any{})
+	session, _ := e.connect(owner)
+
+	// when
+	res, out := update(t, session, appID, compID, map[string]any{"item_a": map[string]any{"title": "x", "checked": false, "bogus": 1}})
+
+	// then
+	assert.True(t, res.IsError)
+	assert.Equal(t, "invalid data", out["error"])
+	assert.Contains(t, toJSON(out["untrusted"]), "/item_a")
+}
+
+func TestMCP_UpdateComponent_ShouldLetMemberWriteOnlyTheirOwnPollCell(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner, member, other := e.account(), e.account(), e.account()
+	appID, compID := e.componentApp(owner, "Poll", map[string]any{"question": "q", "options": []any{}}, member, other)
+	session, _ := e.connect(member)
+
+	// when
+	own, ownOut := update(t, session, appID, compID, map[string]any{"vote_" + member.PublicKey: "a"})
+	theirs, _ := update(t, session, appID, compID, map[string]any{"vote_" + other.PublicKey: "a"})
+	forged, _ := update(t, session, appID, compID, map[string]any{"vote_X_" + member.PublicKey: "a"})
+
+	// then
+	require.False(t, own.IsError, toJSON(ownOut))
+	assert.Contains(t, errText(theirs), "you can only write your own cell")
+	assert.Contains(t, errText(forged), "you can only write your own cell")
+	assert.Equal(t, 1, e.eventCount(appID))
+}
+
+func TestMCP_UpdateComponent_ShouldTurnVotesOffWhenPollIsClosed(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner, member := e.account(), e.account()
+	appID, compID := e.componentApp(owner, "Poll", map[string]any{"question": "q", "options": []any{}, "closed": true}, member)
+	memberSession, _ := e.connect(member)
+	ownerSession, _ := e.connect(owner)
+
+	// when
+	byMember, _ := update(t, memberSession, appID, compID, map[string]any{"vote_" + member.PublicKey: "a"})
+	byOwner, _ := update(t, ownerSession, appID, compID, map[string]any{"vote_" + owner.PublicKey: "a"})
+
+	// then
+	assert.Contains(t, errText(byMember), "turned off by closed")
+	assert.Contains(t, errText(byOwner), "turned off by closed")
+	assert.Equal(t, 0, e.eventCount(appID))
+}
+
+func TestMCP_UpdateComponent_ShouldKeepAppendOnlyMessagesAppendOnly(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner := e.account()
+	existing := newMsgKey()
+	appID, compID := e.componentApp(owner, "Chat", map[string]any{existing: chatMsg(owner.PublicKey, "first")})
+	session, _ := e.connect(owner)
+
+	// when
+	again, _ := update(t, session, appID, compID, map[string]any{existing: chatMsg(owner.PublicKey, "edit")})
+	blank, _ := update(t, session, appID, compID, map[string]any{"m_*": ""})
+
+	// then
+	assert.Contains(t, errText(again), "already exists")
+	assert.Contains(t, errText(blank), "cannot be deleted")
+	assert.Equal(t, 0, e.eventCount(appID))
+}
+
+func TestMCP_UpdateComponent_ShouldRejectMessageFromAnotherSender(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner, member := e.account(), e.account()
+	appID, compID := e.componentApp(owner, "Chat", map[string]any{}, member)
+	session, _ := e.connect(member)
+
+	// when
+	res, _ := update(t, session, appID, compID, map[string]any{"m_*": chatMsg(owner.PublicKey, "forged")})
+
+	// then
+	assert.Contains(t, errText(res), "sender must be your publicKey")
+	assert.Equal(t, 0, e.eventCount(appID))
+}
+
+func TestMCP_UpdateComponent_ShouldRejectOverwriteAndTombstoneOfSomeoneElsesSettlement(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner, a, b := e.account(), e.account(), e.account()
+	appID, compID := e.componentApp(owner, "Expenses", map[string]any{}, a, b)
+	sessionA, _ := e.connect(a)
+	sessionB, _ := e.connect(b)
+	recorded, recordedOut := update(t, sessionA, appID, compID, map[string]any{"s_*": toJSON(map[string]any{"from": b.PublicKey, "to": a.PublicKey, "amount": 100})})
+	require.False(t, recorded.IsError, toJSON(recordedOut))
+	key := recordedOut["keys"].([]any)[0].(string)
+
+	// when
+	overwrite, _ := update(t, sessionB, appID, compID, map[string]any{key: toJSON(map[string]any{"from": b.PublicKey, "to": b.PublicKey, "amount": 100})})
+	tombstone, _ := update(t, sessionB, appID, compID, map[string]any{key: ""})
+
+	// then
+	assert.Contains(t, errText(overwrite), "to must be your publicKey")
+	assert.Contains(t, errText(tombstone), "to must be your publicKey")
+	assert.Equal(t, 1, e.eventCount(appID))
+}
+
+func TestMCP_UpdateComponent_ShouldValidateEncodedContent(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner, member := e.account(), e.account()
+	oldExpense := "e_" + uuid.NewString()
+	appID, compID := e.componentApp(owner, "Expenses", map[string]any{oldExpense: toJSON(map[string]any{"what": "x", "payer": owner.PublicKey, "amount": 1})}, member)
+	session, _ := e.connect(member)
+
+	// when
+	notJSON, _ := update(t, session, appID, compID, map[string]any{"e_*": "not json"})
+	ok, okOut := update(t, session, appID, compID, map[string]any{"e_*": toJSON(map[string]any{"what": "Dinner", "payer": member.PublicKey, "amount": 4500})})
+	deleted, deletedOut := update(t, session, appID, compID, map[string]any{oldExpense: ""})
+
+	// then
+	assert.True(t, notJSON.IsError)
+	require.False(t, ok.IsError, toJSON(okOut))
+	require.False(t, deleted.IsError, toJSON(deletedOut))
+	assert.Equal(t, "", e.compData(compID)[oldExpense])
+}
+
+func TestMCP_UpdateComponent_ShouldRejectMessageWithoutBody(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner := e.account()
+	appID, compID := e.componentApp(owner, "Chat", map[string]any{})
+	session, _ := e.connect(owner)
+
+	// when
+	res, out := update(t, session, appID, compID, map[string]any{"m_*": toJSON(map[string]any{"v": 1, "sender": owner.PublicKey, "ts": 1})})
+
+	// then
+	assert.True(t, res.IsError)
+	assert.Contains(t, toJSON(out), "invalid value")
+	assert.Equal(t, 0, e.eventCount(appID))
+}
+
+func TestMCP_UpdateComponent_ShouldLimitManageKeysToOwnerAndAdmin(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner, member, admin := e.account(), e.account(), e.account()
+	appID, compID := e.componentApp(owner, "Poll", map[string]any{"question": "q", "options": []any{}}, member, admin)
+	e.makeRole(appID, admin, application.MemberRoleAdmin)
+	memberSession, _ := e.connect(member)
+	adminSession, _ := e.connect(admin)
+	ownerSession, _ := e.connect(owner)
+
+	// when
+	byMember, _ := update(t, memberSession, appID, compID, map[string]any{"question": "x"})
+	byAdmin, _ := update(t, adminSession, appID, compID, map[string]any{"question": "by admin"})
+	byOwner, _ := update(t, ownerSession, appID, compID, map[string]any{"question": "by owner"})
+
+	// then
+	assert.Contains(t, errText(byMember), "owner or admin only")
+	assert.False(t, byAdmin.IsError)
+	assert.False(t, byOwner.IsError)
+	assert.Equal(t, "by owner", e.compData(compID)["question"])
+}
+
+func TestMCP_UpdateComponent_ShouldRejectKeysNotWritableByAgents(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner := e.account()
+	appID, compID := e.componentApp(owner, "Checklist", map[string]any{})
+	session, _ := e.connect(owner)
+
+	// when
+	res, _ := update(t, session, appID, compID, map[string]any{"items": []any{}})
+
+	// then
+	assert.Contains(t, errText(res), "not writable by agents")
+	assert.Equal(t, 0, e.eventCount(appID))
+}
+
+func TestMCP_UpdateComponent_ShouldApplyChecklistGatesPerField(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner, member, admin := e.account(), e.account(), e.account()
+	item := map[string]any{"title": "x", "checked": false, "order": 0.0}
+	appID, compID := e.componentApp(owner, "Checklist", map[string]any{"allowAddInUsage": false, "allowToggleInUsage": false, "item_a": item}, member, admin)
+	e.makeRole(appID, admin, application.MemberRoleAdmin)
+	memberSession, _ := e.connect(member)
+	adminSession, _ := e.connect(admin)
+	with := func(k string, v any) map[string]any {
+		m := map[string]any{}
+		for kk, vv := range item {
+			m[kk] = vv
+		}
+		m[k] = v
+		return map[string]any{"item_a": m}
+	}
+
+	// when
+	created, _ := update(t, memberSession, appID, compID, map[string]any{"item_*": item})
+	retitled, _ := update(t, memberSession, appID, compID, with("title", "y"))
+	toggled, _ := update(t, memberSession, appID, compID, with("checked", true))
+	noted, notedOut := update(t, memberSession, appID, compID, with("detailsDocument", []any{map[string]any{"insert": "note\n"}}))
+	byAdmin, adminOut := update(t, adminSession, appID, compID, with("checked", true))
+
+	// then
+	assert.Contains(t, errText(created), "turned off by allowAddInUsage")
+	assert.Contains(t, errText(retitled), "turned off by allowAddInUsage")
+	assert.Contains(t, errText(toggled), "turned off by allowToggleInUsage")
+	assert.False(t, noted.IsError, toJSON(notedOut))
+	assert.False(t, byAdmin.IsError, toJSON(adminOut))
+}
+
+func TestMCP_UpdateComponent_ShouldUseFlagDefaultsWhenFlagIsAbsent(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner, member := e.account(), e.account()
+	listApp, listID := e.componentApp(owner, "Checklist", map[string]any{}, member)
+	countApp, countID := e.componentApp(owner, "Countdown", map[string]any{}, member)
+	countOn, countOnID := e.componentApp(owner, "Countdown", map[string]any{"runEditable": true}, member)
+	session, _ := e.connect(member)
+
+	// when
+	added, addedOut := update(t, session, listApp, listID, map[string]any{"item_*": map[string]any{"title": "t", "checked": false}})
+	off, _ := update(t, session, countApp, countID, map[string]any{"what": "Holiday"})
+	on, onOut := update(t, session, countOn, countOnID, map[string]any{"what": "Holiday"})
+
+	// then
+	require.False(t, added.IsError, toJSON(addedOut))
+	assert.Contains(t, errText(off), "turned off by runEditable")
+	require.False(t, on.IsError, toJSON(onOut))
+}
+
+func TestMCP_UpdateComponent_ShouldWriteAllKeysInOneEvent(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner := e.account()
+	appID, compID := e.componentApp(owner, "Checklist", map[string]any{})
+	session, _ := e.connect(owner)
+
+	// when
+	res, out := update(t, session, appID, compID, map[string]any{"item_*": map[string]any{"title": "t", "checked": false}, "_title": "Packing"})
+
+	// then
+	require.False(t, res.IsError, toJSON(out))
+	assert.Len(t, out["keys"], 2)
+	assert.Equal(t, 1, e.eventCount(appID))
+	var raw string
+	require.NoError(t, e.db.QueryRow(`SELECT data FROM events WHERE application_id = $1`, appID).Scan(&raw))
+	var data map[string]any
+	require.NoError(t, json.Unmarshal([]byte(raw), &data))
+	assert.Len(t, data["changedFields"], 2)
+	assert.Len(t, e.compData(compID), 2)
+}
+
+func TestMCP_UpdateComponent_ShouldWriteNothingWhenOneKeyFails(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner, member := e.account(), e.account()
+	appID, compID := e.componentApp(owner, "Checklist", map[string]any{}, member)
+	session, _ := e.connect(member)
+
+	// when
+	res, _ := update(t, session, appID, compID, map[string]any{"item_*": map[string]any{"title": "t", "checked": false}, "_title": "Packing"})
+
+	// then
+	assert.Contains(t, errText(res), "owner or admin only")
+	assert.Equal(t, 0, e.eventCount(appID))
+	assert.Empty(t, e.compData(compID))
+}
+
+func TestMCP_UpdateComponent_ShouldGateToggleOnLegacyItemWrittenAsKeyedItem(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner, member := e.account(), e.account()
+	legacy := []any{map[string]any{"id": "a", "title": "x", "checked": false}}
+	appID, compID := e.componentApp(owner, "Checklist", map[string]any{"items": legacy, "allowToggleInUsage": false}, member)
+	session, _ := e.connect(member)
+
+	// when
+	res, _ := update(t, session, appID, compID, map[string]any{"item_a": map[string]any{"title": "x", "checked": true, "order": 0}})
+
+	// then
+	assert.Contains(t, errText(res), "turned off by allowToggleInUsage")
+	assert.Equal(t, 0, e.eventCount(appID))
+	assert.NotContains(t, e.compData(compID), "item_a")
+}
+
+func TestMCP_UpdateComponent_ShouldGateToggleThroughCreateAndTombstone(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner, member := e.account(), e.account()
+	checked := map[string]any{"title": "a", "checked": true, "order": 0.0}
+	unchecked := map[string]any{"title": "b", "checked": false, "order": 1.0}
+	appID, compID := e.componentApp(owner, "Checklist", map[string]any{"allowToggleInUsage": false, "item_a": checked, "item_b": unchecked}, member)
+	session, _ := e.connect(member)
+
+	// when
+	tombChecked, _ := update(t, session, appID, compID, map[string]any{"item_a": ""})
+	tombUnchecked, tombOut := update(t, session, appID, compID, map[string]any{"item_b": ""})
+	recreated, _ := update(t, session, appID, compID, map[string]any{"item_b": map[string]any{"title": "b", "checked": true, "order": 1.0}})
+	createdOff, offOut := update(t, session, appID, compID, map[string]any{"item_*": map[string]any{"title": "c", "checked": false, "order": 2.0}})
+	createdOn, _ := update(t, session, appID, compID, map[string]any{"item_*": map[string]any{"title": "d", "checked": true, "order": 3.0}})
+
+	// then
+	assert.Contains(t, errText(tombChecked), "turned off by allowToggleInUsage")
+	assert.False(t, tombUnchecked.IsError, toJSON(tombOut))
+	assert.Contains(t, errText(recreated), "turned off by allowToggleInUsage")
+	assert.False(t, createdOff.IsError, toJSON(offOut))
+	assert.Contains(t, errText(createdOn), "turned off by allowToggleInUsage")
+	assert.Equal(t, checked, e.compData(compID)["item_a"])
+	assert.Equal(t, 2, e.eventCount(appID))
+	assert.Equal(t, "", e.compData(compID)["item_b"])
+	for k, v := range e.compData(compID) {
+		if m, ok := v.(map[string]any); ok && strings.HasPrefix(k, "item_") {
+			assert.NotEqual(t, "d", m["title"], k)
+		}
+	}
+}
+
+func TestMCP_UpdateComponent_ShouldLetMemberWriteOnlyTheirOwnReactionCell(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner, member, other := e.account(), e.account(), e.account()
+	msg := newMsgKey()
+	appID, compID := e.componentApp(owner, "Chat", map[string]any{msg: chatMsg(owner.PublicKey, "hi")}, member, other)
+	session, _ := e.connect(member)
+
+	// when
+	own, ownOut := update(t, session, appID, compID, map[string]any{"react_" + msg + "_" + member.PublicKey: "👍"})
+	theirs, _ := update(t, session, appID, compID, map[string]any{"react_" + msg + "_" + other.PublicKey: "👍"})
+
+	// then
+	require.False(t, own.IsError, toJSON(ownOut))
+	assert.Contains(t, errText(theirs), "you can only write your own cell")
+	assert.Equal(t, 1, e.eventCount(appID))
+}
+
+func TestMCP_UpdateComponent_ShouldLetOwnerAndAdminSetCountdownWhatWhenRunEditableIsAbsent(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner, admin := e.account(), e.account()
+	appID, compID := e.componentApp(owner, "Countdown", map[string]any{}, admin)
+	e.makeRole(appID, admin, application.MemberRoleAdmin)
+	adminSession, _ := e.connect(admin)
+	ownerSession, _ := e.connect(owner)
+
+	// when
+	byAdmin, adminOut := update(t, adminSession, appID, compID, map[string]any{"what": "Holiday"})
+	byOwner, ownerOut := update(t, ownerSession, appID, compID, map[string]any{"what": "Trip"})
+
+	// then
+	require.False(t, byAdmin.IsError, toJSON(adminOut))
+	require.False(t, byOwner.IsError, toJSON(ownerOut))
+	assert.Equal(t, "Trip", e.compData(compID)["what"])
+}
+
+func TestMCP_UpdateComponent_ShouldCheckAccessBeforeSchemaValidation(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner, member := e.account(), e.account()
+	appID, compID := e.componentApp(owner, "Poll", map[string]any{"question": "q", "options": []any{}}, member)
+	session, _ := e.connect(member)
+
+	// when
+	res, _ := update(t, session, appID, compID, map[string]any{"question": 123})
+
+	// then
+	assert.Contains(t, errText(res), "owner or admin only")
+	assert.Equal(t, 0, e.eventCount(appID))
 }

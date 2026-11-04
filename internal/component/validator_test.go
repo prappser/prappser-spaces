@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -331,4 +332,187 @@ func TestNewValidator_ShouldRejectExternalRef(t *testing.T) {
 
 	// then
 	assert.ErrorContains(t, err, "not allowed")
+}
+
+const msgID = "01234567-89ab-7def-8123-456789abcdef"
+
+func TestAccess_ShouldResolveRulesFromSchema(t *testing.T) {
+	// given
+	v, err := NewValidator()
+	require.NoError(t, err)
+
+	// when
+	msg, msgOK := v.Access("Chat", "m_"+msgID)
+	react, _ := v.Access("Chat", "react_m_"+msgID+"_pk")
+	item, _ := v.Access("Checklist", "item_x")
+	what, _ := v.Access("Countdown", "what")
+	question, _ := v.Access("Poll", "question")
+	items, _ := v.Access("Checklist", "items")
+	_, unknownKey := v.Access("Chat", "nope")
+	_, unknownType := v.Access("Nope", "m_"+msgID)
+
+	// then
+	assert.True(t, msgOK)
+	assert.True(t, msg.Append)
+	assert.Equal(t, "sender", msg.Author)
+	assert.Equal(t, "message", msg.Content)
+	assert.Equal(t, AccessMember, react.Level)
+	assert.False(t, react.OwnKey("react_m_"+msgID+"_other", "pk"))
+	require.NotNil(t, item.Gate)
+	assert.Equal(t, Flag{Name: "allowAddInUsage", Default: true}, *item.Gate)
+	assert.Equal(t, &Flag{Name: "allowToggleInUsage", Default: true}, item.Fields["checked"])
+	assert.Contains(t, item.Fields, "detailsDocument")
+	assert.Nil(t, item.Fields["detailsDocument"])
+	assert.Contains(t, item.Fields, "order")
+	assert.Nil(t, item.Fields["order"])
+	assert.Equal(t, &Flag{Name: "runEditable", Default: false}, what.Gate)
+	assert.Equal(t, AccessManage, question.Level)
+	assert.Equal(t, AccessNone, items.Level)
+	assert.False(t, unknownKey)
+	assert.False(t, unknownType)
+}
+
+func TestOwnKey_ShouldMatchOnlyTheCallersCell(t *testing.T) {
+	// given
+	v, err := NewValidator()
+	require.NoError(t, err)
+	pk := "a+b/c="
+	vote, _ := v.Access("Poll", "vote_x")
+	react, _ := v.Access("Chat", "react_m_"+msgID+"_x")
+	question, _ := v.Access("Poll", "question")
+
+	// then
+	assert.True(t, vote.OwnKey("vote_"+pk, pk))
+	assert.False(t, vote.OwnKey("vote_other", pk))
+	assert.False(t, vote.OwnKey("vote_X_"+pk, pk))
+	assert.False(t, vote.OwnKey("vote_aab/c=", pk))
+	assert.True(t, react.OwnKey("react_m_"+msgID+"_"+pk, pk))
+	assert.True(t, question.OwnKey("question", pk))
+}
+
+func accessFixture(component string) error {
+	fsys := fstest.MapFS{
+		"schemas/template/template-doc.v1.schema.json": {Data: []byte(`{"$id":"` + templateSchema + `"}`)},
+		"schemas/component/x.v1.schema.json":           {Data: []byte(component)},
+	}
+	_, err := newValidator(fsys)
+	return err
+}
+
+func TestNewValidator_ShouldRejectBadAccess(t *testing.T) {
+	flag := `"on":{"type":"boolean","default":true,"x-access":"manage"}`
+	cases := map[string][2]string{
+		"missing x-access":       {`"a":{}`, "missing x-access"},
+		"invalid x-access":       {`"a":{"x-access":"everyone"}`, "invalid x-access"},
+		"unknown object key":     {`"a":{"x-access":{"bogus":1}}`, "unknown x-access key"},
+		"gate without default":   {`"a":{"x-access":{"gate":"b"}},"b":{"x-access":"manage"}`, "has no boolean default"},
+		"unless without default": {`"a":{"x-access":{"unless":"b"}},"b":{"x-access":"manage"}`, "has no boolean default"},
+		"unknown content def":    {`"a":{"x-access":{"content":"nope"}}`, "is not in $defs"},
+		"wrong gate type":        {`"a":{"x-access":{"gate":1}}`, "gate must be a string"},
+	}
+	for name, c := range cases {
+		// when
+		err := accessFixture(`{"$id":"https://x/x.json","properties":{` + c[0] + `,` + flag + `}}`)
+
+		// then
+		assert.ErrorContains(t, err, c[1], name)
+	}
+}
+
+func TestAccess_ShouldResolveUnless(t *testing.T) {
+	// given
+	fsys := fstest.MapFS{
+		"schemas/template/template-doc.v1.schema.json": {Data: []byte(`{"$id":"` + templateSchema + `"}`)},
+		"schemas/component/x.v1.schema.json": {Data: []byte(`{"$id":"https://x/x.json","properties":{
+			"closed":{"type":"boolean","default":false,"x-access":"manage"}},
+			"patternProperties":{"^v_.+$":{"x-access":{"unless":"closed"}}}}`)},
+	}
+	v, err := newValidator(fsys)
+	require.NoError(t, err)
+
+	// when
+	acc, ok := v.Access("X", "v_a")
+
+	// then
+	require.True(t, ok)
+	assert.Equal(t, AccessMember, acc.Level)
+	assert.Equal(t, &Flag{Name: "closed", Default: false}, acc.Unless)
+}
+
+func TestNewValidator_ShouldRejectPerMemberPatternWithoutSuffix(t *testing.T) {
+	// when
+	err := accessFixture(`{"$id":"https://x/x.json","patternProperties":{"^v_.*$":{"x-merge":"per-member","x-access":"member"}}}`)
+
+	// then
+	assert.ErrorContains(t, err, "must end in .+$")
+}
+
+func TestValidateComponentKeys_ShouldIgnoreRootRequiredOnly(t *testing.T) {
+	// given
+	v, err := NewValidator()
+	require.NoError(t, err)
+
+	// when
+	full := v.ValidateComponentData("Poll", map[string]any{"vote_pk": "a"})
+	partial := v.ValidateComponentKeys("Poll", map[string]any{"vote_pk": "a"})
+	badValue := v.ValidateComponentKeys("Poll", map[string]any{"vote_pk": float64(1)})
+	unknown := v.ValidateComponentKeys("Poll", map[string]any{"nope": "a"})
+
+	// then
+	assert.Error(t, full)
+	assert.NoError(t, partial)
+	var ve ValidationErrors
+	require.True(t, errors.As(badValue, &ve))
+	assert.Equal(t, "/vote_pk", ve[0].Path)
+	assert.Error(t, unknown)
+}
+
+func TestValidateContent_ShouldCheckDecodedValue(t *testing.T) {
+	// given
+	v, err := NewValidator()
+	require.NoError(t, err)
+
+	// when
+	ok := v.ValidateContent("Chat", "message", `{"v":1,"sender":"pk","ts":1700000000000,"body":"hi"}`)
+	noBody := v.ValidateContent("Chat", "message", `{"v":1,"sender":"pk","ts":1700000000000}`)
+	notJSON := v.ValidateContent("Chat", "message", `not json`)
+
+	// then
+	assert.NoError(t, ok)
+	var ve ValidationErrors
+	assert.True(t, errors.As(noBody, &ve))
+	require.True(t, errors.As(notJSON, &ve))
+	assert.Equal(t, "not valid JSON", ve[0].Message)
+}
+
+func TestTypesAndSchema_ShouldExposeEmbeddedSchemas(t *testing.T) {
+	// given
+	v, err := NewValidator()
+	require.NoError(t, err)
+
+	// when
+	types := v.Types()
+	chat, chatOK := v.Schema("Chat")
+	_, nopeOK := v.Schema("Nope")
+
+	// then
+	names := make([]string, len(types))
+	for i, ti := range types {
+		names[i] = ti.Type
+		assert.NotEmpty(t, ti.Description, ti.Type)
+	}
+	assert.True(t, sort.StringsAreSorted(names))
+	assert.Contains(t, names, "Chat")
+	assert.NotContains(t, names, "Common")
+	assert.True(t, chatOK)
+	assert.Contains(t, string(chat), "x-access")
+	assert.False(t, nopeOK)
+}
+
+func TestNewValidator_ShouldRejectPerMemberOnExactProperty(t *testing.T) {
+	// when
+	err := accessFixture(`{"$id":"https://x/x.json","properties":{"a":{"x-merge":"per-member","x-access":"member"}}}`)
+
+	// then
+	assert.ErrorContains(t, err, "per-member property")
 }
