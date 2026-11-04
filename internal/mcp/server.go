@@ -41,6 +41,7 @@ func newServer(d Deps) *sdk.Server {
 	addCreateApp(s, d)
 	addDescribeComponent(s, d)
 	addUpdateComponent(s, d)
+	addEditApp(s, d)
 	return s
 }
 

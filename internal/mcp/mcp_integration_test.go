@@ -9,6 +9,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"strings"
@@ -1141,5 +1142,165 @@ func TestMCP_UpdateComponent_ShouldCheckAccessBeforeSchemaValidation(t *testing.
 
 	// then
 	assert.Contains(t, errText(res), "owner or admin only")
+	assert.Equal(t, 0, e.eventCount(appID))
+}
+
+func edit(t *testing.T, s *sdk.ClientSession, appID string, changes ...map[string]any) (*sdk.CallToolResult, map[string]any) {
+	t.Helper()
+	return call(t, s, "edit_app", map[string]any{"appId": appID, "changes": changes})
+}
+
+func TestMCP_EditApp_ShouldLimitChangesToOwnerAndAdmin(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner, admin, member, viewer, stranger := e.account(), e.account(), e.account(), e.account(), e.account()
+	appID := e.app(owner, 0, admin, member, viewer)
+	e.makeRole(appID, admin, application.MemberRoleAdmin)
+	e.makeRole(appID, viewer, application.MemberRoleViewer)
+	add := map[string]any{"op": "add_group", "name": "New"}
+
+	// when
+	strangerRes, _ := edit(t, mustSession(e, stranger), appID, add)
+	viewerRes, _ := edit(t, mustSession(e, viewer), appID, add)
+	memberRes, _ := edit(t, mustSession(e, member), appID, add)
+
+	// then
+	assert.Equal(t, "app not found or not open to agents", errText(strangerRes))
+	assert.Equal(t, "you are not allowed to change this app", errText(viewerRes))
+	assert.Equal(t, "you are not allowed to change this app", errText(memberRes))
+	assert.Equal(t, 0, e.eventCount(appID))
+
+	// when
+	adminRes, adminOut := edit(t, mustSession(e, admin), appID, add)
+	ownerRes, ownerOut := edit(t, mustSession(e, owner), appID, add)
+
+	// then
+	require.False(t, adminRes.IsError, toJSON(adminOut))
+	require.False(t, ownerRes.IsError, toJSON(ownerOut))
+	assert.Equal(t, 2, e.eventCount(appID))
+}
+
+func mustSession(e *env, u *user.User) *sdk.ClientSession {
+	session, _ := e.connect(u)
+	return session
+}
+
+func TestMCP_EditApp_ShouldSendEveryOpAsTheAppsStructureChange(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner := e.account()
+	appID, compID := e.componentApp(owner, "Checklist", map[string]any{})
+	groupID, notesID := appID+"-g", appID+"-notes"
+	session, _ := e.connect(owner)
+
+	// when
+	res, out := edit(t, session, appID,
+		map[string]any{"op": "add_group", "name": "Extras"},
+		map[string]any{"op": "add_group", "name": "Second", "index": 0},
+		map[string]any{"op": "add_component", "groupId": "$0", "type": "Checklist", "data": map[string]any{"_title": "Packing"}},
+		map[string]any{"op": "add_component", "groupId": "$1", "type": "Checklist", "index": 1},
+		map[string]any{"op": "rename_group", "groupId": groupID, "name": "Renamed"},
+		map[string]any{"op": "move_group", "groupId": "$1", "index": 2},
+		map[string]any{"op": "move_component", "componentId": notesID, "index": 3},
+		map[string]any{"op": "remove_component", "componentId": compID},
+		map[string]any{"op": "remove_group", "groupId": "$0"},
+	)
+
+	// then
+	require.False(t, res.IsError, toJSON(out))
+	ids, _ := out["ids"].([]any)
+	require.Len(t, ids, 9)
+	extras, second, packing, listed := ids[0], ids[1], ids[2], ids[3]
+	assert.Nil(t, ids[4])
+	assert.Nil(t, ids[8])
+	var raw string
+	require.NoError(t, e.db.QueryRow(`SELECT data FROM events WHERE application_id = $1`, appID).Scan(&raw))
+	var data struct {
+		Version       int               `json:"version"`
+		ApplicationID string            `json:"applicationId"`
+		Changes       []json.RawMessage `json:"changes"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(raw), &data))
+	assert.Equal(t, appID, data.ApplicationID)
+	expected := []string{
+		fmt.Sprintf(`{"changeType":"component_group_added","entityType":"component_group","entityId":%q,"data":{"id":%q,"applicationId":%q,"index":1,"name":"Extras"},"index":null,"changedFields":null}`, extras, extras, appID),
+		fmt.Sprintf(`{"changeType":"component_group_added","entityType":"component_group","entityId":%q,"data":{"id":%q,"applicationId":%q,"index":0,"name":"Second"},"index":null,"changedFields":null}`, second, second, appID),
+		fmt.Sprintf(`{"changeType":"component_added","entityType":"component","entityId":%q,"data":{"id":%q,"componentGroupId":%q,"applicationId":%q,"index":0,"name":"Checklist","data":{"_title":"Packing"}},"index":null,"changedFields":null}`, packing, packing, extras, appID),
+		fmt.Sprintf(`{"changeType":"component_added","entityType":"component","entityId":%q,"data":{"id":%q,"componentGroupId":%q,"applicationId":%q,"index":1,"name":"Checklist","data":{}},"index":null,"changedFields":null}`, listed, listed, second, appID),
+		fmt.Sprintf(`{"changeType":"component_group_changed","entityType":"component_group","entityId":%q,"data":{"name":"Renamed","index":0},"index":null,"changedFields":null}`, groupID),
+		fmt.Sprintf(`{"changeType":"component_group_reordered","entityType":"component_group","entityId":%q,"data":null,"index":2,"changedFields":null}`, second),
+		fmt.Sprintf(`{"changeType":"component_reordered","entityType":"component","entityId":%q,"data":null,"index":3,"changedFields":null}`, notesID),
+		fmt.Sprintf(`{"changeType":"component_removed","entityType":"component","entityId":%q,"data":null,"index":null,"changedFields":null}`, compID),
+		fmt.Sprintf(`{"changeType":"component_group_removed","entityType":"component_group","entityId":%q,"data":null,"index":null,"changedFields":null}`, extras),
+		fmt.Sprintf(`{"changeType":"component_removed","entityType":"component","entityId":%q,"data":null,"index":null,"changedFields":null}`, packing),
+	}
+	require.Len(t, data.Changes, len(expected))
+	for i, want := range expected {
+		assert.JSONEq(t, want, string(data.Changes[i]), "change %d", i)
+	}
+	groups := map[string]int{}
+	rows, err := e.db.Query(`SELECT name, index_order FROM component_groups WHERE application_id = $1`, appID)
+	require.NoError(t, err)
+	defer rows.Close()
+	for rows.Next() {
+		var name string
+		var index int
+		require.NoError(t, rows.Scan(&name, &index))
+		groups[name] = index
+	}
+	assert.Equal(t, map[string]int{"Renamed": 0, "Second": 2}, groups)
+	var remaining, notesIndex int
+	require.NoError(t, e.db.QueryRow(`SELECT COUNT(*) FROM components WHERE application_id = $1`, appID).Scan(&remaining))
+	require.NoError(t, e.db.QueryRow(`SELECT index_order FROM components WHERE id = $1`, notesID).Scan(&notesIndex))
+	assert.Equal(t, 2, remaining, "notes and the checklist added to Second")
+	assert.Equal(t, 3, notesIndex)
+}
+
+func TestMCP_EditApp_ShouldRejectBadChangesAndWriteNothing(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner := e.account()
+	appID := e.app(owner, 0)
+	session, _ := e.connect(owner)
+	groupID := appID + "-g"
+	cases := []struct {
+		name   string
+		change map[string]any
+		want   string
+	}{
+		{"unknown group", map[string]any{"op": "rename_group", "groupId": "nope", "name": "x"}, "group nope not found"},
+		{"unknown $N", map[string]any{"op": "move_group", "groupId": "$0", "index": 1}, "group $0 not found"},
+		{"unknown component", map[string]any{"op": "remove_component", "componentId": "nope"}, "component nope not found"},
+		{"unknown type", map[string]any{"op": "add_component", "groupId": groupID, "type": "Nope"}, "unknown component type"},
+		{"none key", map[string]any{"op": "add_component", "groupId": groupID, "type": "Checklist", "data": map[string]any{"items": []any{}}}, "not writable by agents"},
+		{"missing index", map[string]any{"op": "move_component", "componentId": appID + "-notes"}, "index is required"},
+		{"missing name", map[string]any{"op": "add_group"}, "name is required"},
+		{"unknown op", map[string]any{"op": "explode"}, "unknown op explode"},
+	}
+
+	// when / then
+	for _, c := range cases {
+		res, _ := edit(t, session, appID, c.change)
+		assert.Contains(t, errText(res), c.want, c.name)
+	}
+	empty, _ := edit(t, session, appID)
+	assert.Contains(t, errText(empty), "changes is empty")
+	assert.Equal(t, 0, e.eventCount(appID))
+}
+
+func TestMCP_EditApp_ShouldReportFieldsWhenComponentDataIsInvalid(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner := e.account()
+	appID := e.app(owner, 0)
+	session, _ := e.connect(owner)
+
+	// when
+	res, out := edit(t, session, appID, map[string]any{"op": "add_component", "groupId": appID + "-g", "type": "Checklist", "data": map[string]any{"_title": 5}})
+
+	// then
+	require.True(t, res.IsError)
+	assert.Equal(t, "invalid data", out["error"])
+	assert.NotEmpty(t, out["untrusted"].(map[string]any)["fields"])
 	assert.Equal(t, 0, e.eventCount(appID))
 }

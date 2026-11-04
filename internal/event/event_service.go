@@ -908,8 +908,6 @@ func (s *EventService) executeApplicationAfterEditModeChanged(ctx context.Contex
 		case "component_removed":
 			if _, err = s.componentInApp(appID, entityID); err == nil {
 				err = s.appRepo.DeleteComponent(entityID)
-			} else if errors.Is(err, ErrUnappliable) {
-				err = nil
 			}
 		case "component_reordered":
 			if _, err = s.componentInApp(appID, entityID); err == nil {
@@ -922,8 +920,6 @@ func (s *EventService) executeApplicationAfterEditModeChanged(ctx context.Contex
 		case "component_group_removed":
 			if _, err = s.groupInApp(appID, entityID); err == nil {
 				err = s.appRepo.DeleteComponentGroup(entityID)
-			} else if errors.Is(err, ErrUnappliable) {
-				err = nil
 			}
 		case "component_group_reordered":
 			if _, err = s.groupInApp(appID, entityID); err == nil {
@@ -945,6 +941,13 @@ func (s *EventService) executeApplicationAfterEditModeChanged(ctx context.Contex
 			}
 		default:
 			err = fmt.Errorf("%w: unknown change type %q", ErrValidation, changeType)
+		}
+		// A device's edit-mode snapshot can name entities someone else removed meanwhile; one stale change must not reject the whole save.
+		switch changeType {
+		case "component_removed", "component_reordered", "component_group_removed", "component_group_reordered", "component_group_changed":
+			if errors.Is(err, ErrUnappliable) {
+				err = nil
+			}
 		}
 		if err != nil {
 			return fmt.Errorf("change %d (%s %s): %w", i, changeType, entityID, err)
