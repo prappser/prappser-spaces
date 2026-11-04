@@ -34,7 +34,10 @@ type Deps struct {
 }
 
 func newServer(d Deps) *sdk.Server {
-	s := sdk.NewServer(&sdk.Implementation{Name: serverName, Version: serverVersion}, nil)
+	// No listChanged: clients would open a subscriptions/listen stream whose events fasthttpadaptor buffers until the handler returns, which it never does.
+	s := sdk.NewServer(&sdk.Implementation{Name: serverName, Version: serverVersion}, &sdk.ServerOptions{
+		Capabilities: &sdk.ServerCapabilities{Logging: &sdk.LoggingCapabilities{}, Tools: &sdk.ToolCapabilities{}},
+	})
 	addListApps(s, d)
 	addGetApp(s, d)
 	addCreateInvite(s, d)
