@@ -1276,6 +1276,10 @@ func TestMCP_EditApp_ShouldRejectBadChangesAndWriteNothing(t *testing.T) {
 		{"missing index", map[string]any{"op": "move_component", "componentId": appID + "-notes"}, "index is required"},
 		{"missing name", map[string]any{"op": "add_group"}, "name is required"},
 		{"unknown op", map[string]any{"op": "explode"}, "unknown op explode"},
+		{"negative add_group index", map[string]any{"op": "add_group", "name": "x", "index": -1}, "index must be 0 or more"},
+		{"negative add_component index", map[string]any{"op": "add_component", "groupId": groupID, "type": "Checklist", "index": -1}, "index must be 0 or more"},
+		{"negative move_group index", map[string]any{"op": "move_group", "groupId": groupID, "index": -1}, "index must be 0 or more"},
+		{"negative move_component index", map[string]any{"op": "move_component", "componentId": appID + "-notes", "index": -1}, "index must be 0 or more"},
 	}
 
 	// when / then
@@ -1285,7 +1289,38 @@ func TestMCP_EditApp_ShouldRejectBadChangesAndWriteNothing(t *testing.T) {
 	}
 	empty, _ := edit(t, session, appID)
 	assert.Contains(t, errText(empty), "changes is empty")
+	many := make([]map[string]any, 101)
+	for i := range many {
+		many[i] = map[string]any{"op": "add_group", "name": "x"}
+	}
+	tooMany, _ := edit(t, session, appID, many...)
+	assert.Contains(t, errText(tooMany), "at most 100 changes per call")
 	assert.Equal(t, 0, e.eventCount(appID))
+}
+
+func TestMCP_EditApp_ShouldWriteNothingWhenALaterChangeFails(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner := e.account()
+	appID := e.app(owner, 0)
+	session, _ := e.connect(owner)
+	var groupsBefore int
+	require.NoError(t, e.db.QueryRow(`SELECT COUNT(*) FROM component_groups WHERE application_id = $1`, appID).Scan(&groupsBefore))
+
+	// when
+	res, _ := edit(t, session, appID,
+		map[string]any{"op": "add_group", "name": "Kept?"},
+		map[string]any{"op": "rename_group", "groupId": "nope", "name": "x"},
+	)
+
+	// then
+	assert.Contains(t, errText(res), "group nope not found")
+	assert.Equal(t, 0, e.eventCount(appID))
+	var groupsAfter, kept int
+	require.NoError(t, e.db.QueryRow(`SELECT COUNT(*) FROM component_groups WHERE application_id = $1`, appID).Scan(&groupsAfter))
+	require.NoError(t, e.db.QueryRow(`SELECT COUNT(*) FROM component_groups WHERE application_id = $1 AND name = 'Kept?'`, appID).Scan(&kept))
+	assert.Equal(t, groupsBefore, groupsAfter)
+	assert.Equal(t, 0, kept)
 }
 
 func TestMCP_EditApp_ShouldReportFieldsWhenComponentDataIsInvalid(t *testing.T) {

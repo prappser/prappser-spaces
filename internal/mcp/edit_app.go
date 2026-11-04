@@ -47,6 +47,8 @@ func structureChange(changeType, entityType, id string, data map[string]any, ind
 	}
 }
 
+const maxChanges = 100
+
 func addEditApp(s *sdk.Server, d Deps) {
 	sdk.AddTool(s, &sdk.Tool{
 		Name: "edit_app",
@@ -54,7 +56,7 @@ func addEditApp(s *sdk.Server, d Deps) {
 			"ops: add_group(name, index?), rename_group(groupId, name), move_group(groupId, index), remove_group(groupId; its components go too), " +
 			"add_component(groupId, type, index?, data?), move_component(componentId, index), remove_component(componentId). " +
 			"groupId may be $N, the N-th add_group of this call (0-based). Returns ids, one per change: the new id for adds, null otherwise. " +
-			"index defaults to the end. Components cannot move between groups. add_component data follows describe_component's schema and update_component's x-access rules.",
+			"A missing index means the end (the current count); moves only set the moved item's index and do not shift its siblings, like the app. At most 100 changes per call. Components cannot move between groups. add_component data follows describe_component's schema and update_component's x-access rules.",
 	}, func(ctx context.Context, req *sdk.CallToolRequest, in editAppIn) (*sdk.CallToolResult, editAppOut, error) {
 		u, err := caller(req)
 		if err != nil {
@@ -62,6 +64,9 @@ func addEditApp(s *sdk.Server, d Deps) {
 		}
 		if len(in.Changes) == 0 {
 			return nil, editAppOut{}, errors.New("changes is empty")
+		}
+		if len(in.Changes) > maxChanges {
+			return nil, editAppOut{}, fmt.Errorf("at most %d changes per call", maxChanges)
 		}
 		app, err := d.Apps.GetApplication(in.AppID, u)
 		if err != nil {
@@ -108,6 +113,9 @@ func addEditApp(s *sdk.Server, d Deps) {
 		ids := make([]*string, len(in.Changes))
 		changes := make([]interface{}, 0, len(in.Changes))
 		for i, c := range in.Changes {
+			if c.Index != nil && *c.Index < 0 {
+				return nil, editAppOut{}, errors.New("index must be 0 or more")
+			}
 			switch c.Op {
 			case "add_group":
 				if c.Name == "" {

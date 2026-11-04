@@ -943,9 +943,11 @@ func (s *EventService) executeApplicationAfterEditModeChanged(ctx context.Contex
 			err = fmt.Errorf("%w: unknown change type %q", ErrValidation, changeType)
 		}
 		// A device's edit-mode snapshot can name entities someone else removed meanwhile; one stale change must not reject the whole save.
+		// component_added into a missing group is deliberately not tolerated: skipping it would drop the user's new component.
 		switch changeType {
 		case "component_removed", "component_reordered", "component_group_removed", "component_group_reordered", "component_group_changed":
 			if errors.Is(err, ErrUnappliable) {
+				log.Debug().Str("changeType", changeType).Str("entityId", entityID).Msg("[EVENT] Skipping stale edit-mode change")
 				err = nil
 			}
 		}
