@@ -65,6 +65,8 @@ func toolError(err error) error {
 		return errors.New("only the app owner or an admin can invite")
 	case errors.Is(err, invitation.ErrInvalidInviteRole):
 		return errors.New("role must be admin, member or viewer")
+	case errors.Is(err, invitation.ErrInvalidInviteOptions):
+		return err
 	case errors.Is(err, event.ErrUnauthorized):
 		return errors.New("you are not allowed to change this app")
 	case errors.Is(err, event.ErrValidation), errors.Is(err, event.ErrUnappliable):

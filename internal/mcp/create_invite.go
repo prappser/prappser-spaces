@@ -13,8 +13,8 @@ import (
 type createInviteIn struct {
 	AppID          string `json:"appId" jsonschema:"the app id from list_apps"`
 	Role           string `json:"role,omitempty" jsonschema:"member or viewer; defaults to member"`
-	ExpiresInHours *int   `json:"expiresInHours,omitempty" jsonschema:"hours until the link expires"`
-	MaxUses        *int   `json:"maxUses,omitempty" jsonschema:"how many people may use the link"`
+	ExpiresInHours *int   `json:"expiresInHours,omitempty" jsonschema:"hours until the link expires, at most 48"`
+	MaxUses        *int   `json:"maxUses,omitempty" jsonschema:"how many people may use the link, at least 1; defaults to 1"`
 }
 
 type createInviteOut struct {

@@ -131,6 +131,20 @@ func TestCreateInvite_ShouldReturn400WhenRoleIsUnknown(t *testing.T) {
 	assert.Equal(t, fasthttp.StatusBadRequest, ctx.Response.StatusCode())
 }
 
+func TestCreateInvite_ShouldReturn400WhenExpiresInHoursOverMax(t *testing.T) {
+	// given
+	svc := newEndpointTestService(t, "app-1", "owner-pk", application.MemberRoleOwner, nil)
+	ep := &InvitationEndpoints{invitationService: svc}
+	ctx := newAuthzTestCtx("POST", "owner-pk", "app-1", "", []byte(`{"expiresInHours":168}`))
+
+	// when
+	ep.CreateInvite(ctx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusBadRequest, ctx.Response.StatusCode())
+	assert.Contains(t, string(ctx.Response.Body()), "48")
+}
+
 func TestCreateInvite_ShouldReturn403WhenCallerIsPlainMember(t *testing.T) {
 	// given
 	svc := newEndpointTestService(t, "app-1", "member-pk", application.MemberRoleMember, nil)
