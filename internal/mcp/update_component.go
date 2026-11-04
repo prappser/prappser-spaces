@@ -87,6 +87,90 @@ func isAuthor(raw any, field, publicKey string) bool {
 	return m[field] == publicKey
 }
 
+func mintKeys(set map[string]any) map[string]any {
+	data := make(map[string]any, len(set))
+	for k, val := range set {
+		if base, minted := strings.CutSuffix(k, "*"); minted {
+			k = base + newID()
+		}
+		data[k] = val
+	}
+	return data
+}
+
+func checkWrite(v *component.Validator, typ string, old, data map[string]any, publicKey string, privileged bool, validate func(string, map[string]any) error) ([]string, *sdk.CallToolResult, error) {
+	keys := make([]string, 0, len(data))
+	access := make(map[string]component.Access, len(data))
+	for k := range data {
+		acc, ok := v.Access(typ, k)
+		if !ok {
+			return nil, nil, fmt.Errorf("key %s: not a key of %s", k, typ)
+		}
+		access[k] = acc
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	for _, k := range keys {
+		acc, oldVal, val := access[k], old[k], data[k]
+		fail := func(format string, a ...any) ([]string, *sdk.CallToolResult, error) {
+			return nil, nil, errors.New("key " + k + ": " + fmt.Sprintf(format, a...))
+		}
+		switch {
+		case acc.Level == component.AccessNone:
+			return fail("not writable by agents")
+		case acc.Level == component.AccessManage && !privileged:
+			return fail("owner or admin only")
+		case !acc.OwnKey(k, publicKey):
+			return fail("you can only write your own cell")
+		}
+		if acc.Unless != nil && acc.Unless.On(old) {
+			return fail("turned off by %s", acc.Unless.Name)
+		}
+		if !privileged {
+			for _, f := range gateFlags(acc, oldVal, val) {
+				if !f.On(old) {
+					return fail("turned off by %s", f.Name)
+				}
+			}
+		}
+		str, isStr := val.(string)
+		if acc.Append {
+			if _, exists := old[k]; exists {
+				return fail("already exists")
+			}
+			if val == "" {
+				return fail("cannot be deleted")
+			}
+		}
+		if acc.Author != "" {
+			oldStr, _ := oldVal.(string)
+			if (isStr && str != "" && !isAuthor(str, acc.Author, publicKey)) || (oldStr != "" && !isAuthor(oldStr, acc.Author, publicKey)) {
+				return fail("%s must be your publicKey", acc.Author)
+			}
+		}
+	}
+	if err := validate(typ, data); err != nil {
+		if res, ok := validationResult(err, "invalid data"); ok {
+			return nil, res, nil
+		}
+		return nil, nil, toolError(err)
+	}
+
+	for _, k := range keys {
+		acc := access[k]
+		if str, ok := data[k].(string); acc.Content != "" && ok && str != "" {
+			if err := v.ValidateContent(typ, acc.Content, str); err != nil {
+				if res, ok := validationResult(err, "key "+k+": invalid value"); ok {
+					return nil, res, nil
+				}
+				return nil, nil, toolError(err)
+			}
+		}
+	}
+	return keys, nil, nil
+}
+
 func addUpdateComponent(s *sdk.Server, d Deps) {
 	sdk.AddTool(s, &sdk.Tool{
 		Name: "update_component",
@@ -115,83 +199,14 @@ func addUpdateComponent(s *sdk.Server, d Deps) {
 			return nil, updateComponentOut{}, errors.New("component not found")
 		}
 
-		data := make(map[string]any, len(in.Set))
-		for k, val := range in.Set {
-			if base, minted := strings.CutSuffix(k, "*"); minted {
-				k = base + newID()
-			}
-			data[k] = val
+		data := mintKeys(in.Set)
+		keys, res, err := checkWrite(d.Validator, comp.Name, comp.Data, data, u.PublicKey, privileged, d.Validator.ValidateComponentKeys)
+		if res != nil || err != nil {
+			return res, updateComponentOut{}, err
 		}
-		keys := make([]string, 0, len(data))
-		access := make(map[string]component.Access, len(data))
-		for k := range data {
-			acc, ok := d.Validator.Access(comp.Name, k)
-			if !ok {
-				return nil, updateComponentOut{}, fmt.Errorf("key %s: not a key of %s", k, comp.Name)
-			}
-			access[k] = acc
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-
 		changed := make(map[string]any, len(keys))
 		for _, k := range keys {
-			acc, old, val := access[k], comp.Data[k], data[k]
-			fail := func(format string, a ...any) (*sdk.CallToolResult, updateComponentOut, error) {
-				return nil, updateComponentOut{}, errors.New("key " + k + ": " + fmt.Sprintf(format, a...))
-			}
-			switch {
-			case acc.Level == component.AccessNone:
-				return fail("not writable by agents")
-			case acc.Level == component.AccessManage && !privileged:
-				return fail("owner or admin only")
-			case !acc.OwnKey(k, u.PublicKey):
-				return fail("you can only write your own cell")
-			}
-			if acc.Unless != nil && acc.Unless.On(comp.Data) {
-				return fail("turned off by %s", acc.Unless.Name)
-			}
-			if !privileged {
-				for _, f := range gateFlags(acc, old, val) {
-					if !f.On(comp.Data) {
-						return fail("turned off by %s", f.Name)
-					}
-				}
-			}
-			str, isStr := val.(string)
-			if acc.Append {
-				if _, exists := comp.Data[k]; exists {
-					return fail("already exists")
-				}
-				if val == "" {
-					return fail("cannot be deleted")
-				}
-			}
-			if acc.Author != "" {
-				oldStr, _ := old.(string)
-				if (isStr && str != "" && !isAuthor(str, acc.Author, u.PublicKey)) || (oldStr != "" && !isAuthor(oldStr, acc.Author, u.PublicKey)) {
-					return fail("%s must be your publicKey", acc.Author)
-				}
-			}
-		}
-		if err := d.Validator.ValidateComponentKeys(comp.Name, data); err != nil {
-			if res, ok := validationResult(err, "invalid data"); ok {
-				return res, updateComponentOut{}, nil
-			}
-			return nil, updateComponentOut{}, toolError(err)
-		}
-
-		for _, k := range keys {
-			acc, old, val := access[k], comp.Data[k], data[k]
-			if str, ok := val.(string); acc.Content != "" && ok && str != "" {
-				if err := d.Validator.ValidateContent(comp.Name, acc.Content, str); err != nil {
-					if res, ok := validationResult(err, "key "+k+": invalid value"); ok {
-						return res, updateComponentOut{}, nil
-					}
-					return nil, updateComponentOut{}, toolError(err)
-				}
-			}
-			changed[k] = map[string]any{"oldValue": old, "newValue": val}
+			changed[k] = map[string]any{"oldValue": comp.Data[k], "newValue": data[k]}
 		}
 
 		ev := event.Event{

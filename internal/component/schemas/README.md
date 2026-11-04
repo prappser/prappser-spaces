@@ -65,8 +65,8 @@ Every top-level `properties` entry and every `patternProperties` entry carries a
 
 Rules:
 
-- `gate`: members may write only when the flag's current value is not `false`. When the flag is absent, its schema `default` applies (every gate flag declares a boolean `default`). Owner and admin bypass the gate.
-- `fields`: when the old and new values are both objects, each changed inner field is checked against `fields[field]` if listed (`null` means open), otherwise against `gate`. Creates, tombstones and non-object values use `gate`.
+- `gate`: members may write only when the flag's current value is not `false`. When the flag is absent, its schema `default` applies (every gate flag declares a boolean `default`). For object values `gate` is checked as described under `fields`: on a create, and for each changed field not listed in `fields`. Owner and admin bypass the gate.
+- `fields`: the old and new values are compared field by field. A value that is absent, `''` or not an object counts as `{}`, and a field that is missing, `null`, `false`, `''` or `0` counts as unset. Each changed field is checked against `fields[field]` if listed (`null` means open), otherwise against `gate` (if the rule has none, the field is open). A tombstone (`''` over an object) counts every set field of the old value as changed. When the old value is not an object (a create, or a key holding `''`), `gate` applies too. Owner and admin bypass these checks.
 - `unless`: the key is blocked for every role, owner and admin included, while the flag's current value is true. When the flag is absent, its schema `default` applies. There is no bypass.
 - `append`: the key must not exist yet, and no tombstone. Applies to all roles.
 - `author`: the decoded value's field must equal the caller's public key. When the key already exists, the old decoded value's field must too, so a tombstone or an edit of someone else's entry is rejected. Applies to all roles.
@@ -106,7 +106,7 @@ The consumer enforces these, they are not checked here:
 
 - Byte limits: a template file is at most 256 KiB and the template document at most 64 KiB.
 - The chat body (4000) and checklist title (1000) `maxLength` count code points while the app counts UTF-16 units, so for astral characters the schema is up to 2x looser. ponytail: ceiling is 2x the limit for astral characters; add a UTF-16 length check in the MCP tool if it matters.
-- A member can create a checklist item with `checked: true` while `allowToggleInUsage` is false, because creates are checked against `gate` only.
+- A member can uncheck a legacy checklist item that lives only in `items` while `allowToggleInUsage` is false. The old value is read from `item_<id>` only, so a write of `item_<id>` with `checked: false` is compared against `{}` and `checked` counts as unchanged. It still needs `allowAddInUsage`.
 - Chat reaction at most 32 UTF-16 units, checked by the app's controller and decoders.
 - Checklist `attachmentIds`, chat attachment ids and Files `storageId` pointing at something that exists.
 - Member references in a template: Map marker `createdBy` and `createdAtMs` and checklist `assignedMemberId` (and `attachmentIds`) let a template name a member or file. The schema allows them, so `create_app` must strip or reject them. The app's own template strip already clears them on export and import (Map `stripForTemplate` sets `createdBy` to `''`, `createdAtMs` to 0 and drops `otherUsers`; the checklist strip clears `assignedMemberId`, `attachmentIds` and `checked`).

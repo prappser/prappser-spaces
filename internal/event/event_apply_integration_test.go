@@ -159,7 +159,7 @@ func TestAcceptEvent_EditModeOnOtherAppsEntities_ShouldNotTouchThem(t *testing.T
 
 	// then
 	assert.NoError(t, removeErr, "removing an entity this app doesn't have is a no-op")
-	assert.ErrorIs(t, reorderErr, ErrUnappliable)
+	assert.NoError(t, reorderErr, "reordering an entity this app doesn't have is a no-op")
 	assert.ErrorIs(t, collideErr, ErrUnappliable)
 	assert.ErrorIs(t, foreignGroupErr, ErrUnappliable)
 	comp, err := appRepo.GetComponentByID("apply-eb-comp")
@@ -172,6 +172,30 @@ func TestAcceptEvent_EditModeOnOtherAppsEntities_ShouldNotTouchThem(t *testing.T
 	assert.NoError(t, err)
 	_, err = appRepo.GetComponentByID("apply-ea-new")
 	assert.ErrorIs(t, err, application.ErrNotFound)
+}
+
+func TestAcceptEvent_EditModeBatchWithStaleReorders_ShouldSkipThemAndApplyTheRest(t *testing.T) {
+	// given
+	db := connectApply(t)
+	prefix := "apply-stale-"
+	appRepo := seedRoleApp(t, db, prefix)
+	service := NewEventService(NewEventRepository(db), appRepo, nil, nil)
+
+	// when
+	_, err := service.AcceptEvent(context.Background(), editModeEvent(prefix+"evt", prefix+"app", prefix+"owner",
+		map[string]interface{}{"changeType": "component_reordered", "entityType": "component", "entityId": "no-such-component", "index": 1},
+		map[string]interface{}{"changeType": "component_group_reordered", "entityType": "component_group", "entityId": "no-such-group", "index": 1},
+		map[string]interface{}{"changeType": "component_group_changed", "entityType": "component_group", "entityId": "no-such-group", "data": map[string]interface{}{"name": "X", "index": 1}},
+		map[string]interface{}{"changeType": "component_group_added", "entityType": "component_group", "entityId": prefix + "g", "data": map[string]interface{}{
+			"id": prefix + "g", "applicationId": prefix + "app", "name": "New group", "index": 0,
+		}},
+	), &user.User{PublicKey: prefix + "owner"})
+
+	// then
+	require.NoError(t, err)
+	_, err = appRepo.GetComponentGroupByID(prefix + "g")
+	assert.NoError(t, err)
+	assert.Equal(t, 1, countEvents(t, db, "id = $1", prefix+"evt"))
 }
 
 func TestAcceptEvent_EditModeBatchWithOneUnappliableChange_ShouldRollBackWholeBatch(t *testing.T) {
