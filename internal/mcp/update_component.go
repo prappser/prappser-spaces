@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -38,27 +39,39 @@ func findComponent(app *application.Application, id string) *application.Compone
 	return nil
 }
 
+// A missing field and a zero value count as unchanged, so creating an item with checked:false needs no toggle flag.
+func orZero(v any) any {
+	switch v {
+	case false, "", 0.0:
+		return nil
+	}
+	return v
+}
+
 func gateFlags(acc component.Access, old, val any) []*component.Flag {
-	if acc.Gate == nil {
+	if acc.Gate == nil && len(acc.Fields) == 0 {
 		return nil
 	}
 	o, oldIsObj := old.(map[string]any)
-	n, newIsObj := val.(map[string]any)
-	if !oldIsObj || !newIsObj {
-		return []*component.Flag{acc.Gate}
-	}
+	n, _ := val.(map[string]any)
 	var flags []*component.Flag
-	seen := map[string]bool{}
+	add := func(f *component.Flag) {
+		if f != nil && !slices.Contains(flags, f) {
+			flags = append(flags, f)
+		}
+	}
+	if !oldIsObj {
+		add(acc.Gate)
+	}
 	for _, m := range []map[string]any{o, n} {
 		for field := range m {
-			if seen[field] || reflect.DeepEqual(o[field], n[field]) {
+			if reflect.DeepEqual(orZero(o[field]), orZero(n[field])) {
 				continue
 			}
-			seen[field] = true
-			if f, listed := acc.Fields[field]; !listed {
-				flags = append(flags, acc.Gate)
-			} else if f != nil {
-				flags = append(flags, f)
+			if f, listed := acc.Fields[field]; listed {
+				add(f)
+			} else {
+				add(acc.Gate)
 			}
 		}
 	}
@@ -120,12 +133,6 @@ func addUpdateComponent(s *sdk.Server, d Deps) {
 			keys = append(keys, k)
 		}
 		sort.Strings(keys)
-		if err := d.Validator.ValidateComponentKeys(comp.Name, data); err != nil {
-			if res, ok := validationResult(err, "invalid data"); ok {
-				return res, updateComponentOut{}, nil
-			}
-			return nil, updateComponentOut{}, toolError(err)
-		}
 
 		changed := make(map[string]any, len(keys))
 		for _, k := range keys {
@@ -160,18 +167,28 @@ func addUpdateComponent(s *sdk.Server, d Deps) {
 					return fail("cannot be deleted")
 				}
 			}
-			if acc.Content != "" && isStr && str != "" {
+			if acc.Author != "" {
+				oldStr, _ := old.(string)
+				if (isStr && str != "" && !isAuthor(str, acc.Author, u.PublicKey)) || (oldStr != "" && !isAuthor(oldStr, acc.Author, u.PublicKey)) {
+					return fail("%s must be your publicKey", acc.Author)
+				}
+			}
+		}
+		if err := d.Validator.ValidateComponentKeys(comp.Name, data); err != nil {
+			if res, ok := validationResult(err, "invalid data"); ok {
+				return res, updateComponentOut{}, nil
+			}
+			return nil, updateComponentOut{}, toolError(err)
+		}
+
+		for _, k := range keys {
+			acc, old, val := access[k], comp.Data[k], data[k]
+			if str, ok := val.(string); acc.Content != "" && ok && str != "" {
 				if err := d.Validator.ValidateContent(comp.Name, acc.Content, str); err != nil {
 					if res, ok := validationResult(err, "key "+k+": invalid value"); ok {
 						return res, updateComponentOut{}, nil
 					}
 					return nil, updateComponentOut{}, toolError(err)
-				}
-			}
-			if acc.Author != "" {
-				oldStr, _ := old.(string)
-				if (isStr && str != "" && !isAuthor(str, acc.Author, u.PublicKey)) || (oldStr != "" && !isAuthor(oldStr, acc.Author, u.PublicKey)) {
-					return fail("%s must be your publicKey", acc.Author)
 				}
 			}
 			changed[k] = map[string]any{"oldValue": old, "newValue": val}

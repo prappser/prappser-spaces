@@ -508,3 +508,11 @@ func TestTypesAndSchema_ShouldExposeEmbeddedSchemas(t *testing.T) {
 	assert.Contains(t, string(chat), "x-access")
 	assert.False(t, nopeOK)
 }
+
+func TestNewValidator_ShouldRejectPerMemberOnExactProperty(t *testing.T) {
+	// when
+	err := accessFixture(`{"$id":"https://x/x.json","properties":{"a":{"x-merge":"per-member","x-access":"member"}}}`)
+
+	// then
+	assert.ErrorContains(t, err, "per-member property")
+}

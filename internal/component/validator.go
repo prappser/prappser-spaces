@@ -80,14 +80,15 @@ type Access struct {
 	Append  bool
 	Author  string
 	Content string
-	own     string
+	own     *regexp.Regexp
 }
 
 func (a Access) OwnKey(key, publicKey string) bool {
-	if a.own == "" {
+	if a.own == nil {
 		return true
 	}
-	return regexp.MustCompile(a.own + regexp.QuoteMeta(publicKey) + "$").MatchString(key)
+	m := a.own.FindStringSubmatch(key)
+	return m != nil && m[1] == publicKey
 }
 
 type TypeInfo struct {
@@ -314,6 +315,9 @@ func parseRule(key string, entry any, props, defs map[string]any, pattern bool) 
 		r.merge = mode
 	}
 	if !pattern {
+		if r.merge == "per-member" {
+			return rule{}, fmt.Errorf("per-member property %q must be a pattern ending in .+$", key)
+		}
 		return r, nil
 	}
 	if r.re, err = regexp.Compile(key); err != nil {
@@ -324,7 +328,9 @@ func parseRule(key string, entry any, props, defs map[string]any, pattern bool) 
 		if !ok {
 			return rule{}, fmt.Errorf("per-member pattern %q must end in .+$", key)
 		}
-		r.access.own = own
+		if r.access.own, err = regexp.Compile(own + "(.+)$"); err != nil {
+			return rule{}, fmt.Errorf("invalid pattern %q: %w", key, err)
+		}
 	}
 	return r, nil
 }

@@ -1042,3 +1042,104 @@ func TestMCP_UpdateComponent_ShouldWriteNothingWhenOneKeyFails(t *testing.T) {
 	assert.Equal(t, 0, e.eventCount(appID))
 	assert.Empty(t, e.compData(compID))
 }
+
+func TestMCP_UpdateComponent_ShouldGateToggleOnLegacyItemWrittenAsKeyedItem(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner, member := e.account(), e.account()
+	legacy := []any{map[string]any{"id": "a", "title": "x", "checked": false}}
+	appID, compID := e.componentApp(owner, "Checklist", map[string]any{"items": legacy, "allowToggleInUsage": false}, member)
+	session, _ := e.connect(member)
+
+	// when
+	res, _ := update(t, session, appID, compID, map[string]any{"item_a": map[string]any{"title": "x", "checked": true, "order": 0}})
+
+	// then
+	assert.Contains(t, errText(res), "turned off by allowToggleInUsage")
+	assert.Equal(t, 0, e.eventCount(appID))
+	assert.NotContains(t, e.compData(compID), "item_a")
+}
+
+func TestMCP_UpdateComponent_ShouldGateToggleThroughCreateAndTombstone(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner, member := e.account(), e.account()
+	checked := map[string]any{"title": "a", "checked": true, "order": 0.0}
+	unchecked := map[string]any{"title": "b", "checked": false, "order": 1.0}
+	appID, compID := e.componentApp(owner, "Checklist", map[string]any{"allowToggleInUsage": false, "item_a": checked, "item_b": unchecked}, member)
+	session, _ := e.connect(member)
+
+	// when
+	tombChecked, _ := update(t, session, appID, compID, map[string]any{"item_a": ""})
+	tombUnchecked, tombOut := update(t, session, appID, compID, map[string]any{"item_b": ""})
+	recreated, _ := update(t, session, appID, compID, map[string]any{"item_b": map[string]any{"title": "b", "checked": true, "order": 1.0}})
+	createdOff, offOut := update(t, session, appID, compID, map[string]any{"item_*": map[string]any{"title": "c", "checked": false, "order": 2.0}})
+	createdOn, _ := update(t, session, appID, compID, map[string]any{"item_*": map[string]any{"title": "d", "checked": true, "order": 3.0}})
+
+	// then
+	assert.Contains(t, errText(tombChecked), "turned off by allowToggleInUsage")
+	assert.False(t, tombUnchecked.IsError, toJSON(tombOut))
+	assert.Contains(t, errText(recreated), "turned off by allowToggleInUsage")
+	assert.False(t, createdOff.IsError, toJSON(offOut))
+	assert.Contains(t, errText(createdOn), "turned off by allowToggleInUsage")
+	assert.Equal(t, checked, e.compData(compID)["item_a"])
+	assert.Equal(t, 2, e.eventCount(appID))
+	assert.Equal(t, "", e.compData(compID)["item_b"])
+	for k, v := range e.compData(compID) {
+		if m, ok := v.(map[string]any); ok && strings.HasPrefix(k, "item_") {
+			assert.NotEqual(t, "d", m["title"], k)
+		}
+	}
+}
+
+func TestMCP_UpdateComponent_ShouldLetMemberWriteOnlyTheirOwnReactionCell(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner, member, other := e.account(), e.account(), e.account()
+	msg := newMsgKey()
+	appID, compID := e.componentApp(owner, "Chat", map[string]any{msg: chatMsg(owner.PublicKey, "hi")}, member, other)
+	session, _ := e.connect(member)
+
+	// when
+	own, ownOut := update(t, session, appID, compID, map[string]any{"react_" + msg + "_" + member.PublicKey: "👍"})
+	theirs, _ := update(t, session, appID, compID, map[string]any{"react_" + msg + "_" + other.PublicKey: "👍"})
+
+	// then
+	require.False(t, own.IsError, toJSON(ownOut))
+	assert.Contains(t, errText(theirs), "you can only write your own cell")
+	assert.Equal(t, 1, e.eventCount(appID))
+}
+
+func TestMCP_UpdateComponent_ShouldLetOwnerAndAdminSetCountdownWhatWhenRunEditableIsAbsent(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner, admin := e.account(), e.account()
+	appID, compID := e.componentApp(owner, "Countdown", map[string]any{}, admin)
+	e.makeRole(appID, admin, application.MemberRoleAdmin)
+	adminSession, _ := e.connect(admin)
+	ownerSession, _ := e.connect(owner)
+
+	// when
+	byAdmin, adminOut := update(t, adminSession, appID, compID, map[string]any{"what": "Holiday"})
+	byOwner, ownerOut := update(t, ownerSession, appID, compID, map[string]any{"what": "Trip"})
+
+	// then
+	require.False(t, byAdmin.IsError, toJSON(adminOut))
+	require.False(t, byOwner.IsError, toJSON(ownerOut))
+	assert.Equal(t, "Trip", e.compData(compID)["what"])
+}
+
+func TestMCP_UpdateComponent_ShouldCheckAccessBeforeSchemaValidation(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner, member := e.account(), e.account()
+	appID, compID := e.componentApp(owner, "Poll", map[string]any{"question": "q", "options": []any{}}, member)
+	session, _ := e.connect(member)
+
+	// when
+	res, _ := update(t, session, appID, compID, map[string]any{"question": 123})
+
+	// then
+	assert.Contains(t, errText(res), "owner or admin only")
+	assert.Equal(t, 0, e.eventCount(appID))
+}
