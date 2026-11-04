@@ -67,12 +67,13 @@ var (
 	// ErrNotAppAuthorized is returned by AuthorizeAppRole when the caller is
 	// not a member of the application, or holds a role outside the allowed
 	// set (#125) - invitation_endpoints.go maps it to 403.
-	ErrNotAppAuthorized   = errors.New("not authorized for this application")
-	ErrInviteNotForMember = errors.New("invitation is not for this account")
-	ErrSpaceUseNotAllowed = errors.New("only the space owner can grant space use")
-	ErrInvitationNotFound = errors.New("invitation not found")
-	ErrInviteAppMismatch  = errors.New("invitation does not belong to this application")
-	ErrInvalidInviteRole  = errors.New("invalid invite role")
+	ErrNotAppAuthorized     = errors.New("not authorized for this application")
+	ErrInviteNotForMember   = errors.New("invitation is not for this account")
+	ErrSpaceUseNotAllowed   = errors.New("only the space owner can grant space use")
+	ErrInvitationNotFound   = errors.New("invitation not found")
+	ErrInviteAppMismatch    = errors.New("invitation does not belong to this application")
+	ErrInvalidInviteRole    = errors.New("invalid invite role")
+	ErrInvalidInviteOptions = errors.New("invalid invite options")
 )
 
 // memberNotFoundMsg is the exact error string both application.Repository
@@ -188,18 +189,18 @@ func (s *InvitationService) CreateInvitation(caller *user.User, opts CreateInvit
 	}
 	if opts.ExpiresInHours != nil {
 		if *opts.ExpiresInHours < 0 || *opts.ExpiresInHours > maxExpiry {
-			return nil, fmt.Errorf("expiration hours must be between 0 and %d", maxExpiry)
+			return nil, fmt.Errorf("%w: expiresInHours must be between 0 and %d", ErrInvalidInviteOptions, maxExpiry)
 		}
 	}
 
 	// Validate max uses
 	if opts.MaxUses != nil && *opts.MaxUses < 1 {
-		return nil, fmt.Errorf("max uses must be at least 1")
+		return nil, fmt.Errorf("%w: maxUses must be at least 1", ErrInvalidInviteOptions)
 	}
 
 	// [#117] Validate membership duration
 	if opts.MembershipDurationHours != nil && (*opts.MembershipDurationHours < 1 || *opts.MembershipDurationHours > MaxMembershipDurationHours) {
-		return nil, fmt.Errorf("membership duration hours must be between 1 and %d", MaxMembershipDurationHours)
+		return nil, fmt.Errorf("%w: membershipDurationHours must be between 1 and %d", ErrInvalidInviteOptions, MaxMembershipDurationHours)
 	}
 
 	// [D8] grantsMembership/grantsIdentity default to true. A preview-only

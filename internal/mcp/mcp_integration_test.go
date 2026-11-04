@@ -260,6 +260,22 @@ func TestMCP_CreateInvite_ShouldReturnJoinURL(t *testing.T) {
 	assert.NotEmpty(t, out["expiresAt"])
 }
 
+func TestMCP_CreateInvite_ShouldExplainExpiryLimit(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner := e.account()
+	appID := e.app(owner, 0)
+	session, _ := e.connect(owner)
+
+	// when
+	res, _ := call(t, session, "create_invite", map[string]any{"appId": appID, "expiresInHours": 168})
+
+	// then
+	require.True(t, res.IsError)
+	assert.Contains(t, errText(res), "expiresInHours must be between 0 and 48")
+	assert.NotContains(t, errText(res), "internal error")
+}
+
 func TestMCP_CreateInvite_ShouldRejectPlainMember(t *testing.T) {
 	// given
 	e := newEnv(t)

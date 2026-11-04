@@ -108,6 +108,8 @@ func (ie *InvitationEndpoints) CreateInvite(ctx *fasthttp.RequestCtx) {
 			ctx.Error("only the space owner can grant space use", fasthttp.StatusForbidden)
 		case errors.Is(err, ErrInvalidInviteRole):
 			ctx.Error("role must be admin, member or viewer", fasthttp.StatusBadRequest)
+		case errors.Is(err, ErrInvalidInviteOptions):
+			ctx.Error(err.Error(), fasthttp.StatusBadRequest)
 		default:
 			ctx.Error("Failed to create invitation", fasthttp.StatusInternalServerError)
 		}
