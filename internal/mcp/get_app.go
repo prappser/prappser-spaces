@@ -11,20 +11,23 @@ type getAppIn struct {
 }
 
 type componentView struct {
-	ID   string         `json:"id"`
-	Name string         `json:"name"`
-	Data map[string]any `json:"data"`
+	ID    string         `json:"id"`
+	Name  string         `json:"name"`
+	Index int            `json:"index"`
+	Data  map[string]any `json:"data"`
 }
 
 type groupView struct {
 	ID         string          `json:"id"`
 	Name       string          `json:"name"`
+	Index      int             `json:"index"`
 	Components []componentView `json:"components"`
 }
 
 type memberView struct {
 	DisplayName string `json:"displayName"`
 	Role        string `json:"role"`
+	PublicKey   string `json:"publicKey"`
 }
 
 type appContent struct {
@@ -34,16 +37,19 @@ type appContent struct {
 }
 
 type getAppOut struct {
-	ID        string     `json:"id"`
-	Role      string     `json:"role"`
-	Note      string     `json:"note"`
-	Untrusted appContent `json:"untrusted"`
+	ID          string     `json:"id"`
+	Role        string     `json:"role"`
+	MyPublicKey string     `json:"myPublicKey"`
+	Note        string     `json:"note"`
+	Untrusted   appContent `json:"untrusted"`
 }
 
 func addGetApp(s *sdk.Server, d Deps) {
 	sdk.AddTool(s, &sdk.Tool{
-		Name:        "get_app",
-		Description: "Get one app with its component groups, components (including chat messages) and members." + untrustedHint,
+		Name: "get_app",
+		Description: "Get one app with its component groups, components (including chat messages) and members. " +
+			"A component's name is its type: pass it to describe_component before writing. Data values are returned raw: encoded strings stay strings, write them back in the same shape. " +
+			"A member's publicKey is what per-member keys and author fields use; myPublicKey is yours." + untrustedHint,
 	}, func(_ context.Context, req *sdk.CallToolRequest, in getAppIn) (*sdk.CallToolResult, getAppOut, error) {
 		u, err := caller(req)
 		if err != nil {
@@ -55,13 +61,13 @@ func addGetApp(s *sdk.Server, d Deps) {
 		}
 		content := appContent{Name: app.Name, ComponentGroups: make([]groupView, 0, len(app.ComponentGroups)), Members: make([]memberView, 0, len(app.Members))}
 		for _, g := range app.ComponentGroups {
-			gv := groupView{ID: g.ID, Name: g.Name, Components: make([]componentView, 0, len(g.Components))}
+			gv := groupView{ID: g.ID, Name: g.Name, Index: g.Index, Components: make([]componentView, 0, len(g.Components))}
 			for _, c := range g.Components {
 				data := c.Data
 				if data == nil {
 					data = map[string]any{}
 				}
-				gv.Components = append(gv.Components, componentView{ID: c.ID, Name: c.Name, Data: data})
+				gv.Components = append(gv.Components, componentView{ID: c.ID, Name: c.Name, Index: c.Index, Data: data})
 			}
 			content.ComponentGroups = append(content.ComponentGroups, gv)
 		}
@@ -70,8 +76,8 @@ func addGetApp(s *sdk.Server, d Deps) {
 			if m.UserDisplayName != nil {
 				name = *m.UserDisplayName
 			}
-			content.Members = append(content.Members, memberView{DisplayName: name, Role: string(m.Role)})
+			content.Members = append(content.Members, memberView{DisplayName: name, Role: string(m.Role), PublicKey: m.PublicKey})
 		}
-		return nil, getAppOut{ID: app.ID, Role: roleOf(app, u.PublicKey), Note: untrustedNote, Untrusted: content}, nil
+		return nil, getAppOut{ID: app.ID, Role: roleOf(app, u.PublicKey), MyPublicKey: u.PublicKey, Note: untrustedNote, Untrusted: content}, nil
 	})
 }

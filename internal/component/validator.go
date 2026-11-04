@@ -3,6 +3,7 @@ package component
 import (
 	"bytes"
 	"embed"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -12,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
+	"github.com/santhosh-tekuri/jsonschema/v6/kind"
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
 )
@@ -52,14 +54,56 @@ func (denyLoader) Load(url string) (any, error) {
 	return nil, fmt.Errorf("external schema %q is not allowed", url)
 }
 
-type patternMerge struct {
-	re   *regexp.Regexp
-	mode string
+const (
+	AccessManage = "manage"
+	AccessMember = "member"
+	AccessNone   = "none"
+)
+
+type Flag struct {
+	Name    string
+	Default bool
 }
 
-type mergeRules struct {
-	props    map[string]string
-	patterns []patternMerge
+func (f Flag) On(data map[string]any) bool {
+	if b, ok := data[f.Name].(bool); ok {
+		return b
+	}
+	return f.Default
+}
+
+type Access struct {
+	Level   string
+	Gate    *Flag
+	Unless  *Flag
+	Fields  map[string]*Flag
+	Append  bool
+	Author  string
+	Content string
+	own     string
+}
+
+func (a Access) OwnKey(key, publicKey string) bool {
+	if a.own == "" {
+		return true
+	}
+	return regexp.MustCompile(a.own + regexp.QuoteMeta(publicKey) + "$").MatchString(key)
+}
+
+type TypeInfo struct {
+	Type        string `json:"type"`
+	Description string `json:"description"`
+}
+
+type rule struct {
+	re     *regexp.Regexp
+	merge  string
+	access Access
+}
+
+type rules struct {
+	props    map[string]rule
+	patterns []rule
 }
 
 // Build once, safe for concurrent use.
@@ -68,7 +112,10 @@ type Validator struct {
 	components   map[string]*jsonschema.Schema
 	componentIDs map[string]string
 	template     *jsonschema.Schema
-	merge        map[string]mergeRules
+	rules        map[string]rules
+	content      map[[2]string]*jsonschema.Schema
+	raw          map[string][]byte
+	desc         map[string]string
 }
 
 type componentSchema struct {
@@ -87,7 +134,10 @@ func newValidator(fsys fs.FS) (*Validator, error) {
 		compiler:     jsonschema.NewCompiler(),
 		components:   map[string]*jsonschema.Schema{},
 		componentIDs: map[string]string{},
-		merge:        map[string]mergeRules{},
+		rules:        map[string]rules{},
+		content:      map[[2]string]*jsonschema.Schema{},
+		raw:          map[string][]byte{},
+		desc:         map[string]string{},
 	}
 
 	v.compiler.UseLoader(denyLoader{})
@@ -122,11 +172,13 @@ func newValidator(fsys fs.FS) (*Validator, error) {
 			case path.Base(file) != commonSchemaFile:
 				name := strings.TrimSuffix(path.Base(file), ".v1.schema.json")
 				name = strings.ToUpper(name[:1]) + name[1:]
-				rules, err := parseMergeRules(doc)
+				rs, err := parseRules(doc)
 				if err != nil {
-					return nil, fmt.Errorf("failed to read x-merge of %s: %w", file, err)
+					return nil, fmt.Errorf("failed to read x-merge or x-access of %s: %w", file, err)
 				}
-				v.merge[name] = rules
+				v.rules[name] = rs
+				v.raw[name] = raw
+				v.desc[name], _ = doc["description"].(string)
 				pending = append(pending, componentSchema{name: name, id: id})
 			}
 		}
@@ -143,6 +195,22 @@ func newValidator(fsys fs.FS) (*Validator, error) {
 		}
 		v.components[c.name] = sch
 		v.componentIDs[c.name] = c.id
+		rs := v.rules[c.name]
+		all := append([]rule{}, rs.patterns...)
+		for _, r := range rs.props {
+			all = append(all, r)
+		}
+		for _, r := range all {
+			def := r.access.Content
+			if _, done := v.content[[2]string{c.name, def}]; def == "" || done {
+				continue
+			}
+			cs, err := v.compiler.Compile(c.id + "#/$defs/" + def)
+			if err != nil {
+				return nil, fmt.Errorf("failed to compile content %q of schema %s: %w", def, c.id, err)
+			}
+			v.content[[2]string{c.name, def}] = cs
+		}
 	}
 	if v.template == nil {
 		return nil, errors.New("template doc schema not found")
@@ -150,30 +218,127 @@ func newValidator(fsys fs.FS) (*Validator, error) {
 	return v, nil
 }
 
-func mergeMode(key string, entry any) (string, bool, error) {
-	m, _ := entry.(map[string]any)
-	raw, ok := m["x-merge"]
+func parseFlag(props map[string]any, name string) (*Flag, error) {
+	p, _ := props[name].(map[string]any)
+	def, ok := p["default"].(bool)
 	if !ok {
-		return "", false, nil
+		return nil, fmt.Errorf("flag %s has no boolean default", name)
 	}
-	mode, _ := raw.(string)
-	if !mergeModes[mode] {
-		return "", false, fmt.Errorf("invalid x-merge %v on %q", raw, key)
-	}
-	return mode, true, nil
+	return &Flag{Name: name, Default: def}, nil
 }
 
-func parseMergeRules(doc map[string]any) (mergeRules, error) {
-	rules := mergeRules{props: map[string]string{}}
+func parseAccess(raw any, props, defs map[string]any) (Access, error) {
+	switch t := raw.(type) {
+	case string:
+		if t != AccessManage && t != AccessMember && t != AccessNone {
+			return Access{}, fmt.Errorf("invalid x-access %q", t)
+		}
+		return Access{Level: t}, nil
+	case map[string]any:
+		a := Access{Level: AccessMember}
+		for k, val := range t {
+			var err error
+			switch k {
+			case "gate":
+				name, ok := val.(string)
+				if !ok {
+					return Access{}, errors.New("x-access gate must be a string")
+				}
+				a.Gate, err = parseFlag(props, name)
+			case "unless":
+				name, ok := val.(string)
+				if !ok {
+					return Access{}, errors.New("x-access unless must be a string")
+				}
+				a.Unless, err = parseFlag(props, name)
+			case "fields":
+				fields, ok := val.(map[string]any)
+				if !ok {
+					return Access{}, errors.New("x-access fields must be an object")
+				}
+				a.Fields = map[string]*Flag{}
+				for field, fv := range fields {
+					if fv == nil {
+						a.Fields[field] = nil
+						continue
+					}
+					name, ok := fv.(string)
+					if !ok {
+						return Access{}, fmt.Errorf("x-access field %s must be a string or null", field)
+					}
+					if a.Fields[field], err = parseFlag(props, name); err != nil {
+						break
+					}
+				}
+			case "append":
+				b, ok := val.(bool)
+				if !ok {
+					return Access{}, errors.New("x-access append must be a boolean")
+				}
+				a.Append = b
+			case "author":
+				if a.Author, _ = val.(string); a.Author == "" {
+					return Access{}, errors.New("x-access author must be a string")
+				}
+			case "content":
+				if a.Content, _ = val.(string); a.Content == "" {
+					return Access{}, errors.New("x-access content must be a string")
+				}
+				if _, ok := defs[a.Content]; !ok {
+					return Access{}, fmt.Errorf("x-access content %q is not in $defs", a.Content)
+				}
+			default:
+				return Access{}, fmt.Errorf("unknown x-access key %q", k)
+			}
+			if err != nil {
+				return Access{}, err
+			}
+		}
+		return a, nil
+	}
+	return Access{}, errors.New("missing x-access")
+}
+
+func parseRule(key string, entry any, props, defs map[string]any, pattern bool) (rule, error) {
+	m, _ := entry.(map[string]any)
+	acc, err := parseAccess(m["x-access"], props, defs)
+	if err != nil {
+		return rule{}, fmt.Errorf("%q: %w", key, err)
+	}
+	r := rule{access: acc}
+	if raw, ok := m["x-merge"]; ok {
+		mode, _ := raw.(string)
+		if !mergeModes[mode] {
+			return rule{}, fmt.Errorf("invalid x-merge %v on %q", raw, key)
+		}
+		r.merge = mode
+	}
+	if !pattern {
+		return r, nil
+	}
+	if r.re, err = regexp.Compile(key); err != nil {
+		return rule{}, fmt.Errorf("invalid pattern %q: %w", key, err)
+	}
+	if r.merge == "per-member" {
+		own, ok := strings.CutSuffix(key, ".+$")
+		if !ok {
+			return rule{}, fmt.Errorf("per-member pattern %q must end in .+$", key)
+		}
+		r.access.own = own
+	}
+	return r, nil
+}
+
+func parseRules(doc map[string]any) (rules, error) {
+	rs := rules{props: map[string]rule{}}
 	props, _ := doc["properties"].(map[string]any)
+	defs, _ := doc["$defs"].(map[string]any)
 	for k, e := range props {
-		mode, ok, err := mergeMode(k, e)
+		r, err := parseRule(k, e, props, defs, false)
 		if err != nil {
-			return mergeRules{}, err
+			return rules{}, err
 		}
-		if ok {
-			rules.props[k] = mode
-		}
+		rs.props[k] = r
 	}
 	pats, _ := doc["patternProperties"].(map[string]any)
 	keys := make([]string, 0, len(pats))
@@ -182,20 +347,13 @@ func parseMergeRules(doc map[string]any) (mergeRules, error) {
 	}
 	sort.Strings(keys)
 	for _, p := range keys {
-		mode, ok, err := mergeMode(p, pats[p])
+		r, err := parseRule(p, pats[p], props, defs, true)
 		if err != nil {
-			return mergeRules{}, err
+			return rules{}, err
 		}
-		if !ok {
-			continue
-		}
-		re, err := regexp.Compile(p)
-		if err != nil {
-			return mergeRules{}, fmt.Errorf("invalid pattern %q: %w", p, err)
-		}
-		rules.patterns = append(rules.patterns, patternMerge{re: re, mode: mode})
+		rs.patterns = append(rs.patterns, r)
 	}
-	return rules, nil
+	return rs, nil
 }
 
 func (v *Validator) ValidateComponentData(componentType string, data map[string]any) error {
@@ -203,14 +361,49 @@ func (v *Validator) ValidateComponentData(componentType string, data map[string]
 	if !ok {
 		return fmt.Errorf("%w: %q", ErrUnknownComponentType, componentType)
 	}
-	return validate(sch, data)
+	return validate(sch, data, false)
+}
+
+// ValidateComponentKeys validates a partial write: root-level required errors are dropped, since the data holds only the keys being written.
+func (v *Validator) ValidateComponentKeys(componentType string, data map[string]any) error {
+	sch, ok := v.components[componentType]
+	if !ok {
+		return fmt.Errorf("%w: %q", ErrUnknownComponentType, componentType)
+	}
+	return validate(sch, data, true)
+}
+
+func (v *Validator) ValidateContent(componentType, def, raw string) error {
+	sch, ok := v.content[[2]string{componentType, def}]
+	if !ok {
+		return fmt.Errorf("%w: %q has no content %q", ErrUnknownComponentType, componentType, def)
+	}
+	decoded, err := jsonschema.UnmarshalJSON(strings.NewReader(raw))
+	if err != nil {
+		return ValidationErrors{{Path: "", Message: "not valid JSON"}}
+	}
+	return validate(sch, decoded, false)
 }
 
 func (v *Validator) ValidateTemplateDoc(doc map[string]any) error {
-	return validate(v.template, doc)
+	return validate(v.template, doc, false)
 }
 
-func validate(sch *jsonschema.Schema, data map[string]any) error {
+func (v *Validator) Types() []TypeInfo {
+	out := make([]TypeInfo, 0, len(v.components))
+	for name := range v.components {
+		out = append(out, TypeInfo{Type: name, Description: v.desc[name]})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Type < out[j].Type })
+	return out
+}
+
+func (v *Validator) Schema(componentType string) (json.RawMessage, bool) {
+	raw, ok := v.raw[componentType]
+	return raw, ok
+}
+
+func validate(sch *jsonschema.Schema, data any, partial bool) error {
 	err := sch.Validate(data)
 	if err == nil {
 		return nil
@@ -220,7 +413,10 @@ func validate(sch *jsonschema.Schema, data map[string]any) error {
 		return fmt.Errorf("%w: %w", ErrInvalidData, err)
 	}
 	var out ValidationErrors
-	collectLeaves(verr, message.NewPrinter(language.English), &out)
+	collectLeaves(verr, message.NewPrinter(language.English), partial, &out)
+	if len(out) == 0 {
+		return nil
+	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Path != out[j].Path {
 			return out[i].Path < out[j].Path
@@ -230,13 +426,16 @@ func validate(sch *jsonschema.Schema, data map[string]any) error {
 	return out
 }
 
-func collectLeaves(e *jsonschema.ValidationError, p *message.Printer, out *ValidationErrors) {
+func collectLeaves(e *jsonschema.ValidationError, p *message.Printer, partial bool, out *ValidationErrors) {
 	if len(e.Causes) == 0 {
+		if _, required := e.ErrorKind.(*kind.Required); partial && required && len(e.InstanceLocation) == 0 {
+			return
+		}
 		*out = append(*out, FieldError{Path: jsonPointer(e.InstanceLocation), Message: e.ErrorKind.LocalizedString(p)})
 		return
 	}
 	for _, c := range e.Causes {
-		collectLeaves(c, p, out)
+		collectLeaves(c, p, partial, out)
 	}
 }
 
@@ -251,19 +450,29 @@ func jsonPointer(loc []string) string {
 	return sb.String()
 }
 
-// MergeMode resolves a key: exact properties win, then the first matching pattern (in sorted pattern order).
-func (v *Validator) MergeMode(componentType, key string) (string, bool) {
-	rules, ok := v.merge[componentType]
+// resolve finds a key's rule: exact properties win, then the first matching pattern (in sorted pattern order).
+func (v *Validator) resolve(componentType, key string) (rule, bool) {
+	rs, ok := v.rules[componentType]
 	if !ok {
-		return "", false
+		return rule{}, false
 	}
-	if mode, ok := rules.props[key]; ok {
-		return mode, true
+	if r, ok := rs.props[key]; ok {
+		return r, true
 	}
-	for _, p := range rules.patterns {
-		if p.re.MatchString(key) {
-			return p.mode, true
+	for _, r := range rs.patterns {
+		if r.re.MatchString(key) {
+			return r, true
 		}
 	}
-	return "", false
+	return rule{}, false
+}
+
+func (v *Validator) MergeMode(componentType, key string) (string, bool) {
+	r, ok := v.resolve(componentType, key)
+	return r.merge, ok && r.merge != ""
+}
+
+func (v *Validator) Access(componentType, key string) (Access, bool) {
+	r, ok := v.resolve(componentType, key)
+	return r.access, ok
 }
