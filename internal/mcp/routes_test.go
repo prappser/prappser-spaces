@@ -10,7 +10,9 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/auth"
+	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/valyala/fasthttp"
 
 	"github.com/prappser/prappser-spaces/internal/middleware"
@@ -60,6 +62,23 @@ func TestMount_ShouldRejectBodyOverLimit(t *testing.T) {
 	assert.Equal(t, fasthttp.StatusRequestEntityTooLarge, declared.Response.StatusCode())
 	assert.Equal(t, fasthttp.StatusRequestEntityTooLarge, chunked.Response.StatusCode())
 	assert.Equal(t, fasthttp.StatusUnauthorized, small.Response.StatusCode())
+}
+
+func TestNewServer_ShouldAdvertiseToolsWithoutListChanged(t *testing.T) {
+	// given
+	ct, st := sdk.NewInMemoryTransports()
+	_, err := newServer(Deps{}).Connect(context.Background(), st, nil)
+	require.NoError(t, err)
+
+	// when
+	session, err := sdk.NewClient(&sdk.Implementation{Name: "test", Version: "1"}, nil).Connect(context.Background(), ct, nil)
+	require.NoError(t, err)
+	defer session.Close()
+
+	// then
+	tools := session.InitializeResult().Capabilities.Tools
+	require.NotNil(t, tools)
+	assert.False(t, tools.ListChanged)
 }
 
 func TestLimitByDevice_ShouldLimitPerDeviceAndSendRetryAfter(t *testing.T) {
