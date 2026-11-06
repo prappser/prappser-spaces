@@ -127,6 +127,26 @@
           "detailsDocument": null,
           "order": null
         }
+      },
+      "x-notify": {
+        "on": "new",
+        "kind": "item",
+        "scope": "component",
+        "text": [
+          {
+            "field": "title"
+          }
+        ],
+        "join": {
+          "prefix": "+ ",
+          "sep": ", ",
+          "show": 2,
+          "more": "itemsMore"
+        },
+        "skipListed": {
+          "list": "items",
+          "prefix": "item_"
+        }
       }
     },
     "^_": {

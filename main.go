@@ -181,7 +181,11 @@ func main() {
 		log.Fatal().Err(err).Msg("Failed to initialize space VAPID keys")
 	}
 	pushSender := push.NewHTTPWebpushSender()
-	pushService := push.NewPushService(pushRepo, pushSender, pushVapidService)
+	componentValidator, err := component.NewValidator()
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to load component schemas")
+	}
+	pushService := push.NewPushService(pushRepo, pushSender, pushVapidService, componentValidator)
 	pushEndpoints := push.NewPushEndpoints(pushService, pushRepo, pushVapidService)
 
 	eventService := event.NewEventService(eventRepository, appRepository, wsHub, pushService)
@@ -283,10 +287,6 @@ func main() {
 
 	var handler fasthttp.RequestHandler = requestHandler
 	if config.MCPEnabled {
-		componentValidator, err := component.NewValidator()
-		if err != nil {
-			log.Fatal().Err(err).Msg("Failed to load component schemas")
-		}
 		handler = mcp.Mount(handler, mcp.Deps{
 			Apps:        appService,
 			Invitations: invitationService,

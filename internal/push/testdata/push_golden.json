@@ -1,0 +1,2764 @@
+{
+  "chat blank body": "none",
+  "chat blank name file attachment": [
+    {
+      "subscription": "sub-de-other-muted",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: 📎 File",
+        "eventId": "evt-1",
+        "kind": "chat",
+        "tag": "app-1|chat|chat-1",
+        "title": "Trip",
+        "v": 2,
+        "view": "chat"
+      },
+      "urgency": "high",
+      "ttl": 21600,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-en",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: 📎 File",
+        "eventId": "evt-1",
+        "kind": "chat",
+        "tag": "app-1|chat|chat-1",
+        "title": "Trip",
+        "v": 2,
+        "view": "chat"
+      },
+      "urgency": "high",
+      "ttl": 21600,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-pl",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: 📎 Plik",
+        "eventId": "evt-1",
+        "kind": "chat",
+        "tag": "app-1|chat|chat-1",
+        "title": "Trip",
+        "v": 2,
+        "view": "chat"
+      },
+      "urgency": "high",
+      "ttl": 21600,
+      "topic": ""
+    }
+  ],
+  "chat body exactly 120 runes": [
+    {
+      "subscription": "sub-de-other-muted",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: ąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąą",
+        "eventId": "evt-1",
+        "kind": "chat",
+        "tag": "app-1|chat|chat-1",
+        "title": "Trip",
+        "v": 2,
+        "view": "chat"
+      },
+      "urgency": "high",
+      "ttl": 21600,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-en",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: ąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąą",
+        "eventId": "evt-1",
+        "kind": "chat",
+        "tag": "app-1|chat|chat-1",
+        "title": "Trip",
+        "v": 2,
+        "view": "chat"
+      },
+      "urgency": "high",
+      "ttl": 21600,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-pl",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: ąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąąą",
+        "eventId": "evt-1",
+        "kind": "chat",
+        "tag": "app-1|chat|chat-1",
+        "title": "Trip",
+        "v": 2,
+        "view": "chat"
+      },
+      "urgency": "high",
+      "ttl": 21600,
+      "topic": ""
+    }
+  ],
+  "chat body fallback without attachment": [
+    {
+      "subscription": "sub-de-other-muted",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: [photo]",
+        "eventId": "evt-1",
+        "kind": "chat",
+        "tag": "app-1|chat|chat-1",
+        "title": "Trip",
+        "v": 2,
+        "view": "chat"
+      },
+      "urgency": "high",
+      "ttl": 21600,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-en",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: [photo]",
+        "eventId": "evt-1",
+        "kind": "chat",
+        "tag": "app-1|chat|chat-1",
+        "title": "Trip",
+        "v": 2,
+        "view": "chat"
+      },
+      "urgency": "high",
+      "ttl": 21600,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-pl",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: [photo]",
+        "eventId": "evt-1",
+        "kind": "chat",
+        "tag": "app-1|chat|chat-1",
+        "title": "Trip",
+        "v": 2,
+        "view": "chat"
+      },
+      "urgency": "high",
+      "ttl": 21600,
+      "topic": ""
+    }
+  ],
+  "chat body whitespace collapsed": [
+    {
+      "subscription": "sub-de-other-muted",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: a b c",
+        "eventId": "evt-1",
+        "kind": "chat",
+        "tag": "app-1|chat|chat-1",
+        "title": "Trip",
+        "v": 2,
+        "view": "chat"
+      },
+      "urgency": "high",
+      "ttl": 21600,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-en",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: a b c",
+        "eventId": "evt-1",
+        "kind": "chat",
+        "tag": "app-1|chat|chat-1",
+        "title": "Trip",
+        "v": 2,
+        "view": "chat"
+      },
+      "urgency": "high",
+      "ttl": 21600,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-pl",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: a b c",
+        "eventId": "evt-1",
+        "kind": "chat",
+        "tag": "app-1|chat|chat-1",
+        "title": "Trip",
+        "v": 2,
+        "view": "chat"
+      },
+      "urgency": "high",
+      "ttl": 21600,
+      "topic": ""
+    }
+  ],
+  "chat by agent": [
+    {
+      "subscription": "sub-de-other-muted",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann (agent): hi",
+        "eventId": "evt-1",
+        "kind": "chat",
+        "tag": "app-1|chat|chat-1",
+        "title": "Trip",
+        "v": 2,
+        "view": "chat"
+      },
+      "urgency": "high",
+      "ttl": 21600,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-en",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann (agent): hi",
+        "eventId": "evt-1",
+        "kind": "chat",
+        "tag": "app-1|chat|chat-1",
+        "title": "Trip",
+        "v": 2,
+        "view": "chat"
+      },
+      "urgency": "high",
+      "ttl": 21600,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-pl",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann (agent): hi",
+        "eventId": "evt-1",
+        "kind": "chat",
+        "tag": "app-1|chat|chat-1",
+        "title": "Trip",
+        "v": 2,
+        "view": "chat"
+      },
+      "urgency": "high",
+      "ttl": 21600,
+      "topic": ""
+    }
+  ],
+  "chat by blank named person": [
+    {
+      "subscription": "sub-de-other-muted",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Someone: hi",
+        "eventId": "evt-1",
+        "kind": "chat",
+        "tag": "app-1|chat|chat-1",
+        "title": "Trip",
+        "v": 2,
+        "view": "chat"
+      },
+      "urgency": "high",
+      "ttl": 21600,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-en",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Someone: hi",
+        "eventId": "evt-1",
+        "kind": "chat",
+        "tag": "app-1|chat|chat-1",
+        "title": "Trip",
+        "v": 2,
+        "view": "chat"
+      },
+      "urgency": "high",
+      "ttl": 21600,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-pl",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ktoś: hi",
+        "eventId": "evt-1",
+        "kind": "chat",
+        "tag": "app-1|chat|chat-1",
+        "title": "Trip",
+        "v": 2,
+        "view": "chat"
+      },
+      "urgency": "high",
+      "ttl": 21600,
+      "topic": ""
+    }
+  ],
+  "chat by unnamed agent": [
+    {
+      "subscription": "sub-de-other-muted",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Someone (agent): hi",
+        "eventId": "evt-1",
+        "kind": "chat",
+        "tag": "app-1|chat|chat-1",
+        "title": "Trip",
+        "v": 2,
+        "view": "chat"
+      },
+      "urgency": "high",
+      "ttl": 21600,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-en",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Someone (agent): hi",
+        "eventId": "evt-1",
+        "kind": "chat",
+        "tag": "app-1|chat|chat-1",
+        "title": "Trip",
+        "v": 2,
+        "view": "chat"
+      },
+      "urgency": "high",
+      "ttl": 21600,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-pl",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ktoś (agent): hi",
+        "eventId": "evt-1",
+        "kind": "chat",
+        "tag": "app-1|chat|chat-1",
+        "title": "Trip",
+        "v": 2,
+        "view": "chat"
+      },
+      "urgency": "high",
+      "ttl": 21600,
+      "topic": ""
+    }
+  ],
+  "chat by unnamed person": [
+    {
+      "subscription": "sub-de-other-muted",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Someone: hi",
+        "eventId": "evt-1",
+        "kind": "chat",
+        "tag": "app-1|chat|chat-1",
+        "title": "Trip",
+        "v": 2,
+        "view": "chat"
+      },
+      "urgency": "high",
+      "ttl": 21600,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-en",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Someone: hi",
+        "eventId": "evt-1",
+        "kind": "chat",
+        "tag": "app-1|chat|chat-1",
+        "title": "Trip",
+        "v": 2,
+        "view": "chat"
+      },
+      "urgency": "high",
+      "ttl": 21600,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-pl",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ktoś: hi",
+        "eventId": "evt-1",
+        "kind": "chat",
+        "tag": "app-1|chat|chat-1",
+        "title": "Trip",
+        "v": 2,
+        "view": "chat"
+      },
+      "urgency": "high",
+      "ttl": 21600,
+      "topic": ""
+    }
+  ],
+  "chat edit of old message": "none",
+  "chat file attachment with real body": [
+    {
+      "subscription": "sub-de-other-muted",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: see this",
+        "eventId": "evt-1",
+        "kind": "chat",
+        "tag": "app-1|chat|chat-1",
+        "title": "Trip",
+        "v": 2,
+        "view": "chat"
+      },
+      "urgency": "high",
+      "ttl": 21600,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-en",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: see this",
+        "eventId": "evt-1",
+        "kind": "chat",
+        "tag": "app-1|chat|chat-1",
+        "title": "Trip",
+        "v": 2,
+        "view": "chat"
+      },
+      "urgency": "high",
+      "ttl": 21600,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-pl",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: see this",
+        "eventId": "evt-1",
+        "kind": "chat",
+        "tag": "app-1|chat|chat-1",
+        "title": "Trip",
+        "v": 2,
+        "view": "chat"
+      },
+      "urgency": "high",
+      "ttl": 21600,
+      "topic": ""
+    }
+  ],
+  "chat image attachment body fallback": [
+    {
+      "subscription": "sub-de-other-muted",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: 📷 Photo",
+        "eventId": "evt-1",
+        "kind": "chat",
+        "tag": "app-1|chat|chat-1",
+        "title": "Trip",
+        "v": 2,
+        "view": "chat"
+      },
+      "urgency": "high",
+      "ttl": 21600,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-en",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: 📷 Photo",
+        "eventId": "evt-1",
+        "kind": "chat",
+        "tag": "app-1|chat|chat-1",
+        "title": "Trip",
+        "v": 2,
+        "view": "chat"
+      },
+      "urgency": "high",
+      "ttl": 21600,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-pl",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: 📷 Zdjęcie",
+        "eventId": "evt-1",
+        "kind": "chat",
+        "tag": "app-1|chat|chat-1",
+        "title": "Trip",
+        "v": 2,
+        "view": "chat"
+      },
+      "urgency": "high",
+      "ttl": 21600,
+      "topic": ""
+    }
+  ],
+  "chat image attachment only": [
+    {
+      "subscription": "sub-de-other-muted",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: 📷 Photo",
+        "eventId": "evt-1",
+        "kind": "chat",
+        "tag": "app-1|chat|chat-1",
+        "title": "Trip",
+        "v": 2,
+        "view": "chat"
+      },
+      "urgency": "high",
+      "ttl": 21600,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-en",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: 📷 Photo",
+        "eventId": "evt-1",
+        "kind": "chat",
+        "tag": "app-1|chat|chat-1",
+        "title": "Trip",
+        "v": 2,
+        "view": "chat"
+      },
+      "urgency": "high",
+      "ttl": 21600,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-pl",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: 📷 Zdjęcie",
+        "eventId": "evt-1",
+        "kind": "chat",
+        "tag": "app-1|chat|chat-1",
+        "title": "Trip",
+        "v": 2,
+        "view": "chat"
+      },
+      "urgency": "high",
+      "ttl": 21600,
+      "topic": ""
+    }
+  ],
+  "chat in app with long name": [
+    {
+      "subscription": "sub-de-other-muted",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: hi",
+        "eventId": "evt-1",
+        "kind": "chat",
+        "tag": "app-1|chat|chat-1",
+        "title": "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN…",
+        "v": 2,
+        "view": "chat"
+      },
+      "urgency": "high",
+      "ttl": 21600,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-en",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: hi",
+        "eventId": "evt-1",
+        "kind": "chat",
+        "tag": "app-1|chat|chat-1",
+        "title": "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN…",
+        "v": 2,
+        "view": "chat"
+      },
+      "urgency": "high",
+      "ttl": 21600,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-pl",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: hi",
+        "eventId": "evt-1",
+        "kind": "chat",
+        "tag": "app-1|chat|chat-1",
+        "title": "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN…",
+        "v": 2,
+        "view": "chat"
+      },
+      "urgency": "high",
+      "ttl": 21600,
+      "topic": ""
+    }
+  ],
+  "chat in app without name": [
+    {
+      "subscription": "sub-de-other-muted",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: hi",
+        "eventId": "evt-1",
+        "kind": "chat",
+        "tag": "app-1|chat|chat-1",
+        "title": "Prappser",
+        "v": 2,
+        "view": "chat"
+      },
+      "urgency": "high",
+      "ttl": 21600,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-en",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: hi",
+        "eventId": "evt-1",
+        "kind": "chat",
+        "tag": "app-1|chat|chat-1",
+        "title": "Prappser",
+        "v": 2,
+        "view": "chat"
+      },
+      "urgency": "high",
+      "ttl": 21600,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-pl",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: hi",
+        "eventId": "evt-1",
+        "kind": "chat",
+        "tag": "app-1|chat|chat-1",
+        "title": "Prappser",
+        "v": 2,
+        "view": "chat"
+      },
+      "urgency": "high",
+      "ttl": 21600,
+      "topic": ""
+    }
+  ],
+  "chat last key wins": [
+    {
+      "subscription": "sub-de-other-muted",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: third",
+        "eventId": "evt-1",
+        "kind": "chat",
+        "tag": "app-1|chat|chat-1",
+        "title": "Trip",
+        "v": 2,
+        "view": "chat"
+      },
+      "urgency": "high",
+      "ttl": 21600,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-en",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: third",
+        "eventId": "evt-1",
+        "kind": "chat",
+        "tag": "app-1|chat|chat-1",
+        "title": "Trip",
+        "v": 2,
+        "view": "chat"
+      },
+      "urgency": "high",
+      "ttl": 21600,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-pl",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: third",
+        "eventId": "evt-1",
+        "kind": "chat",
+        "tag": "app-1|chat|chat-1",
+        "title": "Trip",
+        "v": 2,
+        "view": "chat"
+      },
+      "urgency": "high",
+      "ttl": 21600,
+      "topic": ""
+    }
+  ],
+  "chat layout key": "none",
+  "chat long body truncated": [
+    {
+      "subscription": "sub-de-other-muted",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa…",
+        "eventId": "evt-1",
+        "kind": "chat",
+        "tag": "app-1|chat|chat-1",
+        "title": "Trip",
+        "v": 2,
+        "view": "chat"
+      },
+      "urgency": "high",
+      "ttl": 21600,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-en",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa…",
+        "eventId": "evt-1",
+        "kind": "chat",
+        "tag": "app-1|chat|chat-1",
+        "title": "Trip",
+        "v": 2,
+        "view": "chat"
+      },
+      "urgency": "high",
+      "ttl": 21600,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-pl",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa…",
+        "eventId": "evt-1",
+        "kind": "chat",
+        "tag": "app-1|chat|chat-1",
+        "title": "Trip",
+        "v": 2,
+        "view": "chat"
+      },
+      "urgency": "high",
+      "ttl": 21600,
+      "topic": ""
+    }
+  ],
+  "chat named file attachment": [
+    {
+      "subscription": "sub-de-other-muted",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: 📎 plan.pdf",
+        "eventId": "evt-1",
+        "kind": "chat",
+        "tag": "app-1|chat|chat-1",
+        "title": "Trip",
+        "v": 2,
+        "view": "chat"
+      },
+      "urgency": "high",
+      "ttl": 21600,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-en",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: 📎 plan.pdf",
+        "eventId": "evt-1",
+        "kind": "chat",
+        "tag": "app-1|chat|chat-1",
+        "title": "Trip",
+        "v": 2,
+        "view": "chat"
+      },
+      "urgency": "high",
+      "ttl": 21600,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-pl",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: 📎 plan.pdf",
+        "eventId": "evt-1",
+        "kind": "chat",
+        "tag": "app-1|chat|chat-1",
+        "title": "Trip",
+        "v": 2,
+        "view": "chat"
+      },
+      "urgency": "high",
+      "ttl": 21600,
+      "topic": ""
+    }
+  ],
+  "chat non json value": "none",
+  "chat plain text": [
+    {
+      "subscription": "sub-de-other-muted",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: hi there",
+        "eventId": "evt-1",
+        "kind": "chat",
+        "tag": "app-1|chat|chat-1",
+        "title": "Trip",
+        "v": 2,
+        "view": "chat"
+      },
+      "urgency": "high",
+      "ttl": 21600,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-en",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: hi there",
+        "eventId": "evt-1",
+        "kind": "chat",
+        "tag": "app-1|chat|chat-1",
+        "title": "Trip",
+        "v": 2,
+        "view": "chat"
+      },
+      "urgency": "high",
+      "ttl": 21600,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-pl",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: hi there",
+        "eventId": "evt-1",
+        "kind": "chat",
+        "tag": "app-1|chat|chat-1",
+        "title": "Trip",
+        "v": 2,
+        "view": "chat"
+      },
+      "urgency": "high",
+      "ttl": 21600,
+      "topic": ""
+    }
+  ],
+  "chat reaction": "none",
+  "chat value is a number": "none",
+  "chat value is an object": "none",
+  "chat without application": "none",
+  "checklist blank title": "none",
+  "checklist by agent": [
+    {
+      "subscription": "sub-de-other-muted",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann (agent): + Milk",
+        "eventId": "evt-1",
+        "kind": "item",
+        "tag": "app-1|item|list-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": "KMM6m-IuqSy7Crn8hYrs9WlSJ4ME1-OD"
+    },
+    {
+      "subscription": "sub-en",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann (agent): + Milk",
+        "eventId": "evt-1",
+        "kind": "item",
+        "tag": "app-1|item|list-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": "KMM6m-IuqSy7Crn8hYrs9WlSJ4ME1-OD"
+    },
+    {
+      "subscription": "sub-pl",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann (agent): + Milk",
+        "eventId": "evt-1",
+        "kind": "item",
+        "tag": "app-1|item|list-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": "KMM6m-IuqSy7Crn8hYrs9WlSJ4ME1-OD"
+    }
+  ],
+  "checklist four items": [
+    {
+      "subscription": "sub-de-other-muted",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: + A, B and 2 more",
+        "eventId": "evt-1",
+        "kind": "item",
+        "tag": "app-1|item|list-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": "KMM6m-IuqSy7Crn8hYrs9WlSJ4ME1-OD"
+    },
+    {
+      "subscription": "sub-en",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: + A, B and 2 more",
+        "eventId": "evt-1",
+        "kind": "item",
+        "tag": "app-1|item|list-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": "KMM6m-IuqSy7Crn8hYrs9WlSJ4ME1-OD"
+    },
+    {
+      "subscription": "sub-pl",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: + A, B i 2 innych",
+        "eventId": "evt-1",
+        "kind": "item",
+        "tag": "app-1|item|list-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": "KMM6m-IuqSy7Crn8hYrs9WlSJ4ME1-OD"
+    }
+  ],
+  "checklist items key": "none",
+  "checklist legacy id beside new item": [
+    {
+      "subscription": "sub-de-other-muted",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: + Eggs",
+        "eventId": "evt-1",
+        "kind": "item",
+        "tag": "app-1|item|list-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": "KMM6m-IuqSy7Crn8hYrs9WlSJ4ME1-OD"
+    },
+    {
+      "subscription": "sub-en",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: + Eggs",
+        "eventId": "evt-1",
+        "kind": "item",
+        "tag": "app-1|item|list-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": "KMM6m-IuqSy7Crn8hYrs9WlSJ4ME1-OD"
+    },
+    {
+      "subscription": "sub-pl",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: + Eggs",
+        "eventId": "evt-1",
+        "kind": "item",
+        "tag": "app-1|item|list-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": "KMM6m-IuqSy7Crn8hYrs9WlSJ4ME1-OD"
+    }
+  ],
+  "checklist legacy id skipped": "none",
+  "checklist one item": [
+    {
+      "subscription": "sub-de-other-muted",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: + Milk",
+        "eventId": "evt-1",
+        "kind": "item",
+        "tag": "app-1|item|list-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": "KMM6m-IuqSy7Crn8hYrs9WlSJ4ME1-OD"
+    },
+    {
+      "subscription": "sub-en",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: + Milk",
+        "eventId": "evt-1",
+        "kind": "item",
+        "tag": "app-1|item|list-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": "KMM6m-IuqSy7Crn8hYrs9WlSJ4ME1-OD"
+    },
+    {
+      "subscription": "sub-pl",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: + Milk",
+        "eventId": "evt-1",
+        "kind": "item",
+        "tag": "app-1|item|list-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": "KMM6m-IuqSy7Crn8hYrs9WlSJ4ME1-OD"
+    }
+  ],
+  "checklist rename": "none",
+  "checklist three items": [
+    {
+      "subscription": "sub-de-other-muted",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: + A, B and 1 more",
+        "eventId": "evt-1",
+        "kind": "item",
+        "tag": "app-1|item|list-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": "KMM6m-IuqSy7Crn8hYrs9WlSJ4ME1-OD"
+    },
+    {
+      "subscription": "sub-en",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: + A, B and 1 more",
+        "eventId": "evt-1",
+        "kind": "item",
+        "tag": "app-1|item|list-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": "KMM6m-IuqSy7Crn8hYrs9WlSJ4ME1-OD"
+    },
+    {
+      "subscription": "sub-pl",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: + A, B i 1 innych",
+        "eventId": "evt-1",
+        "kind": "item",
+        "tag": "app-1|item|list-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": "KMM6m-IuqSy7Crn8hYrs9WlSJ4ME1-OD"
+    }
+  ],
+  "checklist tick": "none",
+  "checklist tombstone": "none",
+  "checklist two items": [
+    {
+      "subscription": "sub-de-other-muted",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: + A, B",
+        "eventId": "evt-1",
+        "kind": "item",
+        "tag": "app-1|item|list-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": "KMM6m-IuqSy7Crn8hYrs9WlSJ4ME1-OD"
+    },
+    {
+      "subscription": "sub-en",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: + A, B",
+        "eventId": "evt-1",
+        "kind": "item",
+        "tag": "app-1|item|list-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": "KMM6m-IuqSy7Crn8hYrs9WlSJ4ME1-OD"
+    },
+    {
+      "subscription": "sub-pl",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: + A, B",
+        "eventId": "evt-1",
+        "kind": "item",
+        "tag": "app-1|item|list-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": "KMM6m-IuqSy7Crn8hYrs9WlSJ4ME1-OD"
+    }
+  ],
+  "countdown component": "none",
+  "event type application_after_edit_mode_changed": "none",
+  "event type application_created": "none",
+  "event type application_data_changed": "none",
+  "event type application_file_created": "none",
+  "event type application_file_deleted": "none",
+  "event type invite_revoked": "none",
+  "event type member_removed": "none",
+  "expenses component": "none",
+  "files garbage": "none",
+  "files item added": [
+    {
+      "subscription": "sub-de-other-muted",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: 📎 c.pdf",
+        "eventId": "evt-1",
+        "kind": "file",
+        "tag": "app-1|file|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-en",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: 📎 c.pdf",
+        "eventId": "evt-1",
+        "kind": "file",
+        "tag": "app-1|file|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-pl",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: 📎 c.pdf",
+        "eventId": "evt-1",
+        "kind": "file",
+        "tag": "app-1|file|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": ""
+    }
+  ],
+  "files item added blank filename": [
+    {
+      "subscription": "sub-de-other-muted",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: 📎 File",
+        "eventId": "evt-1",
+        "kind": "file",
+        "tag": "app-1|file|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-en",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: 📎 File",
+        "eventId": "evt-1",
+        "kind": "file",
+        "tag": "app-1|file|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-pl",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: 📎 Plik",
+        "eventId": "evt-1",
+        "kind": "file",
+        "tag": "app-1|file|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": ""
+    }
+  ],
+  "files item added by agent": [
+    {
+      "subscription": "sub-de-other-muted",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann (agent): 📎 b.pdf",
+        "eventId": "evt-1",
+        "kind": "file",
+        "tag": "app-1|file|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-en",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann (agent): 📎 b.pdf",
+        "eventId": "evt-1",
+        "kind": "file",
+        "tag": "app-1|file|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-pl",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann (agent): 📎 b.pdf",
+        "eventId": "evt-1",
+        "kind": "file",
+        "tag": "app-1|file|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": ""
+    }
+  ],
+  "files item removed": "none",
+  "files without new id": "none",
+  "gallery item added": [
+    {
+      "subscription": "sub-de-other-muted",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: 📎 p.jpg",
+        "eventId": "evt-1",
+        "kind": "file",
+        "tag": "app-1|file|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-en",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: 📎 p.jpg",
+        "eventId": "evt-1",
+        "kind": "file",
+        "tag": "app-1|file|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-pl",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: 📎 p.jpg",
+        "eventId": "evt-1",
+        "kind": "file",
+        "tag": "app-1|file|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": ""
+    }
+  ],
+  "gallery item added blank filename": [
+    {
+      "subscription": "sub-de-other-muted",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: 📎 File",
+        "eventId": "evt-1",
+        "kind": "file",
+        "tag": "app-1|file|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-en",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: 📎 File",
+        "eventId": "evt-1",
+        "kind": "file",
+        "tag": "app-1|file|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-pl",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: 📎 Plik",
+        "eventId": "evt-1",
+        "kind": "file",
+        "tag": "app-1|file|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": ""
+    }
+  ],
+  "map component": "none",
+  "member added": [
+    {
+      "subscription": "sub-de-other-muted",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "New member: Bo",
+        "eventId": "evt-1",
+        "kind": "member",
+        "tag": "app-1|member|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-en",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "New member: Bo",
+        "eventId": "evt-1",
+        "kind": "member",
+        "tag": "app-1|member|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-pl",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Nowa osoba: Bo",
+        "eventId": "evt-1",
+        "kind": "member",
+        "tag": "app-1|member|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": ""
+    }
+  ],
+  "member added by agent": [
+    {
+      "subscription": "sub-de-other-muted",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "New member: Bo",
+        "eventId": "evt-1",
+        "kind": "member",
+        "tag": "app-1|member|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-en",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "New member: Bo",
+        "eventId": "evt-1",
+        "kind": "member",
+        "tag": "app-1|member|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-pl",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Nowa osoba: Bo",
+        "eventId": "evt-1",
+        "kind": "member",
+        "tag": "app-1|member|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": ""
+    }
+  ],
+  "member added long name": [
+    {
+      "subscription": "sub-de-other-muted",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "New member: BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB…",
+        "eventId": "evt-1",
+        "kind": "member",
+        "tag": "app-1|member|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-en",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "New member: BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB…",
+        "eventId": "evt-1",
+        "kind": "member",
+        "tag": "app-1|member|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-pl",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Nowa osoba: BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB…",
+        "eventId": "evt-1",
+        "kind": "member",
+        "tag": "app-1|member|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": ""
+    }
+  ],
+  "member added long name by agent": [
+    {
+      "subscription": "sub-de-other-muted",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "New member: BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB…",
+        "eventId": "evt-1",
+        "kind": "member",
+        "tag": "app-1|member|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-en",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "New member: BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB…",
+        "eventId": "evt-1",
+        "kind": "member",
+        "tag": "app-1|member|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-pl",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Nowa osoba: BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB…",
+        "eventId": "evt-1",
+        "kind": "member",
+        "tag": "app-1|member|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": ""
+    }
+  ],
+  "member added without application": [
+    {
+      "subscription": "sub-de-other-muted",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "New member: Bo",
+        "eventId": "evt-1",
+        "kind": "member",
+        "tag": "app-1|member|evt-1",
+        "title": "Prappser",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-en",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "New member: Bo",
+        "eventId": "evt-1",
+        "kind": "member",
+        "tag": "app-1|member|evt-1",
+        "title": "Prappser",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-pl",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Nowa osoba: Bo",
+        "eventId": "evt-1",
+        "kind": "member",
+        "tag": "app-1|member|evt-1",
+        "title": "Prappser",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": ""
+    }
+  ],
+  "member added without application by agent": [
+    {
+      "subscription": "sub-de-other-muted",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "New member: Bo",
+        "eventId": "evt-1",
+        "kind": "member",
+        "tag": "app-1|member|evt-1",
+        "title": "Prappser",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-en",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "New member: Bo",
+        "eventId": "evt-1",
+        "kind": "member",
+        "tag": "app-1|member|evt-1",
+        "title": "Prappser",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-pl",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Nowa osoba: Bo",
+        "eventId": "evt-1",
+        "kind": "member",
+        "tag": "app-1|member|evt-1",
+        "title": "Prappser",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": ""
+    }
+  ],
+  "member added without name": [
+    {
+      "subscription": "sub-de-other-muted",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "New member: Someone",
+        "eventId": "evt-1",
+        "kind": "member",
+        "tag": "app-1|member|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-en",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "New member: Someone",
+        "eventId": "evt-1",
+        "kind": "member",
+        "tag": "app-1|member|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-pl",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Nowa osoba: Ktoś",
+        "eventId": "evt-1",
+        "kind": "member",
+        "tag": "app-1|member|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": ""
+    }
+  ],
+  "member added without name by agent": [
+    {
+      "subscription": "sub-de-other-muted",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "New member: Someone",
+        "eventId": "evt-1",
+        "kind": "member",
+        "tag": "app-1|member|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-en",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "New member: Someone",
+        "eventId": "evt-1",
+        "kind": "member",
+        "tag": "app-1|member|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-pl",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Nowa osoba: Ktoś",
+        "eventId": "evt-1",
+        "kind": "member",
+        "tag": "app-1|member|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": ""
+    }
+  ],
+  "poll closed again": "none",
+  "poll closed by unnamed person": [
+    {
+      "subscription": "sub-de-other-muted",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Someone: Poll closed: Where do we eat?",
+        "eventId": "evt-1",
+        "kind": "poll",
+        "tag": "app-1|poll|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-en",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Someone: Poll closed: Where do we eat?",
+        "eventId": "evt-1",
+        "kind": "poll",
+        "tag": "app-1|poll|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-pl",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ktoś: Ankieta zamknięta: Where do we eat?",
+        "eventId": "evt-1",
+        "kind": "poll",
+        "tag": "app-1|poll|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": ""
+    }
+  ],
+  "poll closed with question": [
+    {
+      "subscription": "sub-de-other-muted",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: Poll closed: Where do we eat?",
+        "eventId": "evt-1",
+        "kind": "poll",
+        "tag": "app-1|poll|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-en",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: Poll closed: Where do we eat?",
+        "eventId": "evt-1",
+        "kind": "poll",
+        "tag": "app-1|poll|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-pl",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: Ankieta zamknięta: Where do we eat?",
+        "eventId": "evt-1",
+        "kind": "poll",
+        "tag": "app-1|poll|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": ""
+    }
+  ],
+  "poll closed without question": [
+    {
+      "subscription": "sub-de-other-muted",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: Poll closed",
+        "eventId": "evt-1",
+        "kind": "poll",
+        "tag": "app-1|poll|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-en",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: Poll closed",
+        "eventId": "evt-1",
+        "kind": "poll",
+        "tag": "app-1|poll|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-pl",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Ann: Ankieta zamknięta",
+        "eventId": "evt-1",
+        "kind": "poll",
+        "tag": "app-1|poll|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "normal",
+      "ttl": 43200,
+      "topic": ""
+    }
+  ],
+  "poll reopened": "none",
+  "poll vote": "none",
+  "reminder fired long text": [
+    {
+      "subscription": "sub-de-other-muted",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "⏰ rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr…",
+        "eventId": "evt-1",
+        "kind": "reminder",
+        "tag": "app-1|reminder|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "high",
+      "ttl": 86400,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-en",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "⏰ rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr…",
+        "eventId": "evt-1",
+        "kind": "reminder",
+        "tag": "app-1|reminder|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "high",
+      "ttl": 86400,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-pl",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "⏰ rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr…",
+        "eventId": "evt-1",
+        "kind": "reminder",
+        "tag": "app-1|reminder|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "high",
+      "ttl": 86400,
+      "topic": ""
+    }
+  ],
+  "reminder fired long text by agent": [
+    {
+      "subscription": "sub-de-other-muted",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "⏰ rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr…",
+        "eventId": "evt-1",
+        "kind": "reminder",
+        "tag": "app-1|reminder|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "high",
+      "ttl": 86400,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-en",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "⏰ rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr…",
+        "eventId": "evt-1",
+        "kind": "reminder",
+        "tag": "app-1|reminder|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "high",
+      "ttl": 86400,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-pl",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "⏰ rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr…",
+        "eventId": "evt-1",
+        "kind": "reminder",
+        "tag": "app-1|reminder|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "high",
+      "ttl": 86400,
+      "topic": ""
+    }
+  ],
+  "reminder fired with text": [
+    {
+      "subscription": "sub-de-other-muted",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "⏰ Call mom",
+        "eventId": "evt-1",
+        "kind": "reminder",
+        "tag": "app-1|reminder|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "high",
+      "ttl": 86400,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-en",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "⏰ Call mom",
+        "eventId": "evt-1",
+        "kind": "reminder",
+        "tag": "app-1|reminder|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "high",
+      "ttl": 86400,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-pl",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "⏰ Call mom",
+        "eventId": "evt-1",
+        "kind": "reminder",
+        "tag": "app-1|reminder|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "high",
+      "ttl": 86400,
+      "topic": ""
+    }
+  ],
+  "reminder fired with text by agent": [
+    {
+      "subscription": "sub-de-other-muted",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "⏰ Call mom",
+        "eventId": "evt-1",
+        "kind": "reminder",
+        "tag": "app-1|reminder|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "high",
+      "ttl": 86400,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-en",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "⏰ Call mom",
+        "eventId": "evt-1",
+        "kind": "reminder",
+        "tag": "app-1|reminder|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "high",
+      "ttl": 86400,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-pl",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "⏰ Call mom",
+        "eventId": "evt-1",
+        "kind": "reminder",
+        "tag": "app-1|reminder|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "high",
+      "ttl": 86400,
+      "topic": ""
+    }
+  ],
+  "reminder fired without text": [
+    {
+      "subscription": "sub-de-other-muted",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "⏰ Reminder",
+        "eventId": "evt-1",
+        "kind": "reminder",
+        "tag": "app-1|reminder|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "high",
+      "ttl": 86400,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-en",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "⏰ Reminder",
+        "eventId": "evt-1",
+        "kind": "reminder",
+        "tag": "app-1|reminder|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "high",
+      "ttl": 86400,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-pl",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "⏰ Przypomnienie",
+        "eventId": "evt-1",
+        "kind": "reminder",
+        "tag": "app-1|reminder|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "high",
+      "ttl": 86400,
+      "topic": ""
+    }
+  ],
+  "reminder fired without text by agent": [
+    {
+      "subscription": "sub-de-other-muted",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "⏰ Reminder",
+        "eventId": "evt-1",
+        "kind": "reminder",
+        "tag": "app-1|reminder|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "high",
+      "ttl": 86400,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-en",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "⏰ Reminder",
+        "eventId": "evt-1",
+        "kind": "reminder",
+        "tag": "app-1|reminder|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "high",
+      "ttl": 86400,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-pl",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "⏰ Przypomnienie",
+        "eventId": "evt-1",
+        "kind": "reminder",
+        "tag": "app-1|reminder|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "high",
+      "ttl": 86400,
+      "topic": ""
+    }
+  ],
+  "role changed to ": [
+    {
+      "subscription": "sub-de-other-muted",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Your role is now: ",
+        "eventId": "evt-1",
+        "kind": "role",
+        "tag": "app-1|role|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "high",
+      "ttl": 86400,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-en",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Your role is now: ",
+        "eventId": "evt-1",
+        "kind": "role",
+        "tag": "app-1|role|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "high",
+      "ttl": 86400,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-pl",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Twoja rola: ",
+        "eventId": "evt-1",
+        "kind": "role",
+        "tag": "app-1|role|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "high",
+      "ttl": 86400,
+      "topic": ""
+    }
+  ],
+  "role changed to  by agent": [
+    {
+      "subscription": "sub-de-other-muted",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Your role is now: ",
+        "eventId": "evt-1",
+        "kind": "role",
+        "tag": "app-1|role|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "high",
+      "ttl": 86400,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-en",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Your role is now: ",
+        "eventId": "evt-1",
+        "kind": "role",
+        "tag": "app-1|role|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "high",
+      "ttl": 86400,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-pl",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Twoja rola: ",
+        "eventId": "evt-1",
+        "kind": "role",
+        "tag": "app-1|role|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "high",
+      "ttl": 86400,
+      "topic": ""
+    }
+  ],
+  "role changed to admin": [
+    {
+      "subscription": "sub-de-other-muted",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Your role is now: Admin",
+        "eventId": "evt-1",
+        "kind": "role",
+        "tag": "app-1|role|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "high",
+      "ttl": 86400,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-en",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Your role is now: Admin",
+        "eventId": "evt-1",
+        "kind": "role",
+        "tag": "app-1|role|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "high",
+      "ttl": 86400,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-pl",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Twoja rola: Administrator",
+        "eventId": "evt-1",
+        "kind": "role",
+        "tag": "app-1|role|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "high",
+      "ttl": 86400,
+      "topic": ""
+    }
+  ],
+  "role changed to admin by agent": [
+    {
+      "subscription": "sub-de-other-muted",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Your role is now: Admin",
+        "eventId": "evt-1",
+        "kind": "role",
+        "tag": "app-1|role|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "high",
+      "ttl": 86400,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-en",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Your role is now: Admin",
+        "eventId": "evt-1",
+        "kind": "role",
+        "tag": "app-1|role|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "high",
+      "ttl": 86400,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-pl",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Twoja rola: Administrator",
+        "eventId": "evt-1",
+        "kind": "role",
+        "tag": "app-1|role|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "high",
+      "ttl": 86400,
+      "topic": ""
+    }
+  ],
+  "role changed to member": [
+    {
+      "subscription": "sub-de-other-muted",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Your role is now: Member",
+        "eventId": "evt-1",
+        "kind": "role",
+        "tag": "app-1|role|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "high",
+      "ttl": 86400,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-en",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Your role is now: Member",
+        "eventId": "evt-1",
+        "kind": "role",
+        "tag": "app-1|role|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "high",
+      "ttl": 86400,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-pl",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Twoja rola: Członek",
+        "eventId": "evt-1",
+        "kind": "role",
+        "tag": "app-1|role|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "high",
+      "ttl": 86400,
+      "topic": ""
+    }
+  ],
+  "role changed to member by agent": [
+    {
+      "subscription": "sub-de-other-muted",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Your role is now: Member",
+        "eventId": "evt-1",
+        "kind": "role",
+        "tag": "app-1|role|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "high",
+      "ttl": 86400,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-en",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Your role is now: Member",
+        "eventId": "evt-1",
+        "kind": "role",
+        "tag": "app-1|role|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "high",
+      "ttl": 86400,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-pl",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Twoja rola: Członek",
+        "eventId": "evt-1",
+        "kind": "role",
+        "tag": "app-1|role|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "high",
+      "ttl": 86400,
+      "topic": ""
+    }
+  ],
+  "role changed to owner": [
+    {
+      "subscription": "sub-de-other-muted",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Your role is now: Owner",
+        "eventId": "evt-1",
+        "kind": "role",
+        "tag": "app-1|role|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "high",
+      "ttl": 86400,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-en",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Your role is now: Owner",
+        "eventId": "evt-1",
+        "kind": "role",
+        "tag": "app-1|role|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "high",
+      "ttl": 86400,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-pl",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Twoja rola: Właściciel",
+        "eventId": "evt-1",
+        "kind": "role",
+        "tag": "app-1|role|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "high",
+      "ttl": 86400,
+      "topic": ""
+    }
+  ],
+  "role changed to owner by agent": [
+    {
+      "subscription": "sub-de-other-muted",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Your role is now: Owner",
+        "eventId": "evt-1",
+        "kind": "role",
+        "tag": "app-1|role|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "high",
+      "ttl": 86400,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-en",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Your role is now: Owner",
+        "eventId": "evt-1",
+        "kind": "role",
+        "tag": "app-1|role|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "high",
+      "ttl": 86400,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-pl",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Twoja rola: Właściciel",
+        "eventId": "evt-1",
+        "kind": "role",
+        "tag": "app-1|role|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "high",
+      "ttl": 86400,
+      "topic": ""
+    }
+  ],
+  "role changed to viewer": [
+    {
+      "subscription": "sub-de-other-muted",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Your role is now: Viewer",
+        "eventId": "evt-1",
+        "kind": "role",
+        "tag": "app-1|role|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "high",
+      "ttl": 86400,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-en",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Your role is now: Viewer",
+        "eventId": "evt-1",
+        "kind": "role",
+        "tag": "app-1|role|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "high",
+      "ttl": 86400,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-pl",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Twoja rola: Obserwator",
+        "eventId": "evt-1",
+        "kind": "role",
+        "tag": "app-1|role|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "high",
+      "ttl": 86400,
+      "topic": ""
+    }
+  ],
+  "role changed to viewer by agent": [
+    {
+      "subscription": "sub-de-other-muted",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Your role is now: Viewer",
+        "eventId": "evt-1",
+        "kind": "role",
+        "tag": "app-1|role|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "high",
+      "ttl": 86400,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-en",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Your role is now: Viewer",
+        "eventId": "evt-1",
+        "kind": "role",
+        "tag": "app-1|role|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "high",
+      "ttl": 86400,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-pl",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Twoja rola: Obserwator",
+        "eventId": "evt-1",
+        "kind": "role",
+        "tag": "app-1|role|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "high",
+      "ttl": 86400,
+      "topic": ""
+    }
+  ],
+  "role changed to weird": [
+    {
+      "subscription": "sub-de-other-muted",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Your role is now: weird",
+        "eventId": "evt-1",
+        "kind": "role",
+        "tag": "app-1|role|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "high",
+      "ttl": 86400,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-en",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Your role is now: weird",
+        "eventId": "evt-1",
+        "kind": "role",
+        "tag": "app-1|role|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "high",
+      "ttl": 86400,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-pl",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Twoja rola: weird",
+        "eventId": "evt-1",
+        "kind": "role",
+        "tag": "app-1|role|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "high",
+      "ttl": 86400,
+      "topic": ""
+    }
+  ],
+  "role changed to weird by agent": [
+    {
+      "subscription": "sub-de-other-muted",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Your role is now: weird",
+        "eventId": "evt-1",
+        "kind": "role",
+        "tag": "app-1|role|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "high",
+      "ttl": 86400,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-en",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Your role is now: weird",
+        "eventId": "evt-1",
+        "kind": "role",
+        "tag": "app-1|role|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "high",
+      "ttl": 86400,
+      "topic": ""
+    },
+    {
+      "subscription": "sub-pl",
+      "payload": {
+        "applicationId": "app-1",
+        "body": "Twoja rola: weird",
+        "eventId": "evt-1",
+        "kind": "role",
+        "tag": "app-1|role|evt-1",
+        "title": "Trip",
+        "v": 2
+      },
+      "urgency": "high",
+      "ttl": 86400,
+      "topic": ""
+    }
+  ],
+  "text component": "none",
+  "unknown component": "none"
+}

@@ -1,5 +1,5 @@
 {
-  "bundle": 2,
+  "bundle": 3,
   "types": {
     "Text": {
       "min": 1,
@@ -37,7 +37,7 @@
   "files": [
     {
       "path": "component/chat.v1.schema.json",
-      "sha256": "023a590a3413914c87c3d40c141b7c6e162636e32d7b58dd8b229324a4201d88"
+      "sha256": "a8dce723a353c400d2e4d88d159fbc38c7e38edd06e320c2d6f3665077657294"
     },
     {
       "path": "component/checklist.v1.schema.json",
@@ -45,7 +45,7 @@
     },
     {
       "path": "component/checklist.v2.schema.json",
-      "sha256": "9d2b18f650578b91448902e78e9783e403ef7d1f0657b94c30465d1ead37e3ed"
+      "sha256": "ddbefb540b18f846e0d1ffbd97b7def4511223cd630802b3b2607dede9cdaa61"
     },
     {
       "path": "component/common.v1.schema.json",
@@ -61,7 +61,7 @@
     },
     {
       "path": "component/files.v1.schema.json",
-      "sha256": "9e16ebab061dab2914ee750a9265f89238aa74a76791c7dc74b5adef1d38a14c"
+      "sha256": "5099eeff43bd57f446f93c381d8941a511decba14d6df4b84796579754dbb30b"
     },
     {
       "path": "component/map.v1.schema.json",
@@ -69,7 +69,7 @@
     },
     {
       "path": "component/poll.v1.schema.json",
-      "sha256": "06d86d1846536a5b0dbe73209bd2e12f0de9bc0a9e1b8f159827cf8b2ea4c615"
+      "sha256": "182cab3551b8b9fe8f67b1202d53e198efef1c90066b0770ef116c4e03246975"
     },
     {
       "path": "component/text.v1.schema.json",

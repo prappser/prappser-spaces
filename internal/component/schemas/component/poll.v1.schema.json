@@ -31,7 +31,21 @@
       "default": false,
       "description": "true stops voting. Default false.",
       "x-merge": "single",
-      "x-access": "manage"
+      "x-access": "manage",
+      "x-notify": {
+        "on": "becomesTrue",
+        "kind": "poll",
+        "scope": "event",
+        "text": [
+          {
+            "id": "pollClosed",
+            "suffix": {
+              "component": "question",
+              "sep": ": "
+            }
+          }
+        ]
+      }
     },
     "_title": {
       "type": "string",

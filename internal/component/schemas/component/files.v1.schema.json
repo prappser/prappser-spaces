@@ -12,7 +12,19 @@
       },
       "description": "The uploaded files, each per $defs/item. Read-only for agents: an item needs a storageId from a file upload, which MCP does not offer.",
       "x-merge": "single",
-      "x-access": "none"
+      "x-access": "none",
+      "x-notify": {
+        "on": "added",
+        "kind": "file",
+        "scope": "event",
+        "text": [
+          {
+            "field": "filename",
+            "prefix": "📎 ",
+            "empty": "file"
+          }
+        ]
+      }
     },
     "allowAddInRunMode": {
       "type": "boolean",

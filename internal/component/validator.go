@@ -106,6 +106,8 @@ type rule struct {
 	merge   string
 	access  Access
 	encoded bool
+	key     string
+	notify  any
 }
 
 type rules struct {
@@ -402,7 +404,7 @@ func parseRule(key string, entry any, props, defs map[string]any, pattern bool) 
 	if err != nil {
 		return rule{}, fmt.Errorf("%q: %w", key, err)
 	}
-	r := rule{access: acc, encoded: m["contentMediaType"] == "application/json"}
+	r := rule{access: acc, encoded: m["contentMediaType"] == "application/json", key: key, notify: m["x-notify"]}
 	if raw, ok := m["x-merge"]; ok {
 		mode, _ := raw.(string)
 		if !mergeModes[mode] {
@@ -572,6 +574,14 @@ func (v *Validator) resolve(componentType, key string) (rule, bool) {
 func (v *Validator) MergeMode(componentType, key string) (string, bool) {
 	r, ok := v.resolve(componentType, key)
 	return r.merge, ok && r.merge != ""
+}
+
+func (v *Validator) Notify(componentType, key string) (ruleKey string, raw any, ok bool) {
+	r, found := v.resolve(componentType, key)
+	if !found || r.notify == nil {
+		return "", nil, false
+	}
+	return r.key, r.notify, true
 }
 
 func (v *Validator) Access(componentType, key string) (Access, bool) {

@@ -193,7 +193,7 @@ func TestPushService_Push_ShouldSendForMemberAddedEvent(t *testing.T) {
 	repo := newMockPushRepository()
 	sender := newMockWebpushSender(SendResult{StatusCode: 201})
 	vapidSvc := newMockSpaceVapidService("pub", "priv")
-	svc := NewPushService(repo, sender, vapidSvc)
+	svc := NewPushService(repo, sender, vapidSvc, nil)
 
 	repo.subscriptions["sub-1"] = &Subscription{
 		ID:                  "sub-1",
@@ -224,7 +224,7 @@ func TestPushService_Push_ShouldSkipWhenApplicationMuted(t *testing.T) {
 	repo := newMockPushRepository()
 	sender := newMockWebpushSender(SendResult{StatusCode: 201})
 	vapidSvc := newMockSpaceVapidService("pub", "priv")
-	svc := NewPushService(repo, sender, vapidSvc)
+	svc := NewPushService(repo, sender, vapidSvc, nil)
 
 	repo.subscriptions["sub-1"] = &Subscription{
 		ID:                  "sub-1",
@@ -250,7 +250,7 @@ func TestPushService_Push_ShouldSendWhenDifferentApplicationMuted(t *testing.T) 
 	repo := newMockPushRepository()
 	sender := newMockWebpushSender(SendResult{StatusCode: 201})
 	vapidSvc := newMockSpaceVapidService("pub", "priv")
-	svc := NewPushService(repo, sender, vapidSvc)
+	svc := NewPushService(repo, sender, vapidSvc, nil)
 
 	repo.subscriptions["sub-1"] = &Subscription{
 		ID:                  "sub-1",
@@ -276,7 +276,7 @@ func TestPushService_Push_ShouldDeleteSubscriptionOn410(t *testing.T) {
 	repo := newMockPushRepository()
 	sender := newMockWebpushSender(SendResult{StatusCode: 410})
 	vapidSvc := newMockSpaceVapidService("pub", "priv")
-	svc := NewPushService(repo, sender, vapidSvc)
+	svc := NewPushService(repo, sender, vapidSvc, nil)
 
 	repo.subscriptions["sub-1"] = &Subscription{
 		ID:                  "sub-1",
@@ -306,7 +306,7 @@ func TestPushService_Push_ShouldIncrementFailureOn429(t *testing.T) {
 	repo := newMockPushRepository()
 	sender := newMockWebpushSender(SendResult{StatusCode: 429})
 	vapidSvc := newMockSpaceVapidService("pub", "priv")
-	svc := NewPushService(repo, sender, vapidSvc)
+	svc := NewPushService(repo, sender, vapidSvc, nil)
 
 	repo.subscriptions["sub-1"] = &Subscription{
 		ID:                  "sub-1",
@@ -339,7 +339,7 @@ func TestPushService_Push_ShouldUseSpaceVapidForAllRecipients(t *testing.T) {
 	repo := newMockPushRepository()
 	sender := newMockWebpushSender(SendResult{StatusCode: 201})
 	vapidSvc := newMockSpaceVapidService("space-pub-key", "space-priv-key")
-	svc := NewPushService(repo, sender, vapidSvc)
+	svc := NewPushService(repo, sender, vapidSvc, nil)
 
 	repo.subscriptions["sub-1"] = &Subscription{
 		ID:                  "sub-1",
@@ -511,7 +511,7 @@ func TestPushService_Push_ShouldPassSendOptionsToSender(t *testing.T) {
 	// given
 	repo := newMockPushRepository()
 	sender := newMockWebpushSender(SendResult{StatusCode: 201})
-	svc := NewPushService(repo, sender, newMockSpaceVapidService("pub", "priv"))
+	svc := NewPushService(repo, sender, newMockSpaceVapidService("pub", "priv"), nil)
 	repo.subscriptions["sub-1"] = &Subscription{ID: "sub-1", DevicePublicKey: "user-pk-1", MutedApplicationIDs: []string{}}
 	ev := makeEvent(event.EventTypeMemberRoleChanged, "creator-pk", "app-1")
 	ev.Data["newRole"] = "admin"
@@ -530,7 +530,7 @@ func TestPushService_Push_ShouldRenderOncePerLocaleAndFallBackToEnglish(t *testi
 	// given
 	repo := newMockPushRepository()
 	sender := newMockWebpushSender(SendResult{StatusCode: 201})
-	svc := NewPushService(repo, sender, newMockSpaceVapidService("pub", "priv"))
+	svc := NewPushService(repo, sender, newMockSpaceVapidService("pub", "priv"), nil)
 	for id, locale := range map[string]string{"pl": "pl", "empty": "", "de": "de"} {
 		repo.subscriptions[id] = &Subscription{ID: id, DevicePublicKey: "pk-" + id, Locale: locale, MutedApplicationIDs: []string{}}
 	}
@@ -559,7 +559,7 @@ func TestPushService_Push_ShouldSkipWhenEventHasNoRule(t *testing.T) {
 	// given
 	repo := newMockPushRepository()
 	sender := newMockWebpushSender(SendResult{StatusCode: 201})
-	svc := NewPushService(repo, sender, newMockSpaceVapidService("pub", "priv"))
+	svc := NewPushService(repo, sender, newMockSpaceVapidService("pub", "priv"), nil)
 	repo.subscriptions["sub-1"] = &Subscription{ID: "sub-1", DevicePublicKey: "user-pk-1", MutedApplicationIDs: []string{}}
 	ev := makeEvent(event.EventTypeApplicationCreated, "creator-pk", "app-1")
 

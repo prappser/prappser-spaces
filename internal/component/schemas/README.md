@@ -47,7 +47,7 @@ Decisions behind this (#270):
 - Rich text (`document`, checklist `detailsDocument`) is a single value. Concurrent edits are last writer wins, not merged.
 - Checklist items are `item_<id>` keys (`per-entry`), the value omits the id. The old whole-list `items` key is deprecated (`"deprecated": true`, `single`): clients still read it as a read-only base and never write it. Templates may not carry `items`.
 - Keys are never deleted by sync. A removed entry is a tombstone: `''` for string cells, `null` for countdown `customColor`. Schemas accept the tombstone.
-- `x-merge` is an annotation. Validators ignore it. A tripwire test checks that none is missing and that the chat, poll and expenses key families keep their mode. It covers `x-access` the same way.
+- `x-merge` is an annotation. Validators ignore it. A tripwire test checks that none is missing and that the chat, poll and expenses key families keep their mode. It covers `x-access` the same way and pins every `x-notify`.
 
 ## Write access and `x-access`
 
@@ -77,6 +77,44 @@ Rules:
 - Per-member keys (`x-merge: per-member`) need nothing extra: for all roles the key must match the pattern with its trailing `.+$` replaced by the caller's quoted public key plus `$`.
 - Viewers cannot write through MCP at all.
 - `x-access` is an annotation for MCP writes. Validators ignore it. The app's own UI enforces its rules separately.
+
+## Push notifications and `x-notify`
+
+A key may carry an `x-notify` annotation. It tells the space when a change to that key sends a push notification, and with what text. It goes on a top-level `properties` or `patternProperties` entry, next to `x-merge` and `x-access`. Only these types have a rule: chat (`m_` messages), checklist (`item_` entries), poll (`closed`) and files (`items`). A type without a rule sends no push.
+
+A rule is an object:
+
+| Member | Meaning |
+|---|---|
+| `on` | Required. When it fires, see below. |
+| `kind` | Required. `chat`, `item`, `poll` or `file`. |
+| `scope` | Required. `component` or `event`: the push tag scope, the component id or the event id. |
+| `view` | Optional. Only `chat`. |
+| `text` | Required. Non-empty ordered list of candidates. The first one that gives non-blank text wins. |
+| `join` | Only with `on: new`. Folds all fired keys of the family into one push: `prefix`, `sep`, `show`, `more`. The output is `prefix` once, then the first `show` texts joined by `sep`, then, if more keys fired, a space and the localized `more` text (`itemsMore`) with the remaining count, like "+ A, B and 2 more". With fewer than `show` keys there is no "more" tail. `show` must be at least 1. |
+| `skipListed` | Only with `on: new`. `list` and `prefix`: a key is skipped when the key with `prefix` removed equals the string `id` of an element of the component data list `list` (the legacy checklist `items`). |
+
+`on` values:
+
+- `new`: a key of the family goes from empty or absent to non-empty.
+- `becomesTrue`: the old value is not true and the new value is true.
+- `added`: a list value gains an element whose string `id` was not in the old list.
+
+A text candidate has exactly one of `field` (a dotted path into the value, numeric segments index arrays) or `id` (a fixed text id, see below). Optional members:
+
+- `when`: `field` and optional `startsWith`. The candidate applies only if the path is present and, with `startsWith`, the string there starts with it.
+- `unless`: path to a bool. The candidate is skipped when it is true.
+- `prefix`: a string put in front of the text.
+- `empty`: a text id used when the field is blank. `prefix` applies to it too.
+- `suffix`: `component` and `sep`. Adds `sep` and the string value of that top-level component data key, when it is not blank.
+
+Text ids are `photo`, `file`, `pollClosed` and `itemsMore`. Their wording, the "Person: " prefix, the agent label and the 120 rune cut stay in the space.
+
+A malformed rule, an unknown `on`, an unknown text id or an unknown `view` sends no push for that key. It is never an error.
+
+The space reads the rules from the current file of each type. For `new` rules on per-entry keys it first migrates the value to the current version through the lens, and falls back to the stored value if migration fails. `Gallery` components are read with the Files rules.
+
+Validators ignore `x-notify`. An annotation-only edit to a current file still changes its hash, so it needs a bundle number bump. Non-current frozen files never change.
 
 ## Versioning
 
@@ -380,5 +418,5 @@ The consumer enforces these, they are not checked here:
 ## Changing a schema
 
 1. Edit the schema and add or adjust vectors in the same change. Every new rule needs a valid and an invalid case.
-2. Run `flutter test test/schemas`. It covers the vectors, payloads from the real write paths, the built-in templates, and the tripwires (type registry, `x-merge`, `x-access`, icon list).
+2. Run `flutter test test/schemas`. It covers the vectors, payloads from the real write paths, the built-in templates, and the tripwires (type registry, `x-merge`, `x-access`, `x-notify`, icon list).
 3. Copy the files to prappser-spaces unchanged.
