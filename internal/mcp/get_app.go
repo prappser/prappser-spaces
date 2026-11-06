@@ -15,6 +15,8 @@ type componentView struct {
 	Name  string         `json:"name"`
 	Index int            `json:"index"`
 	Data  map[string]any `json:"data"`
+
+	EntryStates map[string]string `json:"entryStates,omitempty"`
 }
 
 type groupView struct {
@@ -48,7 +50,8 @@ func addGetApp(s *sdk.Server, d Deps) {
 	sdk.AddTool(s, &sdk.Tool{
 		Name: "get_app",
 		Description: "Get one app with its component groups, components (including chat messages) and members. " +
-			"A component's name is its type: pass it to describe_component before writing. Data values are returned raw: encoded strings stay strings, write them back in the same shape. " +
+			"A component's name is its type: pass it to describe_component before writing. Data values are returned as stored except per-entry values, which are shown in the type's current version (encoded strings stay strings, write them back in the same shape). " +
+			"entryStates maps an entry key to read-only (cannot be edited, may be deleted) or needs-update / bad-version (returned as stored, cannot be edited or deleted); entries not listed are fully editable. " +
 			"A member's publicKey is what per-member keys and author fields use; myPublicKey is yours." + untrustedHint,
 	}, func(_ context.Context, req *sdk.CallToolRequest, in getAppIn) (*sdk.CallToolResult, getAppOut, error) {
 		u, err := caller(req)
@@ -67,7 +70,8 @@ func addGetApp(s *sdk.Server, d Deps) {
 				if data == nil {
 					data = map[string]any{}
 				}
-				gv.Components = append(gv.Components, componentView{ID: c.ID, Name: c.Name, Index: c.Index, Data: data})
+				view, states := componentData(d.Validator, c.Name, data)
+				gv.Components = append(gv.Components, componentView{ID: c.ID, Name: c.Name, Index: c.Index, Data: view, EntryStates: states})
 			}
 			content.ComponentGroups = append(content.ComponentGroups, gv)
 		}
