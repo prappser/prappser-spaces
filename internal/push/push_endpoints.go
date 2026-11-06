@@ -68,6 +68,14 @@ func (pe *PushEndpoints) CreateSubscription(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
+	if err := validateEndpoint(req.Endpoint); err != nil {
+		log.Error().Err(err).Msg("[PUSH] Invalid create subscription endpoint")
+		ctx.SetStatusCode(fasthttp.StatusBadRequest)
+		ctx.SetContentType("application/json")
+		json.NewEncoder(ctx).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
 	if req.MutedApplicationIDs == nil {
 		req.MutedApplicationIDs = []string{}
 	}
@@ -140,6 +148,16 @@ func (pe *PushEndpoints) UpdateSubscription(ctx *fasthttp.RequestCtx) {
 		ctx.SetContentType("application/json")
 		json.NewEncoder(ctx).Encode(map[string]string{"error": "invalid request body"})
 		return
+	}
+
+	if req.Endpoint != "" {
+		if err := validateEndpoint(req.Endpoint); err != nil {
+			log.Error().Err(err).Msg("[PUSH] Invalid update subscription endpoint")
+			ctx.SetStatusCode(fasthttp.StatusBadRequest)
+			ctx.SetContentType("application/json")
+			json.NewEncoder(ctx).Encode(map[string]string{"error": err.Error()})
+			return
+		}
 	}
 
 	if req.MutedApplicationIDs == nil {

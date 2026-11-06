@@ -19,6 +19,7 @@ import (
 
 	"github.com/goccy/go-json"
 	"github.com/prappser/prappser-spaces/internal/middleware"
+	"github.com/prappser/prappser-spaces/internal/netguard"
 	"github.com/prappser/prappser-spaces/internal/testdb"
 	"github.com/prappser/prappser-spaces/internal/user"
 	"github.com/stretchr/testify/assert"
@@ -552,7 +553,7 @@ func TestAuthorize_ShouldRefuseHTTPSLoopbackClientID_WhenSSRFGuardIsActive_Integ
 	pool := x509.NewCertPool()
 	pool.AddCert(srv.Certificate())
 	f.clientID = srv.URL + "/client.json"
-	f.svc.fetcher = &metadataFetcher{client: newSafeClient(isPublicAddr, pool)}
+	f.svc.fetcher = &metadataFetcher{client: netguard.NewClient(netguard.IsPublic, pool, fetchTimeout, false)}
 	_, challenge := pkcePair()
 
 	// when

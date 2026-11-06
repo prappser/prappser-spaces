@@ -284,3 +284,41 @@ func TestLoadConfig_SchemaBundleURLInvalid_ShouldReturnError(t *testing.T) {
 		assert.Error(t, err, v)
 	}
 }
+
+func TestLoadConfig_PushAllowPrivateEndpointsUnset_ShouldDefaultToOff(t *testing.T) {
+	// given
+	t.Setenv("MASTER_PASSWORD", "test")
+
+	// when
+	config, err := LoadConfig()
+
+	// then
+	require.NoError(t, err)
+	assert.False(t, config.PushAllowPrivateEndpoints)
+}
+
+func TestLoadConfig_PushAllowPrivateEndpointsTrue_ShouldEnable(t *testing.T) {
+	// given
+	t.Setenv("MASTER_PASSWORD", "test")
+	t.Setenv("PUSH_ALLOW_PRIVATE_ENDPOINTS", "true")
+
+	// when
+	config, err := LoadConfig()
+
+	// then
+	require.NoError(t, err)
+	assert.True(t, config.PushAllowPrivateEndpoints)
+}
+
+func TestLoadConfig_PushAllowPrivateEndpointsInvalid_ShouldStayOff(t *testing.T) {
+	// given
+	t.Setenv("MASTER_PASSWORD", "test")
+	t.Setenv("PUSH_ALLOW_PRIVATE_ENDPOINTS", "yes please")
+
+	// when
+	config, err := LoadConfig()
+
+	// then
+	require.NoError(t, err)
+	assert.False(t, config.PushAllowPrivateEndpoints)
+}

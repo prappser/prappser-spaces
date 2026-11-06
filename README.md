@@ -51,6 +51,7 @@ The server starts on port `4545` by default and runs database migrations automat
 | `STORAGE_PATH` | No | `./storage` | Storage path. Also holds the space identity key at `.space/identity.key`, so it must be persistent and backed up, even with `STORAGE_TYPE=s3` |
 | `STORAGE_MAX_FILE_SIZE_MB` | No | `50` | Maximum file size in MB |
 | `STORAGE_CHUNK_SIZE_MB` | No | `5` | Chunk size for chunked uploads |
+| `PUSH_ALLOW_PRIVATE_ENDPOINTS` | No | `false` | `true` lets the push sender deliver to loopback, private (RFC1918, IPv6 ULA) and CGNAT addresses, for a LAN-only push server such as self-hosted ntfy. Link-local and cloud-metadata addresses stay blocked; endpoints must be https and redirects are never followed |
 
 For S3 storage variables (`STORAGE_S3_*`), see [`.env.example`](.env.example).
 

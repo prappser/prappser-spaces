@@ -180,7 +180,7 @@ func main() {
 	if err := pushVapidService.Initialize(context.Background()); err != nil {
 		log.Fatal().Err(err).Msg("Failed to initialize space VAPID keys")
 	}
-	pushSender := push.NewHTTPWebpushSender()
+	pushSender := push.NewHTTPWebpushSender(config.PushAllowPrivateEndpoints)
 	componentValidator, err := component.NewValidator()
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to load component schemas")
