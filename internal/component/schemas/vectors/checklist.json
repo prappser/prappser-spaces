@@ -433,6 +433,26 @@
         }
       },
       "valid": false
+    },
+    {
+      "name": "item with v 1",
+      "schema": "https://prappser.app/schemas/component/checklist.v1.schema.json#/$defs/item",
+      "data": {
+        "v": 1,
+        "title": "Milk",
+        "checked": false
+      },
+      "valid": true
+    },
+    {
+      "name": "item with v 2",
+      "schema": "https://prappser.app/schemas/component/checklist.v1.schema.json#/$defs/item",
+      "data": {
+        "v": 2,
+        "title": "Milk",
+        "checked": false
+      },
+      "valid": false
     }
   ]
 }

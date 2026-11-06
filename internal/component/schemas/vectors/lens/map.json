@@ -1,0 +1,1243 @@
+{
+  "cases": [
+    {
+      "name": "map mapped value, up",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "map",
+                "path": "priority",
+                "pairs": [
+                  [
+                    "low",
+                    "l"
+                  ],
+                  [
+                    "high",
+                    "h"
+                  ]
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "priority": "low"
+      },
+      "to": 2,
+      "out": {
+        "v": 2,
+        "priority": "l"
+      },
+      "lossy": false
+    },
+    {
+      "name": "map mapped value, down",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "map",
+                "path": "priority",
+                "pairs": [
+                  [
+                    "low",
+                    "l"
+                  ],
+                  [
+                    "high",
+                    "h"
+                  ]
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 2,
+        "priority": "l"
+      },
+      "to": 1,
+      "out": {
+        "v": 1,
+        "priority": "low"
+      },
+      "lossy": false
+    },
+    {
+      "name": "map unmapped value passes through, up",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "map",
+                "path": "priority",
+                "pairs": [
+                  [
+                    "low",
+                    "l"
+                  ],
+                  [
+                    "high",
+                    "h"
+                  ]
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "priority": "urgent"
+      },
+      "to": 2,
+      "out": {
+        "v": 2,
+        "priority": "urgent"
+      },
+      "lossy": false
+    },
+    {
+      "name": "map unmapped value passes through, down without fallback",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "map",
+                "path": "priority",
+                "pairs": [
+                  [
+                    "low",
+                    "l"
+                  ],
+                  [
+                    "high",
+                    "h"
+                  ]
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 2,
+        "priority": "urgent"
+      },
+      "to": 1,
+      "out": {
+        "v": 1,
+        "priority": "urgent"
+      },
+      "lossy": false
+    },
+    {
+      "name": "map null as a new value, up",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "map",
+                "path": "status",
+                "pairs": [
+                  [
+                    "open",
+                    null
+                  ],
+                  [
+                    "done",
+                    "d"
+                  ]
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "status": "open"
+      },
+      "to": 2,
+      "out": {
+        "v": 2,
+        "status": null
+      },
+      "lossy": false
+    },
+    {
+      "name": "map null as a new value, down",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "map",
+                "path": "status",
+                "pairs": [
+                  [
+                    "open",
+                    null
+                  ],
+                  [
+                    "done",
+                    "d"
+                  ]
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 2,
+        "status": null
+      },
+      "to": 1,
+      "out": {
+        "v": 1,
+        "status": "open"
+      },
+      "lossy": false
+    },
+    {
+      "name": "map null as an old value, up",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "map",
+                "path": "status",
+                "pairs": [
+                  [
+                    null,
+                    "none"
+                  ],
+                  [
+                    "done",
+                    "d"
+                  ]
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "status": null
+      },
+      "to": 2,
+      "out": {
+        "v": 2,
+        "status": "none"
+      },
+      "lossy": false
+    },
+    {
+      "name": "map null as an old value, down",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "map",
+                "path": "status",
+                "pairs": [
+                  [
+                    null,
+                    "none"
+                  ],
+                  [
+                    "done",
+                    "d"
+                  ]
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 2,
+        "status": "none"
+      },
+      "to": 1,
+      "out": {
+        "v": 1,
+        "status": null
+      },
+      "lossy": false
+    },
+    {
+      "name": "map number 1 matches number 1",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "map",
+                "path": "n",
+                "pairs": [
+                  [
+                    1,
+                    "one"
+                  ],
+                  [
+                    true,
+                    "yes"
+                  ]
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "n": 1
+      },
+      "to": 2,
+      "out": {
+        "v": 2,
+        "n": "one"
+      },
+      "lossy": false
+    },
+    {
+      "name": "map string \"1\" is not coerced to number 1",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "map",
+                "path": "n",
+                "pairs": [
+                  [
+                    1,
+                    "one"
+                  ],
+                  [
+                    true,
+                    "yes"
+                  ]
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "n": "1"
+      },
+      "to": 2,
+      "out": {
+        "v": 2,
+        "n": "1"
+      },
+      "lossy": false
+    },
+    {
+      "name": "map true matches true, not number 1",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "map",
+                "path": "n",
+                "pairs": [
+                  [
+                    1,
+                    "one"
+                  ],
+                  [
+                    true,
+                    "yes"
+                  ]
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "n": true
+      },
+      "to": 2,
+      "out": {
+        "v": 2,
+        "n": "yes"
+      },
+      "lossy": false
+    },
+    {
+      "name": "map string \"true\" is not coerced to boolean true",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "map",
+                "path": "n",
+                "pairs": [
+                  [
+                    1,
+                    "one"
+                  ],
+                  [
+                    true,
+                    "yes"
+                  ]
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "n": "true"
+      },
+      "to": 2,
+      "out": {
+        "v": 2,
+        "n": "true"
+      },
+      "lossy": false
+    },
+    {
+      "name": "map object value passes through, up",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "map",
+                "path": "priority",
+                "pairs": [
+                  [
+                    "low",
+                    "l"
+                  ],
+                  [
+                    "high",
+                    "h"
+                  ]
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "priority": {
+          "a": 1
+        }
+      },
+      "to": 2,
+      "out": {
+        "v": 2,
+        "priority": {
+          "a": 1
+        }
+      },
+      "lossy": false
+    },
+    {
+      "name": "map object value passes through, down without fallback",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "map",
+                "path": "priority",
+                "pairs": [
+                  [
+                    "low",
+                    "l"
+                  ],
+                  [
+                    "high",
+                    "h"
+                  ]
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 2,
+        "priority": {
+          "a": 1
+        }
+      },
+      "to": 1,
+      "out": {
+        "v": 1,
+        "priority": {
+          "a": 1
+        }
+      },
+      "lossy": false
+    },
+    {
+      "name": "map with fallback, object value down takes the fallback",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "map",
+                "path": "priority",
+                "pairs": [
+                  [
+                    "low",
+                    "l"
+                  ],
+                  [
+                    "high",
+                    "h"
+                  ]
+                ],
+                "fallback": "low"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 2,
+        "priority": {
+          "a": 1
+        }
+      },
+      "to": 1,
+      "out": {
+        "v": 1,
+        "priority": "low"
+      },
+      "lossy": true
+    },
+    {
+      "name": "map absent field is a no-op",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "map",
+                "path": "priority",
+                "pairs": [
+                  [
+                    "low",
+                    "l"
+                  ],
+                  [
+                    "high",
+                    "h"
+                  ]
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "title": "Milk"
+      },
+      "to": 2,
+      "out": {
+        "v": 2,
+        "title": "Milk"
+      },
+      "lossy": false
+    },
+    {
+      "name": "map with fallback, mapped value down is lossy",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "map",
+                "path": "priority",
+                "pairs": [
+                  [
+                    "low",
+                    "l"
+                  ],
+                  [
+                    "high",
+                    "h"
+                  ]
+                ],
+                "fallback": "low"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 2,
+        "priority": "l"
+      },
+      "to": 1,
+      "out": {
+        "v": 1,
+        "priority": "low"
+      },
+      "lossy": true
+    },
+    {
+      "name": "map with fallback, unmapped value down takes the fallback",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "map",
+                "path": "priority",
+                "pairs": [
+                  [
+                    "low",
+                    "l"
+                  ],
+                  [
+                    "high",
+                    "h"
+                  ]
+                ],
+                "fallback": "low"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 2,
+        "priority": "urgent"
+      },
+      "to": 1,
+      "out": {
+        "v": 1,
+        "priority": "low"
+      },
+      "lossy": true
+    },
+    {
+      "name": "map with fallback, up is not lossy",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "map",
+                "path": "priority",
+                "pairs": [
+                  [
+                    "low",
+                    "l"
+                  ],
+                  [
+                    "high",
+                    "h"
+                  ]
+                ],
+                "fallback": "low"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "priority": "high"
+      },
+      "to": 2,
+      "out": {
+        "v": 2,
+        "priority": "h"
+      },
+      "lossy": false
+    },
+    {
+      "name": "map with fallback, up passes an unmapped value",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "map",
+                "path": "priority",
+                "pairs": [
+                  [
+                    "low",
+                    "l"
+                  ],
+                  [
+                    "high",
+                    "h"
+                  ]
+                ],
+                "fallback": "low"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "priority": "urgent"
+      },
+      "to": 2,
+      "out": {
+        "v": 2,
+        "priority": "urgent"
+      },
+      "lossy": false
+    },
+    {
+      "name": "map duplicate old values are unsupported",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "map",
+                "path": "priority",
+                "pairs": [
+                  [
+                    "a",
+                    "x"
+                  ],
+                  [
+                    "a",
+                    "y"
+                  ]
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "priority": "a"
+      },
+      "to": 2,
+      "error": "unsupported"
+    },
+    {
+      "name": "map duplicate new values are unsupported",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "map",
+                "path": "priority",
+                "pairs": [
+                  [
+                    "a",
+                    "x"
+                  ],
+                  [
+                    "b",
+                    "x"
+                  ]
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "priority": "a"
+      },
+      "to": 2,
+      "error": "unsupported"
+    },
+    {
+      "name": "map pair value that is an object is unsupported",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "map",
+                "path": "priority",
+                "pairs": [
+                  [
+                    {
+                      "a": 1
+                    },
+                    "x"
+                  ]
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "priority": "a"
+      },
+      "to": 2,
+      "error": "unsupported"
+    },
+    {
+      "name": "map keeps unknown fields, up",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "map",
+                "path": "priority",
+                "pairs": [
+                  [
+                    "low",
+                    "l"
+                  ],
+                  [
+                    "high",
+                    "h"
+                  ]
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "priority": "low",
+        "zz_unknown": 1,
+        "meta": {
+          "zz_unknown": 2
+        }
+      },
+      "to": 2,
+      "out": {
+        "v": 2,
+        "priority": "l",
+        "zz_unknown": 1,
+        "meta": {
+          "zz_unknown": 2
+        }
+      },
+      "lossy": false
+    },
+    {
+      "name": "map keeps unknown fields, down",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "map",
+                "path": "priority",
+                "pairs": [
+                  [
+                    "low",
+                    "l"
+                  ],
+                  [
+                    "high",
+                    "h"
+                  ]
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 2,
+        "priority": "l",
+        "zz_unknown": 1,
+        "meta": {
+          "zz_unknown": 2
+        }
+      },
+      "to": 1,
+      "out": {
+        "v": 1,
+        "priority": "low",
+        "zz_unknown": 1,
+        "meta": {
+          "zz_unknown": 2
+        }
+      },
+      "lossy": false
+    },
+    {
+      "name": "map writeback with fallback is read-only",
+      "kind": "writeback",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "map",
+                "path": "priority",
+                "pairs": [
+                  [
+                    "low",
+                    "l"
+                  ],
+                  [
+                    "high",
+                    "h"
+                  ]
+                ],
+                "fallback": "low"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "original": {
+        "v": 2,
+        "priority": "l"
+      },
+      "reader": 1,
+      "view": {
+        "v": 1,
+        "priority": "low"
+      },
+      "edited": {
+        "v": 1,
+        "priority": "high"
+      },
+      "error": "read-only"
+    },
+    {
+      "name": "map writeback without fallback is lossless",
+      "kind": "writeback",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "map",
+                "path": "priority",
+                "pairs": [
+                  [
+                    "low",
+                    "l"
+                  ],
+                  [
+                    "high",
+                    "h"
+                  ]
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "original": {
+        "v": 2,
+        "priority": "l",
+        "zz_unknown": 1,
+        "meta": {
+          "zz_unknown": 2
+        }
+      },
+      "reader": 1,
+      "view": {
+        "v": 1,
+        "priority": "low",
+        "zz_unknown": 1,
+        "meta": {
+          "zz_unknown": 2
+        }
+      },
+      "edited": {
+        "v": 1,
+        "priority": "high",
+        "zz_unknown": 1,
+        "meta": {
+          "zz_unknown": 2
+        }
+      },
+      "result": {
+        "v": 2,
+        "priority": "h",
+        "zz_unknown": 1,
+        "meta": {
+          "zz_unknown": 2
+        }
+      }
+    },
+    {
+      "name": "map missing pairs is unsupported",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "map",
+                "path": "a"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "a": 1
+      },
+      "to": 2,
+      "error": "unsupported"
+    },
+    {
+      "name": "map non-scalar fallback is unsupported",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "map",
+                "path": "a",
+                "pairs": [
+                  [
+                    "low",
+                    "l"
+                  ],
+                  [
+                    "high",
+                    "h"
+                  ]
+                ],
+                "fallback": {
+                  "x": 1
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "a": 1
+      },
+      "to": 2,
+      "error": "unsupported"
+    },
+    {
+      "name": "map list fallback is unsupported",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "map",
+                "path": "a",
+                "pairs": [
+                  [
+                    "low",
+                    "l"
+                  ],
+                  [
+                    "high",
+                    "h"
+                  ]
+                ],
+                "fallback": [
+                  "low"
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "a": 1
+      },
+      "to": 2,
+      "error": "unsupported"
+    },
+    {
+      "name": "map with fallback null, a value with no old counterpart becomes null",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "map",
+                "path": "priority",
+                "pairs": [
+                  [
+                    "low",
+                    "l"
+                  ],
+                  [
+                    "high",
+                    "h"
+                  ]
+                ],
+                "fallback": null
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 2,
+        "priority": "x"
+      },
+      "to": 1,
+      "out": {
+        "v": 1,
+        "priority": null
+      },
+      "lossy": true
+    }
+  ]
+}
