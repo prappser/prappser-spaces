@@ -66,6 +66,10 @@ quotas. `MAX_ACCOUNTS` still caps the total number of accounts and is strongly
 advised whenever open registration is on. `SIGNUP_SINGLE_USE_INVITES` does not
 affect it.
 
+The space refreshes a signed schema bundle from GitHub Releases at startup and
+every 24 hours. `SCHEMA_BUNDLE_URL=off` disables this, and a custom http(s) URL
+overrides the default source. A bad value stops startup.
+
 ## 5. Start the stack
 
 ```bash

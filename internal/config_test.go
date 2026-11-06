@@ -225,3 +225,62 @@ func TestLoadConfig_AppURL_ShouldDefaultAndTrimTrailingSlash(t *testing.T) {
 	assert.Equal(t, "https://prappser.app", defaultConfig.AppURL)
 	assert.Equal(t, "https://app.example.com", custom.AppURL)
 }
+
+func loadWithSchemaBundleURL(t *testing.T, value string) (*Config, error) {
+	t.Helper()
+	t.Setenv("MASTER_PASSWORD", "test")
+	t.Setenv("SCHEMA_BUNDLE_URL", value)
+	return LoadConfig()
+}
+
+func TestLoadConfig_SchemaBundleURLUnsetOrEmpty_ShouldUseDefault(t *testing.T) {
+	// given
+	t.Setenv("MASTER_PASSWORD", "test")
+	unset, err := LoadConfig()
+	require.NoError(t, err)
+
+	// when
+	empty, err := loadWithSchemaBundleURL(t, "")
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, defaultSchemaBundleURL, unset.SchemaBundleURL)
+	assert.Equal(t, defaultSchemaBundleURL, empty.SchemaBundleURL)
+}
+
+func TestLoadConfig_SchemaBundleURLOff_ShouldDisableFetching(t *testing.T) {
+	// given / when
+	config, err := loadWithSchemaBundleURL(t, " off ")
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, "", config.SchemaBundleURL)
+}
+
+func TestLoadConfig_SchemaBundleURLOffUppercase_ShouldDisableFetching(t *testing.T) {
+	// given / when
+	config, err := loadWithSchemaBundleURL(t, "OFF")
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, "", config.SchemaBundleURL)
+}
+
+func TestLoadConfig_SchemaBundleURLCustom_ShouldKeepIt(t *testing.T) {
+	// given / when
+	config, err := loadWithSchemaBundleURL(t, "http://127.0.0.1:9/b.json")
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, "http://127.0.0.1:9/b.json", config.SchemaBundleURL)
+}
+
+func TestLoadConfig_SchemaBundleURLInvalid_ShouldReturnError(t *testing.T) {
+	for _, v := range []string{"ftp://x", "not a url", "https://"} {
+		// given / when
+		_, err := loadWithSchemaBundleURL(t, v)
+
+		// then
+		assert.Error(t, err, v)
+	}
+}

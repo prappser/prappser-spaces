@@ -35,6 +35,7 @@ docker compose up -d && go test -tags=integration ./internal/... .  # Integratio
 | `MAX_APPS_PER_ACCOUNT` | No | `0` | Max live apps one account may own; `0` = off, space owner exempt |
 | `SIGNUP_SINGLE_USE_INVITES` | No | `false` | `true` = a new account can only join through a single-use invite (hosted-space friends beta) |
 | `OPEN_REGISTRATION` | No | `false` | `true` = anyone can create a `user` account with username + password via `POST /users/register`; capped by `MAX_ACCOUNTS`, 5 attempts/hour per IP |
+| `SCHEMA_BUNDLE_URL` | No | `https://github.com/prappser/prappser-spaces/releases/latest/download/schema-bundle.json` | `off` never fetches; fetched bundle is only stored and served, MCP validation keeps the image's schemas |
 | `MAX_ACCOUNTS` | No | `0` | Max accounts on the space, owner included; `0` = off. Full space refuses new accounts |
 | `APP_URL` | No | `https://prappser.app` | Prappser web app URL; the OAuth consent screen lives at `{APP_URL}/#/oauth/consent`. Self-hosters add it to `ALLOWED_ORIGINS` |
 | `MCP_ENABLED` | No | `true` | On by default, `false` turns MCP off; needs `EXTERNAL_URL` (without it MCP stays off and startup logs a warning); reported on `/health` as `mcpEnabled` |
@@ -134,6 +135,10 @@ internal/
   component/
     schemas/               — copy of the app repo's JSON Schemas, synced by scripts/sync-schemas.sh (hash manifest in schemas.sha256)
     validator.go           — Validator: ValidateComponentData, ValidateTemplateDoc, MergeMode (x-merge)
+  schemas/
+    schemas.go             — Current, Stored, Store interface
+    schemas_repository.go  — Repository: single-row `schema_bundle` table, Save never lowers the bundle number
+    schemas_service.go     — Service: Load/Fetch/Run; atomic Current pointer served by `/health` bundle and `GET /schemas`
   health/
     health.go              — HealthEndpoints
   status/

@@ -266,6 +266,8 @@ func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, status
 
 		case path == "/health":
 			healthEndpoints.Health(ctx)
+		case path == "/schemas":
+			healthEndpoints.Schemas(ctx)
 		case path == "/status":
 			authMiddleware.RequireAuth(statusEndpoints.Status)(ctx)
 		case path == "/debug/env":

@@ -1,0 +1,6 @@
+CREATE TABLE IF NOT EXISTS schema_bundle (
+  id SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+  bundle INTEGER NOT NULL,
+  container BYTEA NOT NULL,
+  updated_at BIGINT NOT NULL DEFAULT 0
+);

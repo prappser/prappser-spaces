@@ -234,7 +234,7 @@ func TestRegister_ShouldFlipHealthRegistrationOpenWhenCapIsHit_Integration(t *te
 	current, err := repo.CountUsers()
 	assert.NoError(t, err)
 	re := NewRegisterEndpoints(repo, registerTestVerifierKey, true, current+1)
-	he := health.NewEndpoints("test", re.RegistrationOpen, false)
+	he := health.NewEndpoints("test", re.RegistrationOpen, false, nil)
 	registrationOpen := func() bool {
 		ctx := &fasthttp.RequestCtx{}
 		he.Health(ctx)
