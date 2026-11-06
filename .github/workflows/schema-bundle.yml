@@ -123,4 +123,8 @@ jobs:
           ACTION: ${{ steps.build.outputs.action }}
           BUNDLE: ${{ steps.build.outputs.bundle }}
           MODE: ${{ steps.build.outputs.mode }}
-        run: echo "Schema bundle, action=${ACTION} bundle=${BUNDLE} mode=${MODE}" >> "$GITHUB_STEP_SUMMARY"
+        run: |
+          echo "Schema bundle, action=${ACTION} bundle=${BUNDLE} mode=${MODE}" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$ACTION" = none ]; then
+            echo "No bundle was built (signing key missing or not matching the embedded public key); the image builds without one." >> "$GITHUB_STEP_SUMMARY"
+          fi

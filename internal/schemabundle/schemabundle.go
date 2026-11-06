@@ -65,6 +65,8 @@ type Verified struct {
 
 var sha256Re = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
+var bundleKeyRe = regexp.MustCompile(`"bundle"\s*:`)
+
 func asString(raw json.RawMessage) (string, bool) {
 	if len(raw) == 0 || raw[0] != '"' {
 		return "", false
@@ -80,6 +82,9 @@ func parseManifest(raw []byte) (Manifest, error) {
 	var top map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &top); err != nil || top == nil {
 		return Manifest{}, errors.New("manifest is not a JSON object")
+	}
+	if len(bundleKeyRe.FindAllIndex(raw, 2)) > 1 {
+		return Manifest{}, errors.New(`manifest has more than one "bundle" key`)
 	}
 	var m Manifest
 	n, err := strconv.Atoi(string(top["bundle"]))
@@ -191,6 +196,42 @@ func readSchemaFiles(schemasDir string, m Manifest) (map[string]string, error) {
 	return files, nil
 }
 
+func checkLayout(m Manifest, raw []byte) error {
+	var top struct {
+		Types map[string]TypeRange `json:"types"`
+	}
+	if err := json.Unmarshal(raw, &top); err != nil || top.Types == nil {
+		return errors.New("manifest types must be an object of {min, current} integers")
+	}
+	for name, r := range top.Types {
+		// 10000 caps the min..current loop below against a hostile manifest.
+		if r.Min < 1 || r.Min > r.Current || r.Current > 10000 {
+			return fmt.Errorf("manifest types: %q needs 1 <= min <= current <= 10000", name)
+		}
+	}
+	listed := make(map[string]bool, len(m.Files))
+	for _, f := range m.Files {
+		if strings.HasPrefix(f.Path, "/") || strings.Contains(f.Path, `\`) {
+			return fmt.Errorf("manifest path %q must be relative and use forward slashes", f.Path)
+		}
+		for _, seg := range strings.Split(f.Path, "/") {
+			if seg == ".." {
+				return fmt.Errorf("manifest path %q must not contain a .. segment", f.Path)
+			}
+		}
+		listed[f.Path] = true
+	}
+	for name, r := range m.Types {
+		for v := r.Min; v <= r.Current; v++ {
+			p := fmt.Sprintf("component/%s.v%d.schema.json", strings.ToLower(name), v)
+			if !listed[p] {
+				return fmt.Errorf("manifest type %q is missing %s", name, p)
+			}
+		}
+	}
+	return nil
+}
+
 func Build(schemasDir string, priv ed25519.PrivateKey) ([]byte, error) {
 	manifestRaw, err := os.ReadFile(filepath.Join(schemasDir, "bundle.json"))
 	if err != nil {
@@ -201,6 +242,9 @@ func Build(schemasDir string, priv ed25519.PrivateKey) ([]byte, error) {
 	}
 	m, err := parseManifest(manifestRaw)
 	if err != nil {
+		return nil, err
+	}
+	if err := checkLayout(m, manifestRaw); err != nil {
 		return nil, err
 	}
 	files, err := readSchemaFiles(schemasDir, m)
@@ -306,6 +350,7 @@ type Options struct {
 type Result struct {
 	Action string
 	Bundle int
+	Warning string
 }
 
 func Execute(o Options) (Result, error) {
@@ -326,16 +371,13 @@ func Execute(o Options) (Result, error) {
 	var prevBytes []byte
 	if o.PreviousPath != "" {
 		b, err := os.ReadFile(o.PreviousPath)
-		if err != nil && !os.IsNotExist(err) {
+		if err != nil {
 			return Result{}, err
 		}
-		if len(b) > 0 {
-			// A release asset can be uploaded by anyone with write access, so it must verify too.
-			if prev, err = Verify(b, pub); err != nil {
-				return Result{}, fmt.Errorf("previous bundle: %w", err)
-			}
-			prevBytes = b
+		if prev, err = Verify(b, pub); err != nil {
+			return Result{}, fmt.Errorf("previous bundle: %w", err)
 		}
+		prevBytes = b
 	}
 	action, err := Decide(prev, manifestRaw, m.Bundle)
 	if err != nil {
@@ -360,13 +402,13 @@ func Execute(o Options) (Result, error) {
 			return Result{}, err
 		}
 	case o.KeyB64 == "":
-		return Result{Action: ActionNone, Bundle: m.Bundle}, nil
+		return Result{Action: ActionNone, Bundle: m.Bundle, Warning: "SCHEMA_SIGNING_KEY is not set, building without a schema bundle"}, nil
 	default:
 		if priv, err = ParseKey(o.KeyB64); err != nil {
 			return Result{}, err
 		}
 		if !priv.Public().(ed25519.PublicKey).Equal(pub) {
-			return Result{}, errors.New("signing key does not match the embedded public key")
+			return Result{Action: ActionNone, Bundle: m.Bundle, Warning: "SCHEMA_SIGNING_KEY does not match the embedded public key, building without a schema bundle"}, nil
 		}
 	}
 

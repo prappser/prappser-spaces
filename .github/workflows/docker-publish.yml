@@ -11,6 +11,11 @@ env:
 
 jobs:
   schema-bundle:
+    # Job-level: a workflow-level group inside a called workflow may not apply under workflow_call.
+    # Named differently from the inner schema-bundle-main group, because equal names deadlock.
+    concurrency:
+      group: schema-bundle
+      cancel-in-progress: false
     uses: ./.github/workflows/schema-bundle.yml
     secrets:
       SCHEMA_SIGNING_KEY: ${{ secrets.SCHEMA_SIGNING_KEY }}

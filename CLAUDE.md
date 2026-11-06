@@ -220,6 +220,8 @@ Client-produced events architecture:
 - Unchanged schemas reuse the previous bundle; changed ones publish release `schemas-<n>` with a higher number; a change without a higher number fails the run.
 - Releases are never overwritten (no `--clobber`) and every `schemas-<n>` is marked latest, so create any other release with `--latest=false`.
 - A release that exists without its `schema-bundle.json` asset fails the run with an error naming the tag; recover by deleting that release and its tag, then rerun the workflow via dispatch.
+- A previous release asset that fails Verify blocks every main deploy by design; fix it by deleting or replacing the bad `schemas-<n>` release (and its tag) so the previous highest release verifies, or none exists.
+- A `SCHEMA_SIGNING_KEY` that parses but does not match the compiled public key (a fork with its own key) only warns and builds the image without a bundle; an unparseable key fails the run.
 - A queued main push superseded by a newer main push does not build its own image (concurrency group `schema-bundle-main`; pull request dry runs use their own per-ref group and never queue against main); the newer push builds the latest code.
 
 ## Convention Skill Files

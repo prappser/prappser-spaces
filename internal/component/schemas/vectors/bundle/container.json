@@ -8,7 +8,7 @@
           "component/common.v1.schema.json": "{\"c\": 1}\n"
         },
         "manifest": "{\n  \"bundle\": 1,\n  \"files\": [\n    {\n      \"path\": \"component/a.v1.schema.json\",\n      \"sha256\": \"8d3af4ba6d21933de9a05986c244f6bafc709fd622ea3a391a810ab9c104b670\"\n    },\n    {\n      \"path\": \"component/common.v1.schema.json\",\n      \"sha256\": \"36a9e8382a28339733e8dc7510554374804111b33013bf18fd24395e66f4fcf7\"\n    }\n  ],\n  \"types\": {\n    \"A\": {\n      \"current\": 1,\n      \"min\": 1\n    }\n  }\n}\n",
-        "signature": "Nd2BXy7dkiP5tgJNiSgXOP2CRI+Ey2/S2rx+I0l+SVWQt5mAnTJQSchnofe8hba2YHK+OdXDi/afp+8qxUbRDg=="
+        "signature": "NfUnwYH8WeEn0i9XCjF1ChEMFJ3p+2ZhJHuNSuosIuTPpkgKbFIztm/lxmTIZVEGkS2mppo1b6oKxAIXPUh8Aw=="
       },
       "valid": true
     },
@@ -21,7 +21,7 @@
         },
         "manifest": "{\n  \"bundle\": 1,\n  \"files\": [\n    {\n      \"path\": \"component/a.v1.schema.json\",\n      \"sha256\": \"8d3af4ba6d21933de9a05986c244f6bafc709fd622ea3a391a810ab9c104b670\"\n    },\n    {\n      \"path\": \"component/common.v1.schema.json\",\n      \"sha256\": \"36a9e8382a28339733e8dc7510554374804111b33013bf18fd24395e66f4fcf7\"\n    }\n  ],\n  \"types\": {\n    \"A\": {\n      \"current\": 1,\n      \"min\": 1\n    }\n  }\n}\n",
         "note": "ignored",
-        "signature": "Nd2BXy7dkiP5tgJNiSgXOP2CRI+Ey2/S2rx+I0l+SVWQt5mAnTJQSchnofe8hba2YHK+OdXDi/afp+8qxUbRDg=="
+        "signature": "NfUnwYH8WeEn0i9XCjF1ChEMFJ3p+2ZhJHuNSuosIuTPpkgKbFIztm/lxmTIZVEGkS2mppo1b6oKxAIXPUh8Aw=="
       },
       "valid": true
     },
@@ -33,7 +33,7 @@
           "component/common.v1.schema.json": "{\"c\": 1}\n"
         },
         "manifest": "{\n  \"bundle\": 1,\n  \"files\": [\n    {\n      \"path\": \"component/a.v1.schema.json\",\n      \"sha256\": \"8d3af4ba6d21933de9a05986c244f6bafc709fd622ea3a391a810ab9c104b670\"\n    },\n    {\n      \"path\": \"component/common.v1.schema.json\",\n      \"sha256\": \"36a9e8382a28339733e8dc7510554374804111b33013bf18fd24395e66f4fcf7\"\n    }\n  ],\n  \"Types\": {\n    \"A\": {\n      \"current\": 1,\n      \"min\": 1\n    }\n  }\n}\n",
-        "signature": "Nd2BXy7dkiP5tgJNiSgXOP2CRI+Ey2/S2rx+I0l+SVWQt5mAnTJQSchnofe8hba2YHK+OdXDi/afp+8qxUbRDg=="
+        "signature": "NfUnwYH8WeEn0i9XCjF1ChEMFJ3p+2ZhJHuNSuosIuTPpkgKbFIztm/lxmTIZVEGkS2mppo1b6oKxAIXPUh8Aw=="
       },
       "valid": false
     },
@@ -45,7 +45,7 @@
           "component/common.v1.schema.json": "{\"c\": 1}\n"
         },
         "manifest": "{\n  \"bundle\": 1,\n  \"files\": [\n    {\n      \"path\": \"component/a.v1.schema.json\",\n      \"sha256\": \"8d3af4ba6d21933de9a05986c244f6bafc709fd622ea3a391a810ab9c104b670\"\n    },\n    {\n      \"path\": \"component/common.v1.schema.json\",\n      \"sha256\": \"36a9e8382a28339733e8dc7510554374804111b33013bf18fd24395e66f4fcf7\"\n    }\n  ],\n  \"types\": {\n    \"A\": {\n      \"current\": 1,\n      \"min\": 1\n    }\n  }\n}\n",
-        "signature": "Nd2BXy7dkiP5tgJNiSgXOP2CRI+Ey2/S2rx+I0l+SVWQt5mAnTJQSchnofe8hba2YHK+OdXDi/afp+8qxUbRDg=="
+        "signature": "NfUnwYH8WeEn0i9XCjF1ChEMFJ3p+2ZhJHuNSuosIuTPpkgKbFIztm/lxmTIZVEGkS2mppo1b6oKxAIXPUh8Aw=="
       },
       "valid": false
     },
@@ -56,7 +56,7 @@
           "component/common.v1.schema.json": "{\"c\": 1}\n"
         },
         "manifest": "{\n  \"bundle\": 1,\n  \"files\": [\n    {\n      \"path\": \"component/a.v1.schema.json\",\n      \"sha256\": \"8d3af4ba6d21933de9a05986c244f6bafc709fd622ea3a391a810ab9c104b670\"\n    },\n    {\n      \"path\": \"component/common.v1.schema.json\",\n      \"sha256\": \"36a9e8382a28339733e8dc7510554374804111b33013bf18fd24395e66f4fcf7\"\n    }\n  ],\n  \"types\": {\n    \"A\": {\n      \"current\": 1,\n      \"min\": 1\n    }\n  }\n}\n",
-        "signature": "Nd2BXy7dkiP5tgJNiSgXOP2CRI+Ey2/S2rx+I0l+SVWQt5mAnTJQSchnofe8hba2YHK+OdXDi/afp+8qxUbRDg=="
+        "signature": "NfUnwYH8WeEn0i9XCjF1ChEMFJ3p+2ZhJHuNSuosIuTPpkgKbFIztm/lxmTIZVEGkS2mppo1b6oKxAIXPUh8Aw=="
       },
       "valid": false
     },
@@ -69,7 +69,7 @@
           "component/extra.json": "{}"
         },
         "manifest": "{\n  \"bundle\": 1,\n  \"files\": [\n    {\n      \"path\": \"component/a.v1.schema.json\",\n      \"sha256\": \"8d3af4ba6d21933de9a05986c244f6bafc709fd622ea3a391a810ab9c104b670\"\n    },\n    {\n      \"path\": \"component/common.v1.schema.json\",\n      \"sha256\": \"36a9e8382a28339733e8dc7510554374804111b33013bf18fd24395e66f4fcf7\"\n    }\n  ],\n  \"types\": {\n    \"A\": {\n      \"current\": 1,\n      \"min\": 1\n    }\n  }\n}\n",
-        "signature": "Nd2BXy7dkiP5tgJNiSgXOP2CRI+Ey2/S2rx+I0l+SVWQt5mAnTJQSchnofe8hba2YHK+OdXDi/afp+8qxUbRDg=="
+        "signature": "NfUnwYH8WeEn0i9XCjF1ChEMFJ3p+2ZhJHuNSuosIuTPpkgKbFIztm/lxmTIZVEGkS2mppo1b6oKxAIXPUh8Aw=="
       },
       "valid": false
     },
@@ -105,7 +105,7 @@
           "component/common.v1.schema.json": "{\"c\": 1}\n"
         },
         "manifest": "{\n  \"bundle\": 1,\n  \"files\": [\n    {\n      \"path\": \"component/a.v1.schema.json\",\n      \"sha256\": \"8d3af4ba6d21933de9a05986c244f6bafc709fd622ea3a391a810ab9c104b670\"\n    },\n    {\n      \"path\": \"component/common.v1.schema.json\",\n      \"sha256\": \"36a9e8382a28339733e8dc7510554374804111b33013bf18fd24395e66f4fcf7\"\n    }\n  ],\n  \"types\": {\n    \"A\": {\n      \"current\": 1,\n      \"min\": 1\n    }\n  }\n}\n",
-        "signature": "Nd2BXy7dkiP5tgJNiSgXOP2CRI-Ey2_S2rx-I0l-SVWQt5mAnTJQSchnofe8hba2YHK-OdXDi_afp-8qxUbRDg=="
+        "signature": "NfUnwYH8WeEn0i9XCjF1ChEMFJ3p-2ZhJHuNSuosIuTPpkgKbFIztm_lxmTIZVEGkS2mppo1b6oKxAIXPUh8Aw=="
       },
       "valid": false
     },
@@ -117,7 +117,7 @@
           "component/common.v1.schema.json": "{\"c\": 1}\n"
         },
         "manifest": "{\n  \"bundle\": 1,\n  \"files\": [\n    {\n      \"path\": \"component/a.v1.schema.json\",\n      \"sha256\": \"8D3AF4BA6D21933DE9A05986C244F6BAFC709FD622EA3A391A810AB9C104B670\"\n    },\n    {\n      \"path\": \"component/common.v1.schema.json\",\n      \"sha256\": \"36a9e8382a28339733e8dc7510554374804111b33013bf18fd24395e66f4fcf7\"\n    }\n  ],\n  \"types\": {\n    \"A\": {\n      \"current\": 1,\n      \"min\": 1\n    }\n  }\n}\n",
-        "signature": "LwU4OrwdCN7nl65L4ODh5ALR450sZv7/jN+pMHs36fOqHnf8RkLBjmdwtMFdBGQr0COmadfFf/rZeJ4PQs3DBw=="
+        "signature": "uTm8jOi0ozOOU+EnfqlfRmUjdw2b2BawPpGpz6ZYY4xnKJ/pM8FS47r/yT1dBv3muWRZheBuoMjn9ARCNvbeAw=="
       },
       "valid": false
     },
@@ -128,7 +128,7 @@
           "component/a.v1.schema.json": "{\"a\": \"café\"}\n"
         },
         "manifest": "{\n  \"bundle\": 1,\n  \"files\": [\n    {\n      \"path\": \"component/a.v1.schema.json\",\n      \"sha256\": \"8d3af4ba6d21933de9a05986c244f6bafc709fd622ea3a391a810ab9c104b670\"\n    },\n    {\n      \"path\": \"component/a.v1.schema.json\",\n      \"sha256\": \"36a9e8382a28339733e8dc7510554374804111b33013bf18fd24395e66f4fcf7\"\n    }\n  ],\n  \"types\": {\n    \"A\": {\n      \"current\": 1,\n      \"min\": 1\n    }\n  }\n}\n",
-        "signature": "MuFHuiKpXbuABahOcA2NAKEU4B4gl3Eel27mDXxJ6l6jOtsf8UN2S+iVFTjZCi/KBIGts1Jg1QuYsVEHgWBJDA=="
+        "signature": "1D7yj3OoB2hop9kowb4fNZujGR0STz5803ObWciJ7RSPB14qQWZQBH1cAfixh9c3v2eooDY0CFJp/rOYR5j7Ag=="
       },
       "valid": false
     },
@@ -140,7 +140,7 @@
           "component/common.v1.schema.json": "{\"c\": 1}\n"
         },
         "manifest": "{\n  \"bundle\": 1,\n  \"files\": [\n    {\n      \"path\": \"component/a.v1.schema.json\",\n      \"sha256\": \"8d3af4ba6d21933de9a05986c244f6bafc709fd622ea3a391a810ab9c104b670\"\n    },\n    {\n      \"path\": \"component/common.v1.schema.json\",\n      \"sha256\": \"36a9e8382a28339733e8dc7510554374804111b33013bf18fd24395e66f4fcf7\"\n    }\n  ],\n  \"types\": {\n    \"A\": {\n      \"current\": 1,\n      \"min\": 1\n    }\n  }\n}\n",
-        "signature": "Nd2BXy7dkiP5tgJNiSgXOP2CRI+Ey2/S2rx+I0l+SVWQt5mAnTJQSchnofe8hba2YHK+OdXDi/afp+8qxUbRDg=="
+        "signature": "NfUnwYH8WeEn0i9XCjF1ChEMFJ3p+2ZhJHuNSuosIuTPpkgKbFIztm/lxmTIZVEGkS2mppo1b6oKxAIXPUh8Aw=="
       },
       "valid": false
     },
@@ -152,7 +152,7 @@
           "component/common.v1.schema.json": "{\"c\": 1}\n"
         },
         "manifest": "{\n  \"bundle\": 0,\n  \"files\": [\n    {\n      \"path\": \"component/a.v1.schema.json\",\n      \"sha256\": \"8d3af4ba6d21933de9a05986c244f6bafc709fd622ea3a391a810ab9c104b670\"\n    },\n    {\n      \"path\": \"component/common.v1.schema.json\",\n      \"sha256\": \"36a9e8382a28339733e8dc7510554374804111b33013bf18fd24395e66f4fcf7\"\n    }\n  ],\n  \"types\": {\n    \"A\": {\n      \"current\": 1,\n      \"min\": 1\n    }\n  }\n}\n",
-        "signature": "TdE/co+EGyiId6FMDpMWFP1Wbf/ryaEBJ2XvS35BAXT6DFQhqsJ4v36CtbEQq68OL6ILzHTLItFMRnQTjaf8AQ=="
+        "signature": "7Cxr/7ZRXK7dneGTRbWIQsoMLTvM5g4RMNNRN7krpT6fGGoXeQyW3Z484E+FI8FyUsF6JbAH8sXu0dH6f/QNAA=="
       },
       "valid": false
     },
@@ -164,7 +164,7 @@
           "component/common.v1.schema.json": "{\"c\": 1}\n"
         },
         "manifest": "{\n  \"bundle\": 2147483648,\n  \"files\": [\n    {\n      \"path\": \"component/a.v1.schema.json\",\n      \"sha256\": \"8d3af4ba6d21933de9a05986c244f6bafc709fd622ea3a391a810ab9c104b670\"\n    },\n    {\n      \"path\": \"component/common.v1.schema.json\",\n      \"sha256\": \"36a9e8382a28339733e8dc7510554374804111b33013bf18fd24395e66f4fcf7\"\n    }\n  ],\n  \"types\": {\n    \"A\": {\n      \"current\": 1,\n      \"min\": 1\n    }\n  }\n}\n",
-        "signature": "tv3Ob1z05mJbfShx6g0V5fRfYHxII9uDbcWSvKje3cGo6J1F2qNHXzRTXYiDIO9OF4Hetc65ostN/VtxpVouBg=="
+        "signature": "DwWfm9AVbBtWzgMhHtibJEyCfdUPeIz/MMHbpGTibs9YpuvKeP1RwJVV8qCvaYrsDSM+fw0iSQIRZcrUwDGNAg=="
       },
       "valid": false
     },
@@ -176,7 +176,7 @@
           "component/common.v1.schema.json": "{\"c\": 1}\n"
         },
         "manifest": "{\n  \"bundle\": 9999999999999999999,\n  \"files\": [\n    {\n      \"path\": \"component/a.v1.schema.json\",\n      \"sha256\": \"8d3af4ba6d21933de9a05986c244f6bafc709fd622ea3a391a810ab9c104b670\"\n    },\n    {\n      \"path\": \"component/common.v1.schema.json\",\n      \"sha256\": \"36a9e8382a28339733e8dc7510554374804111b33013bf18fd24395e66f4fcf7\"\n    }\n  ],\n  \"types\": {\n    \"A\": {\n      \"current\": 1,\n      \"min\": 1\n    }\n  }\n}\n",
-        "signature": "axEDZgI3kMKEPv0yACEkGJ4RDDuyCRzlhlmF6wMiEHP0lXIhKp4YK/msimCGj+IIXcvZKRNKKMl3n4HeLdD5Dw=="
+        "signature": "fUKXs3yTYyOC5vEkDjjpoXm2xoNxvqq6rooBqEClfVnGHcvHd6tqbhZjGGOcn7XfMQG899HgYwrNxWZRhLsfBw=="
       },
       "valid": false
     },
@@ -188,7 +188,7 @@
           "component/common.v1.schema.json": "{\"c\": 1}\n"
         },
         "manifest": "{\n  \"bundle\": 1.5,\n  \"files\": [\n    {\n      \"path\": \"component/a.v1.schema.json\",\n      \"sha256\": \"8d3af4ba6d21933de9a05986c244f6bafc709fd622ea3a391a810ab9c104b670\"\n    },\n    {\n      \"path\": \"component/common.v1.schema.json\",\n      \"sha256\": \"36a9e8382a28339733e8dc7510554374804111b33013bf18fd24395e66f4fcf7\"\n    }\n  ],\n  \"types\": {\n    \"A\": {\n      \"current\": 1,\n      \"min\": 1\n    }\n  }\n}\n",
-        "signature": "8vO6B2YR00g7RJ7ErkV3EjN4+bcVxKfG7M4rcW0ttnZhCj+wQ/XhEI00MJSAX0Nj7++zIrSPEFl/eeksUsR7Ag=="
+        "signature": "lEmdw1GQp7WkzakOinszKXiqUDrpunsns+Ijy1E/jNX0HN5OsOqSfwIJco20d3pXR5xmbWEfA0RwMPFZne0nBw=="
       },
       "valid": false
     },
@@ -200,7 +200,7 @@
           "component/common.v1.schema.json": "{\"c\": 1}\n"
         },
         "manifest": "{\n  \"bundle\": 1.0,\n  \"files\": [\n    {\n      \"path\": \"component/a.v1.schema.json\",\n      \"sha256\": \"8d3af4ba6d21933de9a05986c244f6bafc709fd622ea3a391a810ab9c104b670\"\n    },\n    {\n      \"path\": \"component/common.v1.schema.json\",\n      \"sha256\": \"36a9e8382a28339733e8dc7510554374804111b33013bf18fd24395e66f4fcf7\"\n    }\n  ],\n  \"types\": {\n    \"A\": {\n      \"current\": 1,\n      \"min\": 1\n    }\n  }\n}\n",
-        "signature": "w2ms4o+ybdorh87krnU9LoRqA5Mo5YwCNYxOWVQvP6fl5fvEzihTSRyuMAFSd4d4gwKXnJ8MUq5iZFkxcIURCQ=="
+        "signature": "lkblnRWQ61KV1gTRKec0Tn6uh4Ua8gxnfAwOhyPj0tbjMkzxgwsvaDO61eD8meF1AZZxG3KbEieI6e+bwXvVCw=="
       },
       "valid": false
     },
@@ -212,7 +212,7 @@
           "component/common.v1.schema.json": "{\"c\": 1}\n"
         },
         "manifest": "{\n  \"bundle\": 1e0,\n  \"files\": [\n    {\n      \"path\": \"component/a.v1.schema.json\",\n      \"sha256\": \"8d3af4ba6d21933de9a05986c244f6bafc709fd622ea3a391a810ab9c104b670\"\n    },\n    {\n      \"path\": \"component/common.v1.schema.json\",\n      \"sha256\": \"36a9e8382a28339733e8dc7510554374804111b33013bf18fd24395e66f4fcf7\"\n    }\n  ],\n  \"types\": {\n    \"A\": {\n      \"current\": 1,\n      \"min\": 1\n    }\n  }\n}\n",
-        "signature": "fPW5JOQ381TclIkUwuxvYr45dT4K+fOEzM7dqtfzrEi/Xnz/3TqbI1ibEOi4Mwz+O/q30Rh2VNIRrZsGKdWWBQ=="
+        "signature": "vE+Y1rdbjyZCw2vcGahV9tky+28B/CwwkUAWN/lnbAHmWGSt29tF1MwoR/yMOXmeR8XSpz8s8BkGYuMGqk3hCg=="
       },
       "valid": false
     },
@@ -221,7 +221,7 @@
       "container": {
         "files": [],
         "manifest": "{\n  \"bundle\": 1,\n  \"files\": [\n    {\n      \"path\": \"component/a.v1.schema.json\",\n      \"sha256\": \"8d3af4ba6d21933de9a05986c244f6bafc709fd622ea3a391a810ab9c104b670\"\n    },\n    {\n      \"path\": \"component/common.v1.schema.json\",\n      \"sha256\": \"36a9e8382a28339733e8dc7510554374804111b33013bf18fd24395e66f4fcf7\"\n    }\n  ],\n  \"types\": {\n    \"A\": {\n      \"current\": 1,\n      \"min\": 1\n    }\n  }\n}\n",
-        "signature": "Nd2BXy7dkiP5tgJNiSgXOP2CRI+Ey2/S2rx+I0l+SVWQt5mAnTJQSchnofe8hba2YHK+OdXDi/afp+8qxUbRDg=="
+        "signature": "NfUnwYH8WeEn0i9XCjF1ChEMFJ3p+2ZhJHuNSuosIuTPpkgKbFIztm/lxmTIZVEGkS2mppo1b6oKxAIXPUh8Aw=="
       },
       "valid": false
     },
@@ -233,7 +233,7 @@
           "component/common.v1.schema.json": "{\"c\": 1}\n"
         },
         "manifest": "not json\n",
-        "signature": "j5JjviNQaWbQ2ItrrFW5wR4wqXawqh5XtEcMrtWDkGutaV6yYN+o1mbDZLPF1U5sXSk+CkYCys/JOafqmYE3DQ=="
+        "signature": "0ikMUFRyCn+KfNz17MuSlbo4XkdNgmr8JxscJI+cUh64V/lzRV9osIjp0vHY/uD9bhGgAA1pKz9Zv0ha+y1eBw=="
       },
       "valid": false
     },
@@ -245,7 +245,7 @@
           "component/common.v1.schema.json": "{\"c\": 1}\n"
         },
         "manifest": "[]\n",
-        "signature": "sYjfKnMull3rdHq5PN98eKq9nMEfD+sXPR88Kw5/Uza7KkbxBDrJ3v1P7dh5ZlWt4LooDNvd/1WZL6V+7b0dDA=="
+        "signature": "cpLRM0+pzj2ICwtV/bip4FUY6OHNFemg3zSCvUW1pRw/FsCHjRWDQ0MorE3uQNzNPkEWe9PpH+GeoFGBnK4xAw=="
       },
       "valid": false
     },
@@ -267,7 +267,7 @@
           "component/a.v1.schema.json": "{\"a\": \"café\"}\n",
           "component/common.v1.schema.json": "{\"c\": 1}\n"
         },
-        "signature": "Nd2BXy7dkiP5tgJNiSgXOP2CRI+Ey2/S2rx+I0l+SVWQt5mAnTJQSchnofe8hba2YHK+OdXDi/afp+8qxUbRDg=="
+        "signature": "NfUnwYH8WeEn0i9XCjF1ChEMFJ3p+2ZhJHuNSuosIuTPpkgKbFIztm/lxmTIZVEGkS2mppo1b6oKxAIXPUh8Aw=="
       },
       "valid": false
     },
@@ -275,7 +275,7 @@
       "name": "container missing files",
       "container": {
         "manifest": "{\n  \"bundle\": 1,\n  \"files\": [\n    {\n      \"path\": \"component/a.v1.schema.json\",\n      \"sha256\": \"8d3af4ba6d21933de9a05986c244f6bafc709fd622ea3a391a810ab9c104b670\"\n    },\n    {\n      \"path\": \"component/common.v1.schema.json\",\n      \"sha256\": \"36a9e8382a28339733e8dc7510554374804111b33013bf18fd24395e66f4fcf7\"\n    }\n  ],\n  \"types\": {\n    \"A\": {\n      \"current\": 1,\n      \"min\": 1\n    }\n  }\n}\n",
-        "signature": "Nd2BXy7dkiP5tgJNiSgXOP2CRI+Ey2/S2rx+I0l+SVWQt5mAnTJQSchnofe8hba2YHK+OdXDi/afp+8qxUbRDg=="
+        "signature": "NfUnwYH8WeEn0i9XCjF1ChEMFJ3p+2ZhJHuNSuosIuTPpkgKbFIztm/lxmTIZVEGkS2mppo1b6oKxAIXPUh8Aw=="
       },
       "valid": false
     },
@@ -287,7 +287,31 @@
           "component/common.v1.schema.json": "{\"c\": 1}\n"
         },
         "manifest": "{\n  \"bundle\": 1,\n  \"files\": [\n    {\n      \"path\": \"component/a.v1.schema.json\",\n      \"sha256\": \"8d3af4ba6d21933de9a05986c244f6bafc709fd622ea3a391a810ab9c104b670\"\n    },\n    {\n      \"path\": \"component/common.v1.schema.json\",\n      \"sha256\": \"36a9e8382a28339733e8dc7510554374804111b33013bf18fd24395e66f4fcf7\"\n    }\n  ],\n  \"types\": {\n    \"A\": {\n      \"current\": 1,\n      \"min\": 1\n    }\n  }\n}\n",
-        "signature": "Nd2BXy7dkiP5tgJNiSgXOP2CRI+Ey2/S2rx+I0l+SVWQt5mAnTJQSchnofe8hba2YHK+OdXDi/afp+8qxUbRDh=="
+        "signature": "NfUnwYH8WeEn0i9XCjF1ChEMFJ3p+2ZhJHuNSuosIuTPpkgKbFIztm/lxmTIZVEGkS2mppo1b6oKxAIXPUh8Ax=="
+      },
+      "valid": false
+    },
+    {
+      "name": "signature with S plus the group order",
+      "container": {
+        "files": {
+          "component/a.v1.schema.json": "{\"a\": \"café\"}\n",
+          "component/common.v1.schema.json": "{\"c\": 1}\n"
+        },
+        "manifest": "{\n  \"bundle\": 1,\n  \"files\": [\n    {\n      \"path\": \"component/a.v1.schema.json\",\n      \"sha256\": \"8d3af4ba6d21933de9a05986c244f6bafc709fd622ea3a391a810ab9c104b670\"\n    },\n    {\n      \"path\": \"component/common.v1.schema.json\",\n      \"sha256\": \"36a9e8382a28339733e8dc7510554374804111b33013bf18fd24395e66f4fcf7\"\n    }\n  ],\n  \"types\": {\n    \"A\": {\n      \"current\": 1,\n      \"min\": 1\n    }\n  }\n}\n",
+        "signature": "NfUnwYH8WeEn0i9XCjF1ChEMFJ3p+2ZhJHuNSuosIuS8ej5nhrVFDkaCvgenXzAbkS2mppo1b6oKxAIXPUh8Ew=="
+      },
+      "valid": false
+    },
+    {
+      "name": "bundle key repeated inside types",
+      "container": {
+        "files": {
+          "component/a.v1.schema.json": "{\"a\": \"café\"}\n",
+          "component/common.v1.schema.json": "{\"c\": 1}\n"
+        },
+        "manifest": "{\n  \"bundle\": 1,\n  \"files\": [\n    {\n      \"path\": \"component/a.v1.schema.json\",\n      \"sha256\": \"8d3af4ba6d21933de9a05986c244f6bafc709fd622ea3a391a810ab9c104b670\"\n    },\n    {\n      \"path\": \"component/common.v1.schema.json\",\n      \"sha256\": \"36a9e8382a28339733e8dc7510554374804111b33013bf18fd24395e66f4fcf7\"\n    }\n  ],\n  \"types\": {\"bundle\": {\"min\": 1, \"current\": 1},\n    \"A\": {\n      \"current\": 1,\n      \"min\": 1\n    }\n  }\n}\n",
+        "signature": "QFvXS2HNCliyrzLiGDvkauol1OjCbF7BhrDMo7lS9/+YVnVahvbSZfbDdXcnMj+sQlXIrMs83wLY2TSLvx22CA=="
       },
       "valid": false
     },
@@ -299,10 +323,10 @@
           "component/common.v1.schema.json": "{\"c\": 1}\n"
         },
         "manifest": "{\n  \"bundle\": 1,\n  \"files\": [\n    {\n      \"path\": \"component/a.v1.schema.json\",\n      \"sha256\": \"8d3af4ba6d21933de9a05986c244f6bafc709fd622ea3a391a810ab9c104b670\"\n    },\n    {\n      \"path\": \"component/common.v1.schema.json\",\n      \"sha256\": \"36a9e8382a28339733e8dc7510554374804111b33013bf18fd24395e66f4fcf7\"\n    }\n  ],\n  \"types\": {\n    \"A\": {\n      \"current\": 1,\n      \"min\": 1\n    }\n  }\n}\n",
-        "signature": "4jxli/3r/qp97TUg6AUwxgxsWkyBHcJjKTFNuzx8/Othr1cdSOsDL5p3zn0gFov4l7TfvpymG0yamkbem7G4Bw=="
+        "signature": "JsCJwpUpAj2GuHWu8gXAeRGFx09G1fD211ocUIvrIbSoMEgeO/Y5MHBJ2Gyx/ixuf/oATGLe5lVPsjWjCOP+Aw=="
       },
       "valid": false
     }
   ],
-  "publicKey": "uUWFSrd5UNra5gdpCY59jV6YSifiKzl7nIRgmrwt8T0="
+  "publicKey": "qUcO2WsnYbxg8G6TCD0xwksIPEMVz/NpTfQaATdz2us="
 }

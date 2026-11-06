@@ -32,8 +32,8 @@ func main() {
 		fmt.Fprintln(os.Stderr, "schemabundle:", err)
 		os.Exit(1)
 	}
-	if res.Action == schemabundle.ActionNone {
-		fmt.Println("::warning::SCHEMA_SIGNING_KEY is not set, building without a schema bundle")
+	if res.Warning != "" {
+		fmt.Println("::warning::" + res.Warning)
 	}
 	fmt.Fprintf(os.Stderr, "schemabundle: action=%s bundle=%d\n", res.Action, res.Bundle)
 	if p := os.Getenv("GITHUB_OUTPUT"); p != "" {

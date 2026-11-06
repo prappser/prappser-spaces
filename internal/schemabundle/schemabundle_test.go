@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"os"
 	"path/filepath"
 	"sort"
@@ -131,6 +132,31 @@ func TestParseKey(t *testing.T) {
 	}
 }
 
+func TestBuild_ShouldRejectBadTypes(t *testing.T) {
+	_, priv := newKey(t)
+	for name, types := range map[string]string{
+		"array":         `[]`,
+		"min string":    `{"A": {"min": "1", "current": 1}}`,
+		"min zero":      `{"A": {"min": 0, "current": 1}}`,
+		"min > current": `{"A": {"min": 2, "current": 1}}`,
+		"huge current":  `{"A": {"min": 1, "current": 2000000000}}`,
+		"null":          `null`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := writeSchemas(t, 1)
+			var top map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal([]byte(manifestText(t, 1, sampleFiles, nil)), &top))
+			top["types"] = json.RawMessage(types)
+			m, err := json.Marshal(top)
+			require.NoError(t, err)
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "bundle.json"), m, 0o644))
+			_, err = Build(dir, priv)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "types")
+		})
+	}
+}
+
 func TestBuild(t *testing.T) {
 	t.Run("good dir verifies only under its own key", func(t *testing.T) {
 		pub, priv := newKey(t)
@@ -161,13 +187,35 @@ func TestBuild(t *testing.T) {
 	})
 	t.Run("non UTF-8 file", func(t *testing.T) {
 		_, priv := newKey(t)
-		bad := map[string]string{"component/x.json": "\xff\xfe"}
+		const p = "component/a.v1.schema.json"
+		bad := map[string]string{p: "\xff\xfe"}
 		dir := t.TempDir()
 		require.NoError(t, os.MkdirAll(filepath.Join(dir, "component"), 0o755))
-		require.NoError(t, os.WriteFile(filepath.Join(dir, "component/x.json"), []byte(bad["component/x.json"]), 0o644))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, p), []byte(bad[p]), 0o644))
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "bundle.json"), []byte(manifestText(t, 1, bad, nil)), 0o644))
 		_, err := Build(dir, priv)
-		assert.Error(t, err)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "UTF-8")
+	})
+	t.Run("rejects unsafe manifest paths", func(t *testing.T) {
+		_, priv := newKey(t)
+		for _, bad := range []string{"component/../component/a.v1.schema.json", "../a.v1.schema.json", "/etc/passwd", `component\a.v1.schema.json`} {
+			dir := t.TempDir()
+			m := manifestText(t, 1, sampleFiles, func(e []map[string]any) { e[0]["path"] = bad })
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "bundle.json"), []byte(m), 0o644))
+			_, err := Build(dir, priv)
+			require.Error(t, err, bad)
+			assert.Contains(t, err.Error(), "path", bad)
+		}
+	})
+	t.Run("every version from min to current must be listed", func(t *testing.T) {
+		_, priv := newKey(t)
+		dir := writeSchemas(t, 1)
+		m := strings.Replace(manifestText(t, 1, sampleFiles, nil), `"current": 1`, `"current": 2`, 1)
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "bundle.json"), []byte(m), 0o644))
+		_, err := Build(dir, priv)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "component/a.v2.schema.json")
 	})
 }
 
@@ -176,11 +224,13 @@ func TestExecute(t *testing.T) {
 		return base64.StdEncoding.EncodeToString(priv.Seed())
 	}
 
-	t.Run("keyless real run does nothing", func(t *testing.T) {
+	t.Run("keyless real run does nothing and warns", func(t *testing.T) {
 		out := filepath.Join(t.TempDir(), "out.json")
 		res, err := Execute(Options{SchemasDir: writeSchemas(t, 1), OutPath: out})
 		require.NoError(t, err)
-		assert.Equal(t, Result{Action: ActionNone, Bundle: 1}, res)
+		assert.Equal(t, ActionNone, res.Action)
+		assert.Equal(t, 1, res.Bundle)
+		assert.Contains(t, res.Warning, "not set")
 		assert.NoFileExists(t, out)
 	})
 	t.Run("dry run publishes with a throwaway key", func(t *testing.T) {
@@ -196,9 +246,17 @@ func TestExecute(t *testing.T) {
 		require.NoError(t, json.Unmarshal(b, &c))
 		assert.Len(t, c.Signature, 88)
 	})
-	t.Run("real run with a foreign key errors", func(t *testing.T) {
+	t.Run("real run with a foreign key builds nothing and warns", func(t *testing.T) {
 		_, priv := newKey(t)
-		_, err := Execute(Options{SchemasDir: writeSchemas(t, 1), OutPath: filepath.Join(t.TempDir(), "o"), KeyB64: seedKey(priv)})
+		out := filepath.Join(t.TempDir(), "o")
+		res, err := Execute(Options{SchemasDir: writeSchemas(t, 1), OutPath: out, KeyB64: seedKey(priv)})
+		require.NoError(t, err)
+		assert.Equal(t, ActionNone, res.Action)
+		assert.Contains(t, res.Warning, "does not match")
+		assert.NoFileExists(t, out)
+	})
+	t.Run("real run with an unparseable key errors", func(t *testing.T) {
+		_, err := Execute(Options{SchemasDir: writeSchemas(t, 1), OutPath: filepath.Join(t.TempDir(), "o"), KeyB64: "not a key"})
 		assert.Error(t, err)
 	})
 	t.Run("previous signed by another key errors", func(t *testing.T) {
@@ -261,14 +319,18 @@ func TestExecute(t *testing.T) {
 		assert.Contains(t, err.Error(), "component/a.v1.schema.json")
 		assert.NoFileExists(t, out)
 	})
-	t.Run("missing or empty previous counts as none", func(t *testing.T) {
+	t.Run("missing or empty previous errors", func(t *testing.T) {
 		empty := filepath.Join(t.TempDir(), "empty.json")
 		require.NoError(t, os.WriteFile(empty, nil, 0o644))
 		for _, p := range []string{filepath.Join(t.TempDir(), "nope.json"), empty} {
-			res, err := Execute(Options{SchemasDir: writeSchemas(t, 1), PreviousPath: p, OutPath: filepath.Join(t.TempDir(), "o"), DryRun: true})
-			require.NoError(t, err)
-			assert.Equal(t, ActionPublish, res.Action)
+			_, err := Execute(Options{SchemasDir: writeSchemas(t, 1), PreviousPath: p, OutPath: filepath.Join(t.TempDir(), "o"), DryRun: true})
+			assert.Error(t, err, p)
 		}
+	})
+	t.Run("no previous path publishes", func(t *testing.T) {
+		res, err := Execute(Options{SchemasDir: writeSchemas(t, 1), OutPath: filepath.Join(t.TempDir(), "o"), DryRun: true})
+		require.NoError(t, err)
+		assert.Equal(t, ActionPublish, res.Action)
 	})
 }
 
@@ -307,6 +369,47 @@ func TestVerify_ShouldRejectBundleOutOfRange(t *testing.T) {
 	m := manifestText(t, json.RawMessage("2147483647"), sampleFiles, nil)
 	_, err := Verify(containerJSON(t, m, sigOf(priv, m), anyFiles(sampleFiles), nil), pub)
 	assert.NoError(t, err)
+}
+
+func TestVerify_ShouldRejectDuplicateBundleKey(t *testing.T) {
+	pub, priv := newKey(t)
+	nested := strings.Replace(manifestText(t, 1, sampleFiles, nil), `"types": {`, `"types": {"bundle": {"min": 1, "current": 1},`, 1)
+	topLevel := strings.Replace(manifestText(t, 1, sampleFiles, nil), `"types"`, `"bundle" : 1, "types"`, 1)
+	for name, m := range map[string]string{"nested": nested, "top level": topLevel} {
+		_, err := Verify(containerJSON(t, m, sigOf(priv, m), anyFiles(sampleFiles), nil), pub)
+		assert.Error(t, err, name)
+	}
+	// A string value equal to "bundle" is not a key.
+	m := manifestText(t, 1, sampleFiles, func(e []map[string]any) { e[0]["note"] = "bundle" })
+	_, err := Verify(containerJSON(t, m, sigOf(priv, m), anyFiles(sampleFiles), nil), pub)
+	assert.NoError(t, err)
+}
+
+// sPlusL adds the group order to the S half of a signature: S+L is congruent to S but non-canonical.
+func sPlusL(t testing.TB, sig []byte) []byte {
+	l, ok := new(big.Int).SetString("7237005577332262213973186563042994240857116359379907606001950938285454250989", 10)
+	require.True(t, ok)
+	rev := func(b []byte) []byte {
+		o := make([]byte, len(b))
+		for i := range b {
+			o[len(b)-1-i] = b[i]
+		}
+		return o
+	}
+	s := new(big.Int).SetBytes(rev(sig[32:]))
+	s.Add(s, l)
+	require.Less(t, s.BitLen(), 257)
+	out := append([]byte{}, sig[:32]...)
+	return append(out, rev(s.FillBytes(make([]byte, 32)))...)
+}
+
+func TestVerify_ShouldRejectNonCanonicalS(t *testing.T) {
+	pub, priv := newKey(t)
+	manifest := manifestText(t, 1, sampleFiles, nil)
+	sig := base64.StdEncoding.EncodeToString(sPlusL(t, ed25519.Sign(priv, []byte(manifest))))
+	_, err := Verify(containerJSON(t, manifest, sig, anyFiles(sampleFiles), nil), pub)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "signature does not match")
 }
 
 func TestResolveOutPath(t *testing.T) {
@@ -489,6 +592,11 @@ func TestWriteVectors(t *testing.T) {
 	add("container missing manifest", false, without("manifest"))
 	add("container missing files", false, without("files"))
 	add("signature with non-canonical trailing bits", false, containerJSON(t, manifest, nonCanonical(good), files(), nil))
+
+	add("signature with S plus the group order", false, containerJSON(t, manifest,
+		base64.StdEncoding.EncodeToString(sPlusL(t, ed25519.Sign(priv, []byte(manifest)))), files(), nil))
+	nestedBundle := strings.Replace(manifest, `"types": {`, `"types": {"bundle": {"min": 1, "current": 1},`, 1)
+	add("bundle key repeated inside types", false, resign(nestedBundle, files()))
 
 	_, other := newKey(t)
 	add("signed by a different key", false, containerJSON(t, manifest, sigOf(other, manifest), files(), nil))
