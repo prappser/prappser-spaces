@@ -1050,3 +1050,28 @@ func TestUserRepository_SetPasswordCredentials_ShouldRefuseEmptyBlobWhenBindingN
 	blob, _, _ := escrowPresent(t, db, "acct-1")
 	assert.True(t, blob)
 }
+
+func TestUserRepository_UpdateLocale_ShouldPersistAndBeReturnedByGetUserByPublicKey_Integration(t *testing.T) {
+	// given
+	db := getTestDB(t)
+	defer db.Close()
+	repo := NewUserRepository(db)
+	if _, err := db.Exec(
+		"INSERT INTO users (public_key, username, role, created_at) VALUES ($1,$2,$3,$4)",
+		"locale-user-1", "Alice", "user", time.Now().Unix(),
+	); err != nil {
+		t.Fatalf("Failed to insert test user: %v", err)
+	}
+	before, _ := repo.GetUserByPublicKey("locale-user-1")
+
+	// when
+	err := repo.UpdateLocale("locale-user-1", "pl")
+
+	// then
+	assert.NoError(t, err)
+	assert.Equal(t, "", before.Locale)
+	got, err := repo.GetUserByPublicKey("locale-user-1")
+	assert.NoError(t, err)
+	assert.Equal(t, "pl", got.Locale)
+	assert.Error(t, repo.UpdateLocale("no-such-user", "pl"))
+}

@@ -157,3 +157,32 @@ func TestDeleteAccount_ShouldReturn500AndKeepUserWhenProduceEventFails_Integrati
 	assert.Equal(t, 1, count(t, db, `SELECT COUNT(*) FROM users WHERE public_key = $1`, pk))
 	assert.Equal(t, 1, count(t, db, `SELECT COUNT(*) FROM members WHERE id = 'fail-m1'`))
 }
+
+func TestUpdateProfile_ShouldRoundTripLocaleThroughGetProfile_Integration(t *testing.T) {
+	// given
+	db := testdb.Connect(t, "profile")
+	defer db.Close()
+	userRepo := user.NewUserRepository(db)
+	const pk = "locale-pk-0123456789abcdefghij"
+	testdb.InsertTestUser(t, db, pk)
+	current, err := userRepo.GetUserByPublicKey(pk)
+	require.NoError(t, err)
+	require.NotNil(t, current)
+	ep := NewProfileEndpoints(userRepo, application.NewRepository(db), &mockEventService{})
+	patchCtx := &fasthttp.RequestCtx{}
+	patchCtx.Request.Header.SetMethod("PATCH")
+	patchCtx.Request.SetBody([]byte(`{"locale":"pl-PL"}`))
+	patchCtx.SetUserValue("user", current)
+
+	// when
+	ep.UpdateProfile(patchCtx)
+	reloaded, err := userRepo.GetUserByPublicKey(pk)
+	require.NoError(t, err)
+	getCtx := &fasthttp.RequestCtx{}
+	getCtx.SetUserValue("user", reloaded)
+	user.NewEndpoints(userRepo, user.Config{}, nil, nil, nil, nil).GetProfile(getCtx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusOK, patchCtx.Response.StatusCode())
+	assert.Contains(t, string(getCtx.Response.Body()), `"locale":"pl"`)
+}

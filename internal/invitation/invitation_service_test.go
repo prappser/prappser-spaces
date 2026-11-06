@@ -111,6 +111,7 @@ func (r *fakeUserRepo) UpdateUserRole(publicKey, role string) error {
 func (r *fakeUserRepo) UpdateAvatarStorageID(publicKey string, avatarStorageID *string) error {
 	return nil
 }
+func (r *fakeUserRepo) UpdateLocale(string, string) error               { return nil }
 func (r *fakeUserRepo) UpdateUsername(publicKey, username string) error { return nil }
 
 func (r *fakeUserRepo) AcceptBinding(publicKey, binding string, iat int64, sub, _ string) (string, string, bool, error) {

@@ -1,8 +1,27 @@
 package push
 
 import (
-	"github.com/prappser/prappser-spaces/internal/event"
+	webpush "github.com/SherClockHolmes/webpush-go"
 )
+
+type Kind string
+
+const (
+	KindChat     Kind = "chat"
+	KindItem     Kind = "item"
+	KindPoll     Kind = "poll"
+	KindFile     Kind = "file"
+	KindMember   Kind = "member"
+	KindRole     Kind = "role"
+	KindReminder Kind = "reminder"
+)
+
+// SendOptions are the per-message push service headers.
+type SendOptions struct {
+	Urgency webpush.Urgency
+	TTL     int
+	Topic   string
+}
 
 // SpaceVapid holds the space-level VAPID keypair for signing web push messages.
 // The singleton row always has id = 1 (enforced by a CHECK constraint in the DB).
@@ -49,6 +68,8 @@ type Subscription struct {
 	CreatedAt           int64
 	LastSuccessAt       *int64
 	FailureCount        int
+	// Locale is the owning account's language, filled only by GetSubscriptionsForUsers.
+	Locale string
 }
 
 // SendResult is the outcome of a single web push delivery attempt.
@@ -65,7 +86,7 @@ type SendResult struct {
 // No context parameter: HTTPWebpushSender builds its own 10-second timeout context internally,
 // so the parameter was unused and misleading.
 type WebpushSender interface {
-	Send(sub *Subscription, vapid *SpaceVapid, payloadJSON []byte) SendResult
+	Send(sub *Subscription, vapid *SpaceVapid, payloadJSON []byte, opts SendOptions) SendResult
 }
 
 // PushRepository is the data-access interface for space_vapid and push_subscriptions.
@@ -82,43 +103,4 @@ type PushRepository interface {
 	GetSubscriptionByID(id, devicePublicKey string) (*Subscription, error)
 	MarkSuccess(id string, ts int64) error
 	IncrementFailure(id string) error
-}
-
-// CategoryForEventType maps an event type string to its push category name.
-// Returns ("", false) for event types that should not trigger any push notification.
-//
-// Category buckets:
-//   - "member":   member lifecycle events
-//   - "edit":     application content-change events
-//   - "reminder": timer-fired notifications
-//
-// No-push types: application_created, user_settings_changed, application_deleted
-// (application_created is already covered by onboarding UX; the others have no meaningful push story)
-//
-// reminder_changed (editing a rule) is edit noise, not a notification, so it
-// deliberately has no category here - only reminder_fired pushes.
-func CategoryForEventType(eventType string) (categoryName string, ok bool) {
-	switch event.EventType(eventType) {
-	case event.EventTypeMemberAdded,
-		event.EventTypeMemberRemoved,
-		event.EventTypeMemberRoleChanged,
-		event.EventTypeInviteRevoked:
-		return "member", true
-
-	case event.EventTypeApplicationDataChanged,
-		event.EventTypeApplicationFileCreated,
-		event.EventTypeApplicationFileDeleted,
-		event.EventTypeComponentDataChanged,
-		event.EventTypeApplicationAfterEditModeChanged:
-		return "edit", true
-
-	case event.EventTypeReminderFired:
-		return "reminder", true
-
-	default:
-		// application_created, user_settings_changed, application_deleted,
-		// member_details_changed, reminder_changed, and any future unknown
-		// types: no push.
-		return "", false
-	}
 }

@@ -1,12 +1,15 @@
 package push
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"sync"
 	"testing"
 	"time"
 
+	webpush "github.com/SherClockHolmes/webpush-go"
 	"github.com/prappser/prappser-spaces/internal/event"
 	"github.com/stretchr/testify/assert"
 )
@@ -140,16 +143,17 @@ type sendCall struct {
 	sub     *Subscription
 	vapid   *SpaceVapid
 	payload []byte
+	opts    SendOptions
 }
 
 func newMockWebpushSender(result SendResult) *mockWebpushSender {
 	return &mockWebpushSender{result: result}
 }
 
-func (m *mockWebpushSender) Send(sub *Subscription, vapid *SpaceVapid, payloadJSON []byte) SendResult {
+func (m *mockWebpushSender) Send(sub *Subscription, vapid *SpaceVapid, payloadJSON []byte, opts SendOptions) SendResult {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.calls = append(m.calls, sendCall{sub: sub, vapid: vapid, payload: payloadJSON})
+	m.calls = append(m.calls, sendCall{sub: sub, vapid: vapid, payload: payloadJSON, opts: opts})
 	return m.result
 }
 
@@ -202,13 +206,16 @@ func TestPushService_Push_ShouldSendForMemberAddedEvent(t *testing.T) {
 	ev := makeEvent(event.EventTypeMemberAdded, "creator-pk", "app-1")
 
 	// when
-	svc.Push(ev, "", "", []string{"user-pk-1"})
+	svc.Push(ev, nil, "", false, []string{"user-pk-1"})
 
 	// then
 	assert.True(t, sender.waitForCalls(1, 2*time.Second), "expected 1 Send call")
 	assert.Equal(t, 1, sender.callCount())
-	assert.Len(t, repo.markSuccessCalls, 1)
-	assert.Equal(t, "sub-1", repo.markSuccessCalls[0].id)
+	assert.Eventually(t, func() bool {
+		repo.mu.Lock()
+		defer repo.mu.Unlock()
+		return len(repo.markSuccessCalls) == 1 && repo.markSuccessCalls[0].id == "sub-1"
+	}, 2*time.Second, 5*time.Millisecond, "expected MarkSuccess for sub-1")
 }
 
 func TestPushService_Push_ShouldSkipWhenApplicationMuted(t *testing.T) {
@@ -230,7 +237,7 @@ func TestPushService_Push_ShouldSkipWhenApplicationMuted(t *testing.T) {
 	ev := makeEvent(event.EventTypeMemberAdded, "creator-pk", "app-1")
 
 	// when
-	svc.Push(ev, "", "", []string{"user-pk-1"})
+	svc.Push(ev, nil, "", false, []string{"user-pk-1"})
 
 	// then: no send because app-1 is muted
 	time.Sleep(100 * time.Millisecond)
@@ -256,7 +263,7 @@ func TestPushService_Push_ShouldSendWhenDifferentApplicationMuted(t *testing.T) 
 	ev := makeEvent(event.EventTypeMemberAdded, "creator-pk", "app-1")
 
 	// when
-	svc.Push(ev, "", "", []string{"user-pk-1"})
+	svc.Push(ev, nil, "", false, []string{"user-pk-1"})
 
 	// then: send proceeds because app-1 is not in muted list (only app-2 is)
 	assert.True(t, sender.waitForCalls(1, 2*time.Second), "expected 1 Send call")
@@ -282,15 +289,15 @@ func TestPushService_Push_ShouldDeleteSubscriptionOn410(t *testing.T) {
 	ev := makeEvent(event.EventTypeMemberAdded, "creator-pk", "app-1")
 
 	// when
-	svc.Push(ev, "", "", []string{"user-pk-1"})
+	svc.Push(ev, nil, "", false, []string{"user-pk-1"})
 
 	// then: sender called and subscription deleted
 	assert.True(t, sender.waitForCalls(1, 2*time.Second), "expected 1 Send call")
-	repo.mu.Lock()
-	deleteCalls := repo.deleteSubscriptionCalls
-	repo.mu.Unlock()
-	assert.Len(t, deleteCalls, 1)
-	assert.Equal(t, "sub-1", deleteCalls[0].id)
+	assert.Eventually(t, func() bool {
+		repo.mu.Lock()
+		defer repo.mu.Unlock()
+		return len(repo.deleteSubscriptionCalls) == 1 && repo.deleteSubscriptionCalls[0].id == "sub-1"
+	}, 2*time.Second, 5*time.Millisecond, "expected subscription deleted")
 }
 
 func TestPushService_Push_ShouldIncrementFailureOn429(t *testing.T) {
@@ -312,44 +319,18 @@ func TestPushService_Push_ShouldIncrementFailureOn429(t *testing.T) {
 	ev := makeEvent(event.EventTypeMemberAdded, "creator-pk", "app-1")
 
 	// when
-	svc.Push(ev, "", "", []string{"user-pk-1"})
+	svc.Push(ev, nil, "", false, []string{"user-pk-1"})
 
 	// then: failure incremented, subscription NOT deleted
 	assert.True(t, sender.waitForCalls(1, 2*time.Second), "expected 1 Send call")
+	assert.Eventually(t, func() bool {
+		repo.mu.Lock()
+		defer repo.mu.Unlock()
+		return len(repo.incrementFailureCalls) == 1 && repo.incrementFailureCalls[0] == "sub-1"
+	}, 2*time.Second, 5*time.Millisecond, "expected failure increment")
 	repo.mu.Lock()
-	failureCalls := repo.incrementFailureCalls
-	deleteCalls := repo.deleteSubscriptionCalls
+	assert.Len(t, repo.deleteSubscriptionCalls, 0, "subscription must not be deleted on 429")
 	repo.mu.Unlock()
-	assert.Len(t, failureCalls, 1)
-	assert.Equal(t, "sub-1", failureCalls[0])
-	assert.Len(t, deleteCalls, 0, "subscription must not be deleted on 429")
-}
-
-func TestPushService_Push_ShouldSkipWhenEventTypeHasNoCategory(t *testing.T) {
-	// given
-	repo := newMockPushRepository()
-	sender := newMockWebpushSender(SendResult{StatusCode: 201})
-	vapidSvc := newMockSpaceVapidService("pub", "priv")
-	svc := NewPushService(repo, sender, vapidSvc)
-
-	repo.subscriptions["sub-1"] = &Subscription{
-		ID:                  "sub-1",
-		DevicePublicKey:     "user-pk-1",
-		Endpoint:            "https://push.example.com/1",
-		P256dh:              "p256dh-value",
-		Auth:                "auth-value",
-		MutedApplicationIDs: []string{},
-	}
-
-	// application_created has no push category - CategoryForEventType returns ("", false)
-	ev := makeEvent(event.EventTypeApplicationCreated, "creator-pk", "app-1")
-
-	// when
-	svc.Push(ev, "", "", []string{"user-pk-1"})
-
-	// then: sender not called because the event type has no push story
-	time.Sleep(100 * time.Millisecond)
-	assert.Equal(t, 0, sender.callCount())
 }
 
 func TestPushService_Push_ShouldUseSpaceVapidForAllRecipients(t *testing.T) {
@@ -379,7 +360,7 @@ func TestPushService_Push_ShouldUseSpaceVapidForAllRecipients(t *testing.T) {
 	ev := makeEvent(event.EventTypeMemberAdded, "creator-pk", "app-1")
 
 	// when
-	svc.Push(ev, "", "", []string{"user-pk-1", "user-pk-2"})
+	svc.Push(ev, nil, "", false, []string{"user-pk-1", "user-pk-2"})
 
 	// then: both deliveries used the same space VAPID keys
 	assert.True(t, sender.waitForCalls(2, 2*time.Second), "expected 2 Send calls")
@@ -393,71 +374,177 @@ func TestPushService_Push_ShouldUseSpaceVapidForAllRecipients(t *testing.T) {
 	}
 }
 
-func TestBuildPayload_ShouldProduceExactKeySetIncludingCreatorPublicKey(t *testing.T) {
+func chatNotice() notice {
+	return notice{kind: KindChat, scope: "comp-1", view: "chat", body: "Ann: hi"}
+}
+
+func TestBuildPayload_ShouldProduceExactKeySetV2(t *testing.T) {
+	// given
+	ev := makeEvent(event.EventTypeComponentDataChanged, "creator-pk", "app-1")
+
+	// when
+	payloadJSON, err := buildPayload(ev, "My App", chatNotice())
+
+	// then
+	assert.NoError(t, err)
+	var decoded map[string]interface{}
+	assert.NoError(t, json.Unmarshal(payloadJSON, &decoded))
+	keys := make([]string, 0, len(decoded))
+	for k := range decoded {
+		keys = append(keys, k)
+	}
+	assert.ElementsMatch(t, []string{"v", "applicationId", "eventId", "kind", "title", "body", "tag", "view"}, keys)
+	assert.Equal(t, float64(2), decoded["v"])
+	assert.Equal(t, "app-1", decoded["applicationId"])
+	assert.Equal(t, "evt-1", decoded["eventId"])
+	assert.Equal(t, "chat", decoded["kind"])
+	assert.Equal(t, "My App", decoded["title"])
+	assert.Equal(t, "Ann: hi", decoded["body"])
+	assert.Equal(t, "chat", decoded["view"])
+}
+
+func TestBuildPayload_ShouldOmitViewForNonChatKinds(t *testing.T) {
 	// given
 	ev := makeEvent(event.EventTypeMemberAdded, "creator-pk", "app-1")
 
 	// when
-	payloadJSON, err := buildPayload(ev, "My App", "Creator Name")
+	payloadJSON, err := buildPayload(ev, "My App", notice{kind: KindMember, scope: ev.ID, body: "New member: Bo"})
 
 	// then
 	assert.NoError(t, err)
-
 	var decoded map[string]interface{}
 	assert.NoError(t, json.Unmarshal(payloadJSON, &decoded))
-
-	expectedKeys := []string{
-		"eventId",
-		"type",
-		"creatorPublicKey",
-		"applicationId",
-		"applicationName",
-		"creatorDisplayName",
-		"data",
-		"timestamp",
-	}
-	actualKeys := make([]string, 0, len(decoded))
-	for k := range decoded {
-		actualKeys = append(actualKeys, k)
-	}
-	assert.ElementsMatch(t, expectedKeys, actualKeys)
-
-	assert.Equal(t, "evt-1", decoded["eventId"])
-	assert.Equal(t, "member_added", decoded["type"])
-	assert.Equal(t, "creator-pk", decoded["creatorPublicKey"])
-	assert.Equal(t, "app-1", decoded["applicationId"])
-	assert.Equal(t, "My App", decoded["applicationName"])
-	assert.Equal(t, "Creator Name", decoded["creatorDisplayName"])
+	assert.NotContains(t, decoded, "view")
+	assert.Len(t, decoded, 7)
 }
 
-func TestPushService_Push_ShouldDeliverCreatorPublicKeyInPayload(t *testing.T) {
+func TestBuildPayload_ShouldFallBackToPrappserTitleWhenAppNameEmpty(t *testing.T) {
+	// given
+	ev := makeEvent(event.EventTypeMemberAdded, "creator-pk", "app-1")
+
+	// when
+	payloadJSON, err := buildPayload(ev, "", notice{kind: KindMember, scope: ev.ID})
+
+	// then
+	assert.NoError(t, err)
+	var decoded map[string]interface{}
+	assert.NoError(t, json.Unmarshal(payloadJSON, &decoded))
+	assert.Equal(t, "Prappser", decoded["title"])
+}
+
+func TestBuildPayload_ShouldPrefixTagWithApplicationId(t *testing.T) {
+	// given
+	ev := makeEvent(event.EventTypeComponentDataChanged, "creator-pk", "app-1")
+
+	// when
+	payloadJSON, err := buildPayload(ev, "My App", chatNotice())
+
+	// then
+	assert.NoError(t, err)
+	var decoded map[string]interface{}
+	assert.NoError(t, json.Unmarshal(payloadJSON, &decoded))
+	assert.Equal(t, "app-1|chat|comp-1", decoded["tag"])
+}
+
+func TestSendOptions_ShouldMatchHeadersPerKind(t *testing.T) {
+	// given
+	ev := makeEvent(event.EventTypeComponentDataChanged, "creator-pk", "app-1")
+	topic := topicFor("app-1", "comp-1", "creator-pk")
+	cases := []struct {
+		kind Kind
+		want SendOptions
+	}{
+		{KindChat, SendOptions{Urgency: webpush.UrgencyHigh, TTL: 21600}},
+		{KindItem, SendOptions{Urgency: webpush.UrgencyNormal, TTL: 43200, Topic: topic}},
+		{KindPoll, SendOptions{Urgency: webpush.UrgencyNormal, TTL: 43200}},
+		{KindFile, SendOptions{Urgency: webpush.UrgencyNormal, TTL: 43200}},
+		{KindMember, SendOptions{Urgency: webpush.UrgencyNormal, TTL: 43200}},
+		{KindRole, SendOptions{Urgency: webpush.UrgencyHigh, TTL: 86400}},
+		{KindReminder, SendOptions{Urgency: webpush.UrgencyHigh, TTL: 86400}},
+	}
+
+	for _, c := range cases {
+		// when
+		got := sendOptionsFor(notice{kind: c.kind, componentID: "comp-1"}, ev)
+
+		// then
+		assert.Equal(t, c.want, got, string(c.kind))
+	}
+}
+
+func TestTopicFor_ShouldBeFirst32CharsOfUnpaddedBase64URLSha256(t *testing.T) {
+	// given
+	sum := sha256.Sum256([]byte("app-1|comp-1|creator-pk"))
+	want := base64.RawURLEncoding.EncodeToString(sum[:])[:32]
+
+	// when
+	got := topicFor("app-1", "comp-1", "creator-pk")
+
+	// then
+	assert.Equal(t, want, got)
+	assert.Len(t, got, 32)
+}
+
+func TestPushService_Push_ShouldPassSendOptionsToSender(t *testing.T) {
 	// given
 	repo := newMockPushRepository()
 	sender := newMockWebpushSender(SendResult{StatusCode: 201})
-	vapidSvc := newMockSpaceVapidService("pub", "priv")
-	svc := NewPushService(repo, sender, vapidSvc)
-
-	repo.subscriptions["sub-1"] = &Subscription{
-		ID:                  "sub-1",
-		DevicePublicKey:     "user-pk-1",
-		Endpoint:            "https://push.example.com/1",
-		P256dh:              "p256dh-value",
-		Auth:                "auth-value",
-		MutedApplicationIDs: []string{},
-	}
-
-	ev := makeEvent(event.EventTypeMemberAdded, "creator-pk-123", "app-1")
+	svc := NewPushService(repo, sender, newMockSpaceVapidService("pub", "priv"))
+	repo.subscriptions["sub-1"] = &Subscription{ID: "sub-1", DevicePublicKey: "user-pk-1", MutedApplicationIDs: []string{}}
+	ev := makeEvent(event.EventTypeMemberRoleChanged, "creator-pk", "app-1")
+	ev.Data["newRole"] = "admin"
 
 	// when
-	svc.Push(ev, "My App", "Creator Name", []string{"user-pk-1"})
+	svc.Push(ev, nil, "", false, []string{"user-pk-1"})
 
-	// then: the bytes actually delivered to the transport carry creatorPublicKey
-	assert.True(t, sender.waitForCalls(1, 2*time.Second), "expected 1 Send call")
+	// then
+	assert.True(t, sender.waitForCalls(1, 2*time.Second))
 	sender.mu.Lock()
-	deliveredPayload := sender.calls[0].payload
-	sender.mu.Unlock()
+	defer sender.mu.Unlock()
+	assert.Equal(t, SendOptions{Urgency: webpush.UrgencyHigh, TTL: 86400}, sender.calls[0].opts)
+}
 
-	var decoded map[string]interface{}
-	assert.NoError(t, json.Unmarshal(deliveredPayload, &decoded))
-	assert.Equal(t, "creator-pk-123", decoded["creatorPublicKey"])
+func TestPushService_Push_ShouldRenderOncePerLocaleAndFallBackToEnglish(t *testing.T) {
+	// given
+	repo := newMockPushRepository()
+	sender := newMockWebpushSender(SendResult{StatusCode: 201})
+	svc := NewPushService(repo, sender, newMockSpaceVapidService("pub", "priv"))
+	for id, locale := range map[string]string{"pl": "pl", "empty": "", "de": "de"} {
+		repo.subscriptions[id] = &Subscription{ID: id, DevicePublicKey: "pk-" + id, Locale: locale, MutedApplicationIDs: []string{}}
+	}
+	ev := makeEvent(event.EventTypeMemberRoleChanged, "creator-pk", "app-1")
+	ev.Data["newRole"] = "viewer"
+
+	// when
+	svc.Push(ev, nil, "", false, []string{"pk-pl", "pk-empty", "pk-de"})
+
+	// then
+	assert.True(t, sender.waitForCalls(3, 2*time.Second))
+	sender.mu.Lock()
+	defer sender.mu.Unlock()
+	bodies := map[string]string{}
+	for _, c := range sender.calls {
+		var decoded map[string]interface{}
+		assert.NoError(t, json.Unmarshal(c.payload, &decoded))
+		bodies[c.sub.ID] = decoded["body"].(string)
+	}
+	assert.Equal(t, "Twoja rola: Obserwator", bodies["pl"])
+	assert.Equal(t, "Your role is now: Viewer", bodies["empty"])
+	assert.Equal(t, "Your role is now: Viewer", bodies["de"])
+}
+
+func TestPushService_Push_ShouldSkipWhenEventHasNoRule(t *testing.T) {
+	// given
+	repo := newMockPushRepository()
+	sender := newMockWebpushSender(SendResult{StatusCode: 201})
+	svc := NewPushService(repo, sender, newMockSpaceVapidService("pub", "priv"))
+	repo.subscriptions["sub-1"] = &Subscription{ID: "sub-1", DevicePublicKey: "user-pk-1", MutedApplicationIDs: []string{}}
+	ev := makeEvent(event.EventTypeApplicationCreated, "creator-pk", "app-1")
+
+	// when
+	svc.Push(ev, nil, "", false, []string{"user-pk-1"})
+
+	// then
+	time.Sleep(100 * time.Millisecond)
+	assert.Equal(t, 0, sender.callCount())
 }

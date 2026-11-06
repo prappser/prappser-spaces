@@ -2,6 +2,7 @@ package profile
 
 import (
 	"errors"
+	"strings"
 
 	"github.com/goccy/go-json"
 	"github.com/google/uuid"
@@ -25,7 +26,6 @@ func NewProfileEndpoints(userRepo userRepository, appRepo appLister, eventServic
 	}
 }
 
-// UpdateProfile handles PATCH /users/me, updating the authenticated user's display name.
 func (e *ProfileEndpoints) UpdateProfile(ctx *fasthttp.RequestCtx) {
 	authenticatedUser, ok := ctx.UserValue("user").(*user.User)
 	if !ok || authenticatedUser == nil {
@@ -41,29 +41,55 @@ func (e *ProfileEndpoints) UpdateProfile(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	displayName, err := user.NormalizeUsername(req.DisplayName)
-	if err != nil {
-		ctx.Error(err.Error(), fasthttp.StatusBadRequest)
+	if req.DisplayName == nil && req.Locale == nil {
+		ctx.Error("displayName or locale required", fasthttp.StatusBadRequest)
 		return
 	}
 
-	// Short-circuit: no write, no fan-out when the name hasn't actually changed.
-	if displayName == authenticatedUser.Username {
+	var displayName, locale string
+	if req.DisplayName != nil {
+		var err error
+		if displayName, err = user.NormalizeUsername(*req.DisplayName); err != nil {
+			ctx.Error(err.Error(), fasthttp.StatusBadRequest)
+			return
+		}
+	}
+	if req.Locale != nil {
+		var err error
+		if locale, err = normalizeLocale(*req.Locale); err != nil {
+			ctx.Error(err.Error(), fasthttp.StatusBadRequest)
+			return
+		}
+	}
+
+	nameChanged := req.DisplayName != nil && displayName != authenticatedUser.Username
+	localeChanged := req.Locale != nil && locale != authenticatedUser.Locale
+
+	if !nameChanged && !localeChanged {
 		ctx.SetStatusCode(fasthttp.StatusOK)
 		ctx.SetContentType("application/json")
 		json.NewEncoder(ctx).Encode(authenticatedUser)
 		return
 	}
 
-	if err := e.userRepo.UpdateUsername(publicKey, displayName); err != nil {
-		if errors.Is(err, user.ErrUsernameTaken) {
-			log.Debug().Str("publicKey", publicKey).Msg("[PROFILE] Username already used for password login")
-			ctx.Error("username already used for password login on this space", fasthttp.StatusConflict)
+	if nameChanged {
+		if err := e.userRepo.UpdateUsername(publicKey, displayName); err != nil {
+			if errors.Is(err, user.ErrUsernameTaken) {
+				log.Debug().Str("publicKey", publicKey).Msg("[PROFILE] Username already used for password login")
+				ctx.Error("username already used for password login on this space", fasthttp.StatusConflict)
+				return
+			}
+			log.Error().Err(err).Str("publicKey", publicKey).Msg("[PROFILE] Failed to update username")
+			ctx.Error("Failed to update profile", fasthttp.StatusInternalServerError)
 			return
 		}
-		log.Error().Err(err).Str("publicKey", publicKey).Msg("[PROFILE] Failed to update username")
-		ctx.Error("Failed to update profile", fasthttp.StatusInternalServerError)
-		return
+	}
+	if localeChanged {
+		if err := e.userRepo.UpdateLocale(publicKey, locale); err != nil {
+			log.Error().Err(err).Str("publicKey", publicKey).Msg("[PROFILE] Failed to update locale")
+			ctx.Error("Failed to update profile", fasthttp.StatusInternalServerError)
+			return
+		}
 	}
 
 	updatedUser, err := e.userRepo.GetUserByPublicKey(publicKey)
@@ -73,8 +99,31 @@ func (e *ProfileEndpoints) UpdateProfile(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	// Fan out UserSettingsChanged to every app the user is a member of so member-list UIs refresh.
-	// Best-effort: errors are logged but do not fail the response.
+	if nameChanged {
+		e.fanOutSettingsChanged(ctx, updatedUser)
+	}
+
+	response, _ := json.Marshal(updatedUser)
+	ctx.SetContentType("application/json")
+	ctx.SetStatusCode(fasthttp.StatusOK)
+	ctx.SetBody(response)
+}
+
+func normalizeLocale(raw string) (string, error) {
+	base, _, _ := strings.Cut(strings.NewReplacer("_", "-").Replace(strings.TrimSpace(raw)), "-")
+	if len(base) < 2 || len(base) > 3 {
+		return "", errors.New("locale must be a 2 or 3 letter language code")
+	}
+	for _, c := range base {
+		if (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') {
+			return "", errors.New("locale must be a 2 or 3 letter language code")
+		}
+	}
+	return strings.ToLower(base), nil
+}
+
+func (e *ProfileEndpoints) fanOutSettingsChanged(ctx *fasthttp.RequestCtx, updatedUser *user.User) {
+	publicKey, displayName := updatedUser.PublicKey, updatedUser.Username
 	apps, err := e.appRepo.GetApplicationsByMemberPublicKey(publicKey)
 	if err != nil {
 		log.Warn().Err(err).Str("publicKey", publicKey).Msg("[PROFILE] Failed to look up member apps for UserSettingsChanged fan-out")
@@ -107,11 +156,6 @@ func (e *ProfileEndpoints) UpdateProfile(ctx *fasthttp.RequestCtx) {
 			}
 		}
 	}
-
-	response, _ := json.Marshal(updatedUser)
-	ctx.SetContentType("application/json")
-	ctx.SetStatusCode(fasthttp.StatusOK)
-	ctx.SetBody(response)
 }
 
 // newEventID generates a UUID v7 (time-ordered) for event IDs, falling back to v4 on clock error.

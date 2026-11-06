@@ -294,10 +294,16 @@ func (f *fakeBroadcaster) BroadcastToUser(userPublicKey string, event *Event)   
 
 type capturingPusher struct {
 	recipients []string
+	app        *application.Application
+	agent      bool
+	calls      int
 }
 
-func (p *capturingPusher) Push(event *Event, appName, creatorDisplayName string, recipientPublicKeys []string) {
+func (p *capturingPusher) Push(event *Event, app *application.Application, creatorDisplayName string, agent bool, recipientPublicKeys []string) {
 	p.recipients = recipientPublicKeys
+	p.app = app
+	p.agent = agent
+	p.calls++
 }
 
 func TestBroadcastEvent_ExplicitRecipients_OverridesAllMembers(t *testing.T) {
@@ -329,7 +335,7 @@ func TestBroadcastEvent_ExplicitRecipients_OverridesAllMembers(t *testing.T) {
 	}
 
 	// when
-	svc.broadcastEvent(evt)
+	svc.broadcastEvent(evt, false)
 
 	// then
 	if len(pusher.recipients) != 1 || pusher.recipients[0] != "member-2" {
@@ -364,7 +370,7 @@ func TestBroadcastEvent_NoExplicitRecipients_FallsBackToAllMembersExceptCreator(
 	}
 
 	// when
-	svc.broadcastEvent(evt)
+	svc.broadcastEvent(evt, false)
 
 	// then
 	if len(pusher.recipients) != 1 || pusher.recipients[0] != "member-2" {
@@ -404,13 +410,71 @@ func TestBroadcastEvent_ForgedRecipientsOnNonAllowlistedType_IsIgnored(t *testin
 	}
 
 	// when
-	svc.broadcastEvent(evt)
+	svc.broadcastEvent(evt, false)
 
 	// then: falls back to all members except the creator, exactly as if no
 	// recipients key had been present.
 	if len(pusher.recipients) != 1 || pusher.recipients[0] != "member-2" {
 		t.Fatalf("Expected the forged recipients key to be ignored and push to fall back to [member-2], got %v", pusher.recipients)
 	}
+}
+
+func roleChangeSetup(t *testing.T, appID string) (*application.MemoryRepository, *capturingPusher, *EventService) {
+	t.Helper()
+	appRepo := application.NewMemoryRepository()
+	if err := appRepo.RegisterApplication(&application.Application{ID: appID, Name: "Test App"}); err != nil {
+		t.Fatalf("Failed to create application: %v", err)
+	}
+	for _, pk := range []string{"member-1", "member-2", "member-3"} {
+		if err := appRepo.CreateMember(&application.Member{ID: pk, ApplicationID: appID, Role: application.MemberRoleMember, PublicKey: pk}); err != nil {
+			t.Fatalf("Failed to create member %s: %v", pk, err)
+		}
+	}
+	pusher := &capturingPusher{}
+	return appRepo, pusher, NewEventService(nil, appRepo, &fakeBroadcaster{}, pusher)
+}
+
+func TestBroadcastEvent_ShouldSendRoleChangeOnlyToTargetMember(t *testing.T) {
+	// given
+	_, pusher, svc := roleChangeSetup(t, "app-r1")
+	evt := &Event{ID: "evt-r1", Type: EventTypeMemberRoleChanged, ApplicationID: "app-r1", CreatorPublicKey: "member-1",
+		Data: map[string]interface{}{"memberPublicKey": "member-2", "newRole": "admin"}}
+
+	// when
+	svc.broadcastEvent(evt, false)
+
+	// then
+	assert.Equal(t, []string{"member-2"}, pusher.recipients)
+}
+
+func TestBroadcastEvent_ShouldSendNothingWhenRoleChangeTargetNotMember(t *testing.T) {
+	// given
+	_, pusher, svc := roleChangeSetup(t, "app-r2")
+	evt := &Event{ID: "evt-r2", Type: EventTypeMemberRoleChanged, ApplicationID: "app-r2", CreatorPublicKey: "member-1",
+		Data: map[string]interface{}{"memberPublicKey": "stranger", "newRole": "admin"}}
+
+	// when
+	svc.broadcastEvent(evt, false)
+
+	// then
+	assert.Equal(t, 0, pusher.calls)
+}
+
+func TestBroadcastEvent_ShouldPassAgentFlagAndApplication(t *testing.T) {
+	// given
+	_, pusher, svc := roleChangeSetup(t, "app-r3")
+	evt := &Event{ID: "evt-r3", Type: EventTypeComponentDataChanged, ApplicationID: "app-r3", CreatorPublicKey: "member-1",
+		Data: map[string]interface{}{"applicationId": "app-r3"}}
+
+	// when
+	svc.broadcastEvent(evt, true)
+
+	// then
+	assert.True(t, pusher.agent)
+	if assert.NotNil(t, pusher.app) {
+		assert.Equal(t, "app-r3", pusher.app.ID)
+	}
+	assert.ElementsMatch(t, []string{"member-2", "member-3"}, pusher.recipients)
 }
 
 func TestExecuteMemberRemoved_ShouldNotPanicOnShortPublicKey(t *testing.T) {

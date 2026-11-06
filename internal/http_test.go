@@ -22,6 +22,7 @@ func (noopUserRepository) UpdateUserRole(publicKey, role string) error          
 func (noopUserRepository) UpdateAvatarStorageID(publicKey string, avatarStorageID *string) error {
 	return nil
 }
+func (noopUserRepository) UpdateLocale(string, string) error               { return nil }
 func (noopUserRepository) UpdateUsername(publicKey, username string) error { return nil }
 func (noopUserRepository) AcceptBinding(_, _ string, _ int64, _, _ string) (string, string, bool, error) {
 	return "", "", false, nil

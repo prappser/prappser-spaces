@@ -254,6 +254,7 @@ func (m *mockUserRepoStorage) CreateUser(_ *user.User) error                   {
 func (m *mockUserRepoStorage) GetUserByPublicKey(_ string) (*user.User, error) { return nil, nil }
 func (m *mockUserRepoStorage) UpdateUserRole(_, _ string) error                { return nil }
 func (m *mockUserRepoStorage) UpdateAvatarStorageID(_ string, _ *string) error { return nil }
+func (m *mockUserRepoStorage) UpdateLocale(string, string) error               { return nil }
 func (m *mockUserRepoStorage) UpdateUsername(_, _ string) error                { return nil }
 func (m *mockUserRepoStorage) AcceptBinding(_, _ string, _ int64, _, _ string) (string, string, bool, error) {
 	return "", "", false, nil
@@ -261,11 +262,11 @@ func (m *mockUserRepoStorage) AcceptBinding(_, _ string, _ int64, _, _ string) (
 func (m *mockUserRepoStorage) EnsureDevice(_, _ string, _ *string, _ int64) error {
 	return nil
 }
-func (m *mockUserRepoStorage) GetDevice(_ string) (*user.Device, error)     { return nil, nil }
+func (m *mockUserRepoStorage) GetDevice(_ string) (*user.Device, error)             { return nil, nil }
 func (m *mockUserRepoStorage) ListDevices(_ string, _ bool) ([]*user.Device, error) { return nil, nil }
-func (m *mockUserRepoStorage) RevokeDevice(_ string, _ int64) error         { return nil }
-func (m *mockUserRepoStorage) RenameDevice(_, _ string) error               { return nil }
-func (m *mockUserRepoStorage) TouchDeviceLastSeen(_ string, _ int64) error  { return nil }
+func (m *mockUserRepoStorage) RevokeDevice(_ string, _ int64) error                 { return nil }
+func (m *mockUserRepoStorage) RenameDevice(_, _ string) error                       { return nil }
+func (m *mockUserRepoStorage) TouchDeviceLastSeen(_ string, _ int64) error          { return nil }
 func (m *mockUserRepoStorage) SetPasswordCredentials(_, _, _, _, _, _ string) error {
 	return nil
 }

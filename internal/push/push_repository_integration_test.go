@@ -303,3 +303,40 @@ func TestPushRepository_GetSubscriptionsForUsers_ShouldJoinAcrossDevicesAndDropR
 	assert.Len(t, subs, 1)
 	assert.Equal(t, "sub-device-1", subs[0].ID)
 }
+
+func TestPushRepository_GetSubscriptionsForUsers_ShouldIncludeAccountLocale_Integration(t *testing.T) {
+	// given
+	db := getTestDB(t)
+	defer db.Close()
+	repo := NewPushRepository(db)
+	if _, err := db.Exec("UPDATE users SET locale = 'pl' WHERE public_key = $1", "test-user-1"); err != nil {
+		t.Fatalf("Failed to set locale: %v", err)
+	}
+	sub := &Subscription{
+		ID:                  "sub-locale",
+		DevicePublicKey:     "test-user-1",
+		Endpoint:            "https://push.example.com/locale",
+		P256dh:              "p",
+		Auth:                "a",
+		MutedApplicationIDs: []string{},
+		CreatedAt:           time.Now().Unix(),
+	}
+	if err := repo.CreateSubscription(sub); err != nil {
+		t.Fatalf("Failed to create subscription: %v", err)
+	}
+
+	// when
+	subs, err := repo.GetSubscriptionsForUsers([]string{"test-user-1"})
+
+	// then
+	assert.NoError(t, err)
+	var got *Subscription
+	for _, s := range subs {
+		if s.ID == "sub-locale" {
+			got = s
+		}
+	}
+	if assert.NotNil(t, got) {
+		assert.Equal(t, "pl", got.Locale)
+	}
+}

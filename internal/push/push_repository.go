@@ -178,9 +178,10 @@ func (r *pushRepository) GetSubscriptionsForUsers(userPublicKeys []string) ([]*S
 
 	query := fmt.Sprintf(`
 		SELECT ps.id, ps.device_public_key, ps.endpoint, ps.p256dh, ps.auth, ps.device_label,
-		       ps.categories, ps.muted_application_ids, ps.created_at, ps.last_success_at, ps.failure_count
+		       ps.categories, ps.muted_application_ids, ps.created_at, ps.last_success_at, ps.failure_count, u.locale
 		FROM push_subscriptions ps
 		JOIN user_devices ud ON ud.device_public_key = ps.device_public_key
+		JOIN users u ON u.public_key = ud.user_public_key
 		WHERE ud.user_public_key IN (%s) AND ud.revoked_at IS NULL`, strings.Join(placeholders, ","))
 
 	rows, err := r.db.Query(query, args...)
@@ -209,6 +210,7 @@ func (r *pushRepository) GetSubscriptionsForUsers(userPublicKeys []string) ([]*S
 			&s.CreatedAt,
 			&lastSuccessAt,
 			&s.FailureCount,
+			&s.Locale,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan subscription: %w", err)

@@ -34,6 +34,7 @@ type User struct {
 	SpaceID         string  `json:"spaceId,omitempty"`
 	CreatedAt       int64   `json:"createdAt"`
 	AvatarStorageID *string `json:"avatarStorageId,omitempty"`
+	Locale          string  `json:"locale"`
 	BindingIat      int64   `json:"-"`
 	BindingSub      string  `json:"-"`
 	StoredBinding   string  `json:"-"`
@@ -100,6 +101,7 @@ type UserRepository interface {
 	// password-enabled account's username (see user_repository.go's partial
 	// unique index) - non-password accounts may freely share a username.
 	UpdateUsername(publicKey, username string) error
+	UpdateLocale(publicKey, locale string) error
 	AcceptBinding(publicKey, binding string, iat int64, sub, ownKey string) (storedBinding, storedSub string, updated bool, err error)
 	// EnsureDevice registers a device for an account if it doesn't already exist (no-op otherwise).
 	EnsureDevice(devicePublicKey, userPublicKey string, deviceName *string, createdAt int64) error
