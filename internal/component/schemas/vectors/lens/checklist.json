@@ -1,0 +1,550 @@
+{
+  "cases": [
+    {
+      "name": "assignedMemberId becomes assigneePublicKey, up",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "assignedMemberId",
+                "to": "assigneePublicKey"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "title": "Milk",
+        "checked": false,
+        "assignedMemberId": "pk-alice"
+      },
+      "to": 2,
+      "out": {
+        "v": 2,
+        "title": "Milk",
+        "checked": false,
+        "assigneePublicKey": "pk-alice"
+      },
+      "lossy": false
+    },
+    {
+      "name": "a null assignee survives the rename, up",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "assignedMemberId",
+                "to": "assigneePublicKey"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "title": "Milk",
+        "checked": false,
+        "assignedMemberId": null
+      },
+      "to": 2,
+      "out": {
+        "v": 2,
+        "title": "Milk",
+        "checked": false,
+        "assigneePublicKey": null
+      },
+      "lossy": false
+    },
+    {
+      "name": "an item without an assignee gains no key, up",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "assignedMemberId",
+                "to": "assigneePublicKey"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "title": "Milk",
+        "checked": false
+      },
+      "to": 2,
+      "out": {
+        "v": 2,
+        "title": "Milk",
+        "checked": false
+      },
+      "lossy": false
+    },
+    {
+      "name": "absent v reads as 1, up",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "assignedMemberId",
+                "to": "assigneePublicKey"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "title": "Milk",
+        "checked": true,
+        "assignedMemberId": "pk-alice"
+      },
+      "to": 2,
+      "out": {
+        "v": 2,
+        "title": "Milk",
+        "checked": true,
+        "assigneePublicKey": "pk-alice"
+      },
+      "lossy": false
+    },
+    {
+      "name": "unknown fields ride through the rename, up",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "assignedMemberId",
+                "to": "assigneePublicKey"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "title": "Milk",
+        "checked": false,
+        "assignedMemberId": "pk-alice",
+        "zz_unknown": 1,
+        "meta": {
+          "zz_unknown": 2
+        }
+      },
+      "to": 2,
+      "out": {
+        "v": 2,
+        "title": "Milk",
+        "checked": false,
+        "assigneePublicKey": "pk-alice",
+        "zz_unknown": 1,
+        "meta": {
+          "zz_unknown": 2
+        }
+      },
+      "lossy": false
+    },
+    {
+      "name": "assigneePublicKey becomes assignedMemberId, down",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "assignedMemberId",
+                "to": "assigneePublicKey"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 2,
+        "title": "Milk",
+        "checked": false,
+        "assigneePublicKey": "pk-alice"
+      },
+      "to": 1,
+      "out": {
+        "v": 1,
+        "title": "Milk",
+        "checked": false,
+        "assignedMemberId": "pk-alice"
+      },
+      "lossy": false
+    },
+    {
+      "name": "unknown fields ride through the rename, down",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "assignedMemberId",
+                "to": "assigneePublicKey"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 2,
+        "title": "Milk",
+        "checked": false,
+        "assigneePublicKey": "pk-alice",
+        "zz_unknown": 1,
+        "meta": {
+          "zz_unknown": 2
+        }
+      },
+      "to": 1,
+      "out": {
+        "v": 1,
+        "title": "Milk",
+        "checked": false,
+        "assignedMemberId": "pk-alice",
+        "zz_unknown": 1,
+        "meta": {
+          "zz_unknown": 2
+        }
+      },
+      "lossy": false
+    },
+    {
+      "name": "an older client reassigns a v2 item and the stored item keeps its version",
+      "kind": "writeback",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "assignedMemberId",
+                "to": "assigneePublicKey"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "original": {
+        "v": 2,
+        "title": "Milk",
+        "checked": false,
+        "assigneePublicKey": "pk-alice",
+        "zz_unknown": 1
+      },
+      "reader": 1,
+      "view": {
+        "v": 1,
+        "title": "Milk",
+        "checked": false,
+        "assignedMemberId": "pk-alice",
+        "zz_unknown": 1
+      },
+      "edited": {
+        "v": 1,
+        "title": "Milk",
+        "checked": false,
+        "assignedMemberId": "pk-bob",
+        "zz_unknown": 1
+      },
+      "result": {
+        "v": 2,
+        "title": "Milk",
+        "checked": false,
+        "assigneePublicKey": "pk-bob",
+        "zz_unknown": 1
+      }
+    },
+    {
+      "name": "a newer client edits a v1 item and upgrades it to v2",
+      "kind": "writeback",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "assignedMemberId",
+                "to": "assigneePublicKey"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "original": {
+        "v": 1,
+        "title": "Milk",
+        "checked": false,
+        "assignedMemberId": "pk-alice"
+      },
+      "reader": 2,
+      "view": {
+        "v": 2,
+        "title": "Milk",
+        "checked": false,
+        "assigneePublicKey": "pk-alice"
+      },
+      "edited": {
+        "v": 2,
+        "title": "Milk",
+        "checked": true,
+        "assigneePublicKey": "pk-alice"
+      },
+      "result": {
+        "v": 2,
+        "title": "Milk",
+        "checked": true,
+        "assigneePublicKey": "pk-alice"
+      }
+    },
+    {
+      "name": "a newer client edits an item without v and writes v 2",
+      "kind": "writeback",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "assignedMemberId",
+                "to": "assigneePublicKey"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "original": {
+        "title": "Milk",
+        "checked": false,
+        "assignedMemberId": "pk-alice"
+      },
+      "reader": 2,
+      "view": {
+        "v": 2,
+        "title": "Milk",
+        "checked": false,
+        "assigneePublicKey": "pk-alice"
+      },
+      "edited": {
+        "v": 2,
+        "title": "Milk",
+        "checked": false,
+        "assigneePublicKey": null
+      },
+      "result": {
+        "v": 2,
+        "title": "Milk",
+        "checked": false,
+        "assigneePublicKey": null
+      }
+    },
+    {
+      "name": "a v2 client editing a v2 item keeps its v",
+      "kind": "writeback",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "assignedMemberId",
+                "to": "assigneePublicKey"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "original": {
+        "v": 2,
+        "title": "Milk",
+        "checked": false
+      },
+      "reader": 2,
+      "view": {
+        "v": 2,
+        "title": "Milk",
+        "checked": false
+      },
+      "edited": {
+        "v": 2,
+        "title": "Oat milk",
+        "checked": false
+      },
+      "result": {
+        "v": 2,
+        "title": "Oat milk",
+        "checked": false
+      }
+    },
+    {
+      "name": "an unchanged edit writes nothing",
+      "kind": "writeback",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "assignedMemberId",
+                "to": "assigneePublicKey"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "original": {
+        "v": 1,
+        "title": "Milk",
+        "checked": false,
+        "assignedMemberId": "pk-alice"
+      },
+      "reader": 1,
+      "view": {
+        "v": 1,
+        "title": "Milk",
+        "checked": false,
+        "assignedMemberId": "pk-alice"
+      },
+      "edited": {
+        "v": 1,
+        "title": "Milk",
+        "checked": false,
+        "assignedMemberId": "pk-alice"
+      },
+      "result": {
+        "v": 1,
+        "title": "Milk",
+        "checked": false,
+        "assignedMemberId": "pk-alice"
+      }
+    },
+    {
+      "name": "a v3 item at reader 2 needs an update",
+      "kind": "state",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "assignedMemberId",
+                "to": "assigneePublicKey"
+              }
+            ]
+          }
+        }
+      ],
+      "reader": 2,
+      "entries": [
+        {
+          "key": "item_a",
+          "value": {
+            "v": 3,
+            "title": "Milk",
+            "checked": false
+          }
+        }
+      ],
+      "expect": "needs-update"
+    },
+    {
+      "name": "v1 and v2 items at reader 2 are full",
+      "kind": "state",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "assignedMemberId",
+                "to": "assigneePublicKey"
+              }
+            ]
+          }
+        }
+      ],
+      "reader": 2,
+      "entries": [
+        {
+          "key": "item_a",
+          "value": {
+            "v": 1,
+            "title": "Milk",
+            "checked": false,
+            "assignedMemberId": "pk-alice"
+          }
+        },
+        {
+          "key": "item_b",
+          "value": {
+            "v": 2,
+            "title": "Milk",
+            "checked": false
+          }
+        }
+      ],
+      "expect": "full"
+    }
+  ]
+}

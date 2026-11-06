@@ -98,10 +98,10 @@ func TestComponentData_ShouldFlagNonFullEntries(t *testing.T) {
 func TestComponentData_ShouldReturnStoredDataForV1Types(t *testing.T) {
 	// given
 	v := embeddedValidator(t)
-	stored := map[string]any{"item_a": map[string]any{"title": "Milk", "checked": false}, "item_b": "", "_title": "x"}
+	stored := map[string]any{"vote_a": "opt", "vote_b": "", "_title": "x"}
 
 	// when
-	view, states := componentData(v, "Checklist", stored)
+	view, states := componentData(v, "Poll", stored)
 
 	// then
 	assert.Equal(t, stored, view)
@@ -293,15 +293,14 @@ func TestPlanWrite_ShouldInjectVersionOnNewEntryWhenReaderIsV2(t *testing.T) {
 func TestPlanWrite_ShouldNotInjectVersionForV1Type(t *testing.T) {
 	// given
 	v := embeddedValidator(t)
-	item := map[string]any{"title": "x", "checked": false}
 
 	// when
-	written, res, err := plan(t, v, "Checklist", nil, map[string]any{"item_a": item})
+	written, res, err := plan(t, v, "Poll", nil, map[string]any{"vote_pk": "a"})
 
 	// then
 	require.NoError(t, err)
 	require.Nil(t, res)
-	assert.Equal(t, map[string]any{"item_a": item}, written)
+	assert.Equal(t, map[string]any{"vote_pk": "a"}, written)
 }
 
 func TestPlanWrite_ShouldReencodeNewEncodedEntryWithSameDecodedValue(t *testing.T) {
@@ -388,7 +387,7 @@ func TestPlanWrite_ShouldKeepErrorWordingForV1Types(t *testing.T) {
 	v := embeddedValidator(t)
 
 	// when
-	_, res, err := plan(t, v, "Checklist", nil, map[string]any{"item_a": map[string]any{"title": 5, "checked": false}})
+	_, res, err := plan(t, v, "Poll", nil, map[string]any{"vote_pk": 5})
 
 	// then
 	require.NoError(t, err)
@@ -610,4 +609,88 @@ func TestComponentData_ShouldPassNonObjectEntriesThroughForUnversionedType(t *te
 	// then
 	assert.Equal(t, stored, view)
 	assert.Empty(t, states)
+}
+
+func TestComponentData_ShouldMigrateV1ChecklistItemToAssigneePublicKey(t *testing.T) {
+	// given
+	v := embeddedValidator(t)
+	stored := map[string]any{"item_a": map[string]any{"title": "Milk", "checked": false, "assignedMemberId": "pk2"}}
+
+	// when
+	view, states := componentData(v, "Checklist", stored)
+
+	// then
+	assert.Equal(t, map[string]any{"v": float64(2), "title": "Milk", "checked": false, "assigneePublicKey": "pk2"}, view["item_a"])
+	assert.Empty(t, states)
+}
+
+func TestPlanWrite_ShouldWriteChecklistV1ItemBackAtV2(t *testing.T) {
+	// given
+	v := embeddedValidator(t)
+	stored := map[string]any{"item_a": map[string]any{"title": "Milk", "checked": false, "assignedMemberId": "pk2"}}
+
+	// when
+	written, res, err := plan(t, v, "Checklist", stored, map[string]any{"item_a": map[string]any{"title": "Milk", "checked": true, "assigneePublicKey": "pk2"}})
+
+	// then
+	require.NoError(t, err)
+	require.Nil(t, res)
+	assert.Equal(t, map[string]any{"item_a": map[string]any{"v": float64(2), "title": "Milk", "checked": true, "assigneePublicKey": "pk2"}}, written)
+}
+
+func TestPlanWrite_ShouldInjectVersionOnNewChecklistItem(t *testing.T) {
+	// given
+	v := embeddedValidator(t)
+
+	// when
+	written, res, err := plan(t, v, "Checklist", nil, map[string]any{"item_*": map[string]any{"title": "x", "checked": false}})
+
+	// then
+	require.NoError(t, err)
+	require.Nil(t, res)
+	require.Len(t, written, 1)
+	for _, val := range written {
+		assert.Equal(t, v2Item("x", false), val)
+	}
+}
+
+func TestPlanWrite_ShouldRejectOldAssigneeNameOnChecklistV2Item(t *testing.T) {
+	// given
+	v := embeddedValidator(t)
+	item := map[string]any{"v": float64(2), "title": "x", "checked": false, "assignedMemberId": "pk2"}
+
+	// when
+	_, res, err := plan(t, v, "Checklist", nil, map[string]any{"item_a": item})
+
+	// then
+	require.NoError(t, err)
+	require.NotNil(t, res)
+	assert.Contains(t, resultText(res), "assignedMemberId")
+}
+
+func TestComponentData_ShouldMigrateV1ChecklistItemWithNullAssignee(t *testing.T) {
+	// given
+	v := embeddedValidator(t)
+	stored := map[string]any{"item_a": map[string]any{"title": "Milk", "checked": false, "assignedMemberId": nil}}
+
+	// when
+	view, states := componentData(v, "Checklist", stored)
+
+	// then
+	assert.Equal(t, map[string]any{"v": float64(2), "title": "Milk", "checked": false, "assigneePublicKey": nil}, view["item_a"])
+	assert.Empty(t, states)
+}
+
+func TestPlanWrite_ShouldWriteChecklistV1ItemWithNullAssigneeBackAtV2(t *testing.T) {
+	// given
+	v := embeddedValidator(t)
+	stored := map[string]any{"item_a": map[string]any{"title": "Milk", "checked": false, "assignedMemberId": nil}}
+
+	// when
+	written, res, err := plan(t, v, "Checklist", stored, map[string]any{"item_a": map[string]any{"title": "Milk", "checked": true, "assigneePublicKey": nil}})
+
+	// then
+	require.NoError(t, err)
+	require.Nil(t, res)
+	assert.Equal(t, map[string]any{"item_a": map[string]any{"v": float64(2), "title": "Milk", "checked": true, "assigneePublicKey": nil}}, written)
 }

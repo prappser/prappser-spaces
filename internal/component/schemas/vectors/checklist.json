@@ -1,5 +1,5 @@
 {
-  "schema": "https://prappser.app/schemas/component/checklist.v1.schema.json",
+  "schema": "https://prappser.app/schemas/component/checklist.v2.schema.json",
   "cases": [
     {
       "name": "empty",
@@ -43,6 +43,60 @@
     },
     {
       "name": "full",
+      "data": {
+        "item_i2": {
+          "title": "Passport",
+          "checked": true,
+          "detailsDocument": [
+            {
+              "insert": "Renew\n",
+              "attributes": {
+                "bold": true
+              }
+            }
+          ],
+          "assigneePublicKey": "pk-alice",
+          "attachmentIds": [
+            "file-1"
+          ],
+          "priority": "high",
+          "date": "2026-07-01",
+          "time": "09:30",
+          "order": 1.5
+        },
+        "item_i3": {
+          "title": "Eggs",
+          "checked": false,
+          "detailsDocument": null,
+          "assigneePublicKey": null,
+          "attachmentIds": [],
+          "priority": "none",
+          "date": null,
+          "time": null,
+          "order": -1
+        },
+        "allowToggleInUsage": true,
+        "allowAddInUsage": false,
+        "maxVisibleItems": 5,
+        "templates": {
+          "Weekly": [
+            "Milk",
+            "Eggs"
+          ]
+        },
+        "defaultSort": "priority",
+        "defaultGroup": "date",
+        "_title": "Title",
+        "_sectionBreak": true,
+        "_width": 480,
+        "_spaceAbove": 8,
+        "_spaceBelow": 8
+      },
+      "valid": true
+    },
+    {
+      "name": "full (v1)",
+      "schema": "https://prappser.app/schemas/component/checklist.v1.schema.json",
       "data": {
         "item_i2": {
           "title": "Passport",
@@ -451,6 +505,129 @@
         "v": 2,
         "title": "Milk",
         "checked": false
+      },
+      "valid": false
+    },
+    {
+      "name": "item with assigneePublicKey",
+      "data": {
+        "item_i1": {
+          "title": "Milk",
+          "checked": false,
+          "assigneePublicKey": "pk-alice"
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "item with null assigneePublicKey",
+      "data": {
+        "item_i1": {
+          "title": "Milk",
+          "checked": false,
+          "assigneePublicKey": null
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "item with the v1 assignedMemberId",
+      "data": {
+        "item_i1": {
+          "title": "Milk",
+          "checked": false,
+          "assignedMemberId": "pk-alice"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "legacy item with assignedMemberId",
+      "data": {
+        "items": [
+          {
+            "id": "i1",
+            "title": "Milk",
+            "checked": false,
+            "assignedMemberId": "pk-alice"
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "legacy item with assigneePublicKey",
+      "data": {
+        "items": [
+          {
+            "id": "i1",
+            "title": "Milk",
+            "checked": false,
+            "assigneePublicKey": "pk-alice"
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "legacy item with v 1",
+      "data": {
+        "items": [
+          {
+            "v": 1,
+            "id": "i1",
+            "title": "Milk",
+            "checked": false
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "legacy item with v 2",
+      "data": {
+        "items": [
+          {
+            "v": 2,
+            "id": "i1",
+            "title": "Milk",
+            "checked": false
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "keyed item with v 2",
+      "data": {
+        "item_i1": {
+          "v": 2,
+          "title": "Milk",
+          "checked": false,
+          "assigneePublicKey": "pk-alice"
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "keyed item with v 1",
+      "data": {
+        "item_i1": {
+          "v": 1,
+          "title": "Milk",
+          "checked": false
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "keyed item with an id",
+      "data": {
+        "item_i1": {
+          "id": "i1",
+          "title": "Milk",
+          "checked": false
+        }
       },
       "valid": false
     }
