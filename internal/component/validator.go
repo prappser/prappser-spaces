@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"math"
 	"path"
 	"regexp"
 	"sort"
@@ -234,16 +233,18 @@ func NewValidatorFS(fsys fs.FS) (*Validator, error) {
 	sort.Strings(names)
 	for _, name := range names {
 		byVersion := found[name]
-		tv := typeVersions{lo: math.MaxInt}
-		for n := range byVersion {
-			tv.lo = min(tv.lo, n)
-			tv.current = max(tv.current, n)
+		r, ok := ranges[name]
+		if !ok {
+			return nil, fmt.Errorf("%s has schema files but is not listed in %s", name, bundleFile)
 		}
-		if r, ok := ranges[name]; ok {
-			tv.lo, tv.current = r.Min, r.Current
-		}
+		tv := typeVersions{lo: r.Min, current: r.Current}
 		if tv.lo < 1 || tv.lo > tv.current {
 			return nil, fmt.Errorf("invalid version range %d..%d of %s", tv.lo, tv.current, name)
+		}
+		for n := range byVersion {
+			if n > tv.current {
+				return nil, fmt.Errorf("schema file %s is above current version %d of %s", byVersion[n].file, tv.current, name)
+			}
 		}
 		for n := tv.lo; n <= tv.current; n++ {
 			if _, ok := byVersion[n]; !ok {
@@ -298,7 +299,7 @@ func NewValidatorFS(fsys fs.FS) (*Validator, error) {
 func readBundleRanges(fsys fs.FS) (map[string]schemabundle.TypeRange, error) {
 	raw, err := fs.ReadFile(fsys, bundleFile)
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil, nil
+		return nil, fmt.Errorf("%s is missing", bundleFile)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to read %s: %w", bundleFile, err)

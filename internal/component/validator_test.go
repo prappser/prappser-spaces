@@ -323,6 +323,7 @@ func TestValidateComponentData_ShouldReportFieldErrors(t *testing.T) {
 func TestNewValidator_ShouldRejectExternalRef(t *testing.T) {
 	// given
 	fsys := fstest.MapFS{
+		"schemas/bundle.json": {Data: []byte(`{"types":{}}`)},
 		"schemas/template/template-doc.v1.schema.json": {Data: []byte(
 			`{"$id":"` + templateSchema + `","$ref":"file:///etc/passwd"}`)},
 	}
@@ -423,6 +424,7 @@ func TestAccess_ShouldResolveUnless(t *testing.T) {
 	// given
 	fsys := fstest.MapFS{
 		"schemas/template/template-doc.v1.schema.json": {Data: []byte(`{"$id":"` + templateSchema + `"}`)},
+		"schemas/bundle.json":                          {Data: []byte(`{"types":{"X":{"min":1,"current":1}}}`)},
 		"schemas/component/x.v1.schema.json": {Data: []byte(`{"$id":"https://x/x.json","properties":{
 			"closed":{"type":"boolean","default":false,"x-access":"manage"}},
 			"patternProperties":{"^v_.+$":{"x-access":{"unless":"closed"}}}}`)},
@@ -587,24 +589,45 @@ func TestSteps_ShouldReadCurrentFileMigrations(t *testing.T) {
 	assert.Equal(t, []any{map[string]any{"to": json.Number("2")}}, steps)
 }
 
-func TestNewValidator_ShouldFallBackToHighestVersionWithoutBundle(t *testing.T) {
+func TestNewValidator_ShouldRejectMissingBundle(t *testing.T) {
+	// given
+	fsys := versionFixtureFS(map[string]string{"component/x.v1.schema.json": xV1})
+
+	// when
+	_, err := NewValidatorFS(fsys)
+
+	// then
+	assert.ErrorContains(t, err, "schemas/bundle.json is missing")
+}
+
+func TestNewValidator_ShouldRejectTypeNotInBundle(t *testing.T) {
+	// given
+	fsys := versionFixtureFS(map[string]string{
+		"component/x.v1.schema.json": xV1,
+		"component/y.v1.schema.json": `{"$id":"https://x/y.v1.json"}`,
+		"bundle.json":                `{"types":{"X":{"min":1,"current":1}}}`,
+	})
+
+	// when
+	_, err := NewValidatorFS(fsys)
+
+	// then
+	assert.ErrorContains(t, err, "Y has schema files but is not listed")
+}
+
+func TestNewValidator_ShouldRejectFileAboveBundleCurrent(t *testing.T) {
 	// given
 	fsys := versionFixtureFS(map[string]string{
 		"component/x.v1.schema.json": xV1,
 		"component/x.v2.schema.json": xV2,
+		"bundle.json":                `{"types":{"X":{"min":1,"current":1}}}`,
 	})
 
 	// when
-	v, err := NewValidatorFS(fsys)
+	_, err := NewValidatorFS(fsys)
 
 	// then
-	require.NoError(t, err)
-	lo, cur, ok := v.Versions("X")
-	assert.True(t, ok)
-	assert.Equal(t, 1, lo)
-	assert.Equal(t, 2, cur)
-	_, bOK := v.Access("X", "b")
-	assert.True(t, bOK)
+	assert.ErrorContains(t, err, "x.v2.schema.json is above current version 1 of X")
 }
 
 func TestNewValidator_ShouldRejectBundleCurrentWithoutFile(t *testing.T) {
@@ -641,6 +664,7 @@ func TestSteps_ShouldComeFromCurrentFile(t *testing.T) {
 		"component/x.v2.schema.json": xV2,
 		"component/y.v1.schema.json": `{"$id":"https://x/y.v1.json","x-migrations":[{"to":9}]}`,
 		"component/y.v2.schema.json": `{"$id":"https://x/y.v2.json"}`,
+		"bundle.json":                `{"types":{"X":{"min":1,"current":2},"Y":{"min":1,"current":2}}}`,
 	})
 	v, err := NewValidatorFS(fsys)
 	require.NoError(t, err)
