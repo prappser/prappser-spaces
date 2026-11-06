@@ -80,6 +80,8 @@ Rules:
 
 Data carries versions per entry. Readers migrate on read with lens ops declared in the schema. Old clients stay allowed and are never forced to update: they read newer data through the chain and, when they edit a newer entry, write back in that entry's own version. A newer client editing an older entry upgrades it (see Write-back). Unknown top-level keys and unknown fields inside entry values always survive an edit.
 
+The app embeds only the current version of each type, so its R is that embedded version and it validates entries against its own embedded vR file. A fetched bundle can carry a newer file K > R: it gives the app the chain up to K for reading and write-back, and validation still uses vR.
+
 ### Where migrations live
 
 `<type>.vN.schema.json` (N >= 2) has a root keyword `x-migrations`: every step from 2 to N, in order. A vN file repeats the steps of v(N-1) unchanged and appends step N, so the newest file alone holds the whole chain. v1 files have none. Older files never change.
@@ -88,7 +90,7 @@ Data carries versions per entry. Readers migrate on read with lens ops declared 
       { "to": 2, "breaking": false, "entries": { "^item_.+$": [ { "op": "rename", "from": "done", "to": "checked" } ] } }
     ]
 
-- `to`, `breaking` (boolean) and `entries` are required. `to` runs 2, 3, ... N with no gap. The file's `$id` version equals the last `to`.
+- `to`, `breaking` (boolean) and `entries` (an object) are required. `to` runs 2, 3, ... N with no gap. The file's `$id` version equals the last `to`. Authors list the steps in ascending order, but an interpreter finds step k by `to == k`, never by position.
 - `entries` keys are `patternProperties` keys of the same file, verbatim, whose `x-merge` is `per-entry`. A family not listed has no ops in that step; its entries still get the new `v`.
 - Ops in a list apply in order, each seeing the result of the one before.
 - A field name is never reused in a family: a name a previous version declared is not given a different meaning later.
@@ -99,20 +101,20 @@ Data carries versions per entry. Readers migrate on read with lens ops declared 
 
 To migrate a value stored under `key` to version T:
 
-1. e = the value's `v`, 1 when absent. A `v` that is not a number with an integer value >= 1 is `bad-version`: the entry is kept untouched, not shown, ignored for state, and never written back or tombstoned by a lens path.
+1. e = the value's `v`, 1 when absent. A `v` that is not a number with an integer value >= 1 is `bad-version`: the entry is kept untouched, not shown, ignored for state, and never written back or tombstoned, by any path.
 2. e = T: unchanged, including an absent `v`, which stays absent.
 3. e < T: for k = e+1 .. T, apply the up direction of step k's ops.
 4. e > T: for k = e down to T+1, apply the down direction of step k's ops: the ops in reverse order, each inverted. If step k has `breaking: true`, stop with `breaking`.
-5. A needed step that is not known is `missing-step`. A crossed step or op with an unknown op name, an unknown member, or arguments that break a rule below is `unsupported`. Only steps the walk crosses and only the ops list of this key's family are checked; a step that is not crossed is never validated.
+5. Step k is the step whose `to` equals k, wherever it sits in the list. A step has `to` only when `to` is a number with an integer value (not a boolean, not a string), and it matches k only when `to == k` as a number; a step whose `to` is anything else is malformed. No step has `to == k`: `missing-step`, unless the list holds an element that is not an object or has no valid `to` (it may have been meant as step k): then `unsupported`. More than one step has `to == k`: `unsupported`. A crossed step that is not an object, lacks `to`, `breaking` or `entries`, has a `breaking` that is not a boolean or an `entries` that is not an object, is `unsupported`. In a crossed step an `entries` key that is not a compilable regex is `unsupported`, and so is a non-list ops value for this key's family. A crossed step or op with an unknown op name, an unknown member, or arguments that break a rule below is `unsupported`; in a crossed step any member other than `to`, `breaking` and `entries` is an unknown member (the bundle manifest is a different object with its own rules). Only steps the walk crosses and only the ops list of this key's family are checked; a step that is not crossed (duplicate `to` values and bad regexes included) is never validated.
 6. When e differs from T, set `v` to T in the result, explicitly, even for T = 1.
 
 Step k's ops for `key`: the `entries` list whose key, used as a regex, matches `key`; none matches: no ops; more than one: `unsupported`.
 
-Steps are processed in walk order and the first error wins. Within a step the order is: `missing-step` (the step is not known), then `unsupported`, then `breaking`.
+Steps are processed in walk order and the first error wins. Within a step the order is: find the step (`missing-step` when no step has the `to`, `unsupported` for a duplicate `to`), then validate the step and this key's ops (`unsupported`), then `breaking`.
 
 ### Paths
 
-A path is dotted names, each matching `^[A-Za-z_][A-Za-z0-9_]*$`. There is no array indexing: arrays and scalars are leaves. The first name is never `v`. An empty path, an empty name (`a..b`), a name that does not match the regex, a first name `v` or an index segment such as `a.0` is `unsupported`. Absent and JSON `null` differ.
+A path is dotted names, each matching `^[A-Za-z_][A-Za-z0-9_]*$`. There is no array indexing: arrays and scalars are leaves. The first name is never `v`, in `move` and `rename` for both `from` and `to`. An empty path, an empty name (`a..b`), a name that does not match the regex, a first name `v` or an index segment such as `a.0` is `unsupported`. Absent and JSON `null` differ.
 
 - get: absent when a name is missing or a parent is not an object.
 - remove: no-op when absent. After removing, each ancestor left as an empty object is removed too, deepest first, never the root. Only an ancestor emptied by the removal is pruned; an empty object elsewhere is an ordinary value.
@@ -124,12 +126,14 @@ Ops are declared in the up direction. Every precondition is checked on the input
 
 | Op | Up | Down |
 |---|---|---|
-| `rename {from, to}` | single names only, otherwise as `move` | as `move` |
-| `move {from, to}` | `from` absent or `to` unsettable: no-op. Else read `from`, remove `from`, set `to` (an existing `to` is replaced). | the same with `from` and `to` swapped |
+| `rename {from, to}` | as `move` | as `move` |
+| `move {from, to}` | `from` absent or `to` unsettable (a parent of `to` exists and is not an object, checked on the input before `from` is removed): no-op. Else read `from`, remove `from`, set `to` (an existing `to` is replaced). | the same with `from` and `to` swapped |
 | `add {path, default}` | `path` absent: set a deep copy of `default`. Present, null included: untouched. | remove `path` |
 | `map {path, pairs, fallback?}` | value equal to an old value: its new value. Otherwise unchanged. | value equal to a new value: its old value. Otherwise `fallback` when declared, else unchanged. |
 | `wrap {path}` | `null` -> `[]`, array unchanged, any other value -> `[value]` | `[]` -> `null`, `[x, ...]` -> `x`, non-array unchanged |
 | `unwrap {path}` | as `wrap` down | as `wrap` up |
+
+`rename` with a dotted `from` or `to` behaves exactly as `move`, in both directions.
 
 Absent path: every op is a no-op, except `add` up, which sets the default.
 
@@ -146,7 +150,7 @@ Authoring rules (checked against the schema, not by interpreters): with `fallbac
 | `unwrap` | yes | no |
 | all others | no | no |
 
-Lossiness is decided statically from the ops the traversal crosses, never from the value: an entry whose field holds `["a"]` is still lossy through `wrap` down, and read-only. A traversal is lossy when it crosses an op that is lossy in a direction the client uses. A client reading an entry newer than itself (e > R) uses both directions (down to read, up to write back). A client reading an older entry (e < R) uses up only, because it writes in its own version. e = R is never lossy. An entry with a lossy traversal is read-only.
+Lossiness is decided statically from the ops the traversal crosses, never from the value: an entry whose field holds `["a"]` is still lossy through `wrap` down, and read-only. A traversal is lossy when it crosses an op that is lossy in a direction the client uses. A client reading an entry newer than itself (e > R) uses both directions (down to read, up to write back). A client reading an older entry (e < R) uses up only, because it writes in its own version. e = R is never lossy. An entry with a lossy traversal is read-only. Lossiness is counted only over the ops of this key's family that the traversal crosses, and is meaningful only when the walk succeeds: a walk that errors reports the error only. Pass-through values (tombstones, values that are not objects) are never lossy.
 
 ### `v` per key family
 
@@ -154,11 +158,12 @@ Absent `v` means 1 everywhere. A writer at version 2 or above always writes `v`.
 
 - Object entries (`item_<id>`): `value.v`.
 - Encoded entries (`m_`, `e_`, `s_`: `type: string` with `contentMediaType: application/json`): `v` on the decoded object. Decode, migrate or write back, encode. The bytes of the encoding are not part of the contract; compare decoded values.
-- Tombstones (`''`, `null`) and values that do not decode to an object are not entries: passed through untouched.
+- Tombstones (`''`, `null`) and values that do not decode to an object (a number, a string, an array) are not entries: migrate returns them unchanged, they are never written back, and they do not count for the component state.
 - Per-member cells (`vote_<pk>`, `react_<msgKey>_<pk>`) and settings keys (every top-level property, including single-key aggregates such as poll `options`, map `markers`, checklist `templates`, text `document`) have no `v` and are never migrated.
 - The top-level `v` of chat, poll, expenses and countdown is the settings format. It stays `const 1` in every vN file and readers do not use it to pick a chain.
-- In a vN file every entry `$defs` requires `v` with `const N`. v1 entry definitions accept an optional `v: 1`.
-- An entry is validated against the schema file of its own version: `v` absent is the v1 file, `v` = N is the vN file, so `additionalProperties: false` and the `const N` on `v` apply per version. A validator that holds only its own newest file (the app) migrates the entry to its version first, then validates the result. The space embeds every version from min on and validates in the entry's own version. A written value is validated in the version it carries: R for a new entry and for an e < R write, e for an e > R write-back.
+- In a vN file every entry def requires `v` with `const N`. An entry def is the `$defs` entry that a `per-entry` `patternProperties` value refers to. v1 entry defs accept an optional `v: 1`, except chat `$defs/message`, which has always required it because chat always wrote it. An absent `v` still means 1 for the lens.
+- A settings value is never an entry. Checklist legacy `items[i]` is one: `legacyItem` reuses `$defs/item`, the same def as the entry `item_<id>`, so it can carry the optional `v: 1` only because it reuses the def. That `v` is ignored and never migrated.
+- An entry is validated against the schema file of its own version: `v` absent is the v1 file, `v` = N is the vN file, so `additionalProperties: false` and the `const N` on `v` apply per version. A validator that holds only its own newest file (the app, whose R is its embedded current version) migrates the entry to R first, then validates the result against its embedded vR, also when a fetched bundle gave it a chain up to K > R. The space embeds every version from min on and validates in the entry's own version. A written value is validated in the version it carries: R for a new entry and for an e < R write, e for an e > R write-back.
 
 ### Write-back
 
@@ -169,12 +174,15 @@ Let O be the stored value at save time (version e), R the writer's version, V = 
 - e < R (a newer client edits an older entry): upgrade on edit. Write V' as is, with `v` = R. Writing in e would drop edits to fields e lacks. The rule that an entry is written back in its own version binds only the e > R case.
 - The `v` of the edited view V' is never read: in the e >= R branch U' = migrate(V' with `v` set to R, e); in the e < R branch V' and V are compared ignoring `v`, and the written value gets `v` = R.
 - An entry whose migration to R fails (it is `needs-update`) cannot be edited and returns that migrate error. This takes precedence over `read-only`.
-- A read-only entry is not written: `read-only`. `read-only` is decided before any diff: a lossy entry is `read-only` even when the edit changes nothing. A `bad-version` entry is never written and never tombstoned by a lens path.
-- No write when the result deep-equals O (e >= R) or when V' deep-equals V (e < R).
-- A new entry is written in R. Deleting an entry writes the tombstone and needs no lens.
-- Diff, per top-level member of U and U' except `v`: both objects: recurse. Deep equal (both absent counts): nothing. Absent in U': delete that member from O. No ancestor is pruned: the diff only recurses into objects present in both, so every ancestor exists in U' and an explicit `{}` in the edited view survives. Otherwise: set that path in O to a deep copy of the U' value; here missing parents are created and a parent that is not an object is replaced by `{}`.
+- A read-only entry is not written: `read-only`. `read-only` is decided before any diff: a lossy entry is `read-only` even when the edit changes nothing. A `bad-version` entry is never written and never tombstoned, by any path.
+- No write when the result deep-equals O (e >= R) or when V' deep-equals V (e < R): nothing is written, and in a vector `result` equals `original`.
+- A new entry is written in R. A stored value that is not an entry (tombstone or non-object) is not written through a lens path and `read-only` and the lens do not apply to it; the caller creates a fresh entry in R. Deleting an entry writes the tombstone and needs no lens, and only for an entry whose state is `full` or `read-only`. A `needs-update` or `bad-version` entry is never tombstoned, because the reader cannot show it and deleting would destroy hidden data.
+- Diff, per top-level member of U and U' except `v`: both objects: recurse, member by member, to any depth, so a hidden or default field inside an object that the edit touches stays as stored. Deep equal (both absent counts): nothing. Absent in U': delete that member from O. No ancestor is pruned: the diff only recurses into objects present in both, so every ancestor exists in U' and an explicit `{}` in the edited view survives, at any depth. Otherwise (different leaves, a changed list, or a type change in either direction, object over scalar or scalar over object): set that path in O to a deep copy of the U' value, so a list is replaced whole and never merged element by element; here missing parents are created and a parent that is not an object is replaced by `{}`. The same holds when the diff reaches a path where O's stored value is not an object but U and U' both have an object there: the parent is replaced by `{}` before its children are set.
 - Deep equality: same type, objects with equal key sets and equal values, arrays element by element, numbers by value.
-- An access check that compares an old and a new value (`x-access` `fields`) first migrates the old value to the new value's version; if that migration fails, the write is rejected with that migrate error. An MCP write of an existing entry follows the same write-back rule, with the space's current version as R.
+- MCP rules (applied in slice 8):
+  - Every `x-access` check on an existing entry (`author`, `gate`, `unless`, `fields`) reads the old value migrated to the space's current version R, and the new value is also checked in R. If migrating the old value fails, the write is rejected with that migrate error.
+  - An MCP write is always in R, for a new entry and for the write-back of an existing one (the Write-back rules above, with the space's R as the writer's version).
+  - A written `v` outside the bundle's `min..current` for the type is rejected, on the MCP path only. The event path is never validated, so old clients are never forced to update.
 
 ### Last writer wins across versions
 
@@ -186,7 +194,7 @@ Settings keys and per-member cells change additively only: a new optional key, o
 
 ### Component state
 
-For a reader at version R with chain known up to K, each entry (tombstones and `bad-version` skipped) gets:
+For a reader at version R with chain known up to K, each entry (tombstones, values that are not objects and `bad-version` skipped) gets:
 
 | State | When |
 |---|---|
@@ -217,7 +225,7 @@ A schema bundle is described by `bundle.json`, the unit slice 5 signs:
 
 ### Not yet enforced
 
-Nothing checks `x-migrations` yet, because no schema has one. Slice 8 (the first real v2) must add: tripwires for the cumulative prefix, contiguous `to`, `$id` version equal to the last `to`, `entries` keys being per-entry patterns, and the `map` authoring rules; and fix the `.v1` filename assumptions (the Go loader's `strings.TrimSuffix(path.Base(file), ".v1.schema.json")` in `newValidator`, the Dart tripwire's `replaceFirst('.v1.schema.json', '')`, `componentSchemaId` hard-coding `.v1`, and both coverage tests requiring a top-level vector file per schema id). Lens vectors in `vectors/lens/` are not read by the existing runners; slices 3a (Dart) and 3b (Go) add runners.
+Nothing checks `x-migrations` yet, because no schema has one. Slice 8 (the first real v2) must add: tripwires for the cumulative prefix, contiguous `to`, `$id` version equal to the last `to`, `entries` keys being per-entry patterns, and the `map` authoring rules; and fix the `.v1` filename assumptions (the Go loader's `strings.TrimSuffix(path.Base(file), ".v1.schema.json")` in `newValidator`, the Dart tripwire's `replaceFirst('.v1.schema.json', '')`, `componentSchemaId` hard-coding `.v1`, and both coverage tests requiring a top-level vector file per schema id). Also slice 8: a vN file must give settings-key elements their own def without `v` (checklist `legacyItem` reuses the entry def `item` today, which only works while the optional `v: 1` is harmless there); template-doc dispatch must go to the schema of the entry's own version, not the hard-coded `.v1`, and templates are written in the exporter's R. Lens vectors in `vectors/lens/` are not read by the existing runners; slices 3a (Dart) and 3b (Go) add runners.
 
 ## Portability
 
@@ -244,7 +252,7 @@ A consumer validates `data` against `schema` (the case override if present) and 
 | Kind | Members | Meaning |
 |---|---|---|
 | `migrate` | `name`, `kind`, `steps`, `key`, `in`, `to`, plus (`out` and `lossy`) or `error` | `out` = migrate(`in`, `to`). `lossy` = the static classification of the traversal from `in.v` to `to`, with `to` as the reader. `error` is one of `bad-version`, `missing-step`, `unsupported`, `breaking`. |
-| `writeback` | `name`, `kind`, `steps`, `key`, `original`, `reader`, `view`, `edited`, plus `result` or `error` | `view` = migrate(`original`, `reader`). `edited` = the edited view V'. `result` = the stored value after write-back. `error` is a migrate error or `read-only`. |
+| `writeback` | `name`, `kind`, `steps`, `key`, `original`, `reader`, `view`, `edited`, plus `result` or `error` | `view` = migrate(`original`, `reader`). `edited` = the edited view V'. `result` = the stored value after write-back; when nothing is written it equals `original`. `error` is a migrate error or `read-only`. |
 | `state` | `name`, `kind`, `steps`, `reader`, `entries`, `expect` | `entries` = `[{key, value}]` of decoded values (tombstones and bad `v` allowed). `expect` is `full`, `read-only` or `needs-update`. K = the last `to` in `steps`. |
 
 Example, a migrate case:

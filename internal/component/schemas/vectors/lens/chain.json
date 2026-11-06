@@ -3125,6 +3125,1199 @@
         ]
       },
       "error": "breaking"
+    },
+    {
+      "name": "writeback keeps a nested hidden field that holds a non-default value",
+      "kind": "writeback",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "add",
+                "path": "when.tz",
+                "default": null
+              },
+              {
+                "op": "move",
+                "from": "due",
+                "to": "when.date"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "original": {
+        "v": 2,
+        "when": {
+          "date": "a",
+          "tz": "UTC"
+        }
+      },
+      "reader": 1,
+      "view": {
+        "v": 1,
+        "due": "a"
+      },
+      "edited": {
+        "v": 1,
+        "due": "b"
+      },
+      "result": {
+        "v": 2,
+        "when": {
+          "date": "b",
+          "tz": "UTC"
+        }
+      }
+    },
+    {
+      "name": "writeback keeps a nested hidden field when the edit removes its sibling",
+      "kind": "writeback",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "add",
+                "path": "when.tz",
+                "default": null
+              },
+              {
+                "op": "move",
+                "from": "due",
+                "to": "when.date"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "original": {
+        "v": 2,
+        "when": {
+          "date": "a",
+          "tz": "UTC"
+        }
+      },
+      "reader": 1,
+      "view": {
+        "v": 1,
+        "due": "a"
+      },
+      "edited": {
+        "v": 1
+      },
+      "result": {
+        "v": 2,
+        "when": {
+          "tz": "UTC"
+        }
+      }
+    },
+    {
+      "name": "writeback e > R, edited v absent is never read",
+      "kind": "writeback",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "original": {
+        "v": 2,
+        "checked": true
+      },
+      "reader": 1,
+      "view": {
+        "v": 1,
+        "done": true
+      },
+      "edited": {
+        "done": false
+      },
+      "result": {
+        "v": 2,
+        "checked": false
+      }
+    },
+    {
+      "name": "writeback e < R, edited v absent is never read",
+      "kind": "writeback",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "original": {
+        "v": 1,
+        "done": true
+      },
+      "reader": 2,
+      "view": {
+        "v": 2,
+        "checked": true
+      },
+      "edited": {
+        "checked": false
+      },
+      "result": {
+        "v": 2,
+        "checked": false
+      }
+    },
+    {
+      "name": "writeback e = R, edited v absent is never read",
+      "kind": "writeback",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "original": {
+        "v": 2,
+        "checked": true
+      },
+      "reader": 2,
+      "view": {
+        "v": 2,
+        "checked": true
+      },
+      "edited": {
+        "checked": false
+      },
+      "result": {
+        "v": 2,
+        "checked": false
+      }
+    },
+    {
+      "name": "writeback e > R, edited v 7 is never read",
+      "kind": "writeback",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "original": {
+        "v": 2,
+        "checked": true
+      },
+      "reader": 1,
+      "view": {
+        "v": 1,
+        "done": true
+      },
+      "edited": {
+        "done": false,
+        "v": 7
+      },
+      "result": {
+        "v": 2,
+        "checked": false
+      }
+    },
+    {
+      "name": "writeback e < R, edited v 7 is never read",
+      "kind": "writeback",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "original": {
+        "v": 1,
+        "done": true
+      },
+      "reader": 2,
+      "view": {
+        "v": 2,
+        "checked": true
+      },
+      "edited": {
+        "checked": false,
+        "v": 7
+      },
+      "result": {
+        "v": 2,
+        "checked": false
+      }
+    },
+    {
+      "name": "writeback e = R, edited v 7 is never read",
+      "kind": "writeback",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "original": {
+        "v": 2,
+        "checked": true
+      },
+      "reader": 2,
+      "view": {
+        "v": 2,
+        "checked": true
+      },
+      "edited": {
+        "checked": false,
+        "v": 7
+      },
+      "result": {
+        "v": 2,
+        "checked": false
+      }
+    },
+    {
+      "name": "writeback e > R, edited v \"x\" is never read",
+      "kind": "writeback",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "original": {
+        "v": 2,
+        "checked": true
+      },
+      "reader": 1,
+      "view": {
+        "v": 1,
+        "done": true
+      },
+      "edited": {
+        "done": false,
+        "v": "x"
+      },
+      "result": {
+        "v": 2,
+        "checked": false
+      }
+    },
+    {
+      "name": "writeback e < R, edited v \"x\" is never read",
+      "kind": "writeback",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "original": {
+        "v": 1,
+        "done": true
+      },
+      "reader": 2,
+      "view": {
+        "v": 2,
+        "checked": true
+      },
+      "edited": {
+        "checked": false,
+        "v": "x"
+      },
+      "result": {
+        "v": 2,
+        "checked": false
+      }
+    },
+    {
+      "name": "writeback e = R, edited v \"x\" is never read",
+      "kind": "writeback",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "original": {
+        "v": 2,
+        "checked": true
+      },
+      "reader": 2,
+      "view": {
+        "v": 2,
+        "checked": true
+      },
+      "edited": {
+        "checked": false,
+        "v": "x"
+      },
+      "result": {
+        "v": 2,
+        "checked": false
+      }
+    },
+    {
+      "name": "writeback e < R, an edited view that differs only in v writes nothing",
+      "kind": "writeback",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "original": {
+        "v": 1,
+        "done": true
+      },
+      "reader": 2,
+      "view": {
+        "v": 2,
+        "checked": true
+      },
+      "edited": {
+        "v": 9,
+        "checked": true
+      },
+      "result": {
+        "v": 1,
+        "done": true
+      }
+    },
+    {
+      "name": "steps are found by to, not by position",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 3,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "add",
+                "path": "assignee",
+                "default": null
+              }
+            ]
+          }
+        },
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "done": true
+      },
+      "to": 3,
+      "out": {
+        "v": 3,
+        "checked": true,
+        "assignee": null
+      },
+      "lossy": false
+    },
+    {
+      "name": "steps listed out of order are found by to, down",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 3,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "add",
+                "path": "assignee",
+                "default": null
+              }
+            ]
+          }
+        },
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 3,
+        "checked": true,
+        "assignee": null
+      },
+      "to": 1,
+      "out": {
+        "v": 1,
+        "done": true
+      },
+      "lossy": false
+    },
+    {
+      "name": "duplicate to in the crossed range is unsupported",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        },
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "finished"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "done": true
+      },
+      "to": 2,
+      "error": "unsupported"
+    },
+    {
+      "name": "duplicate to outside the crossed range is never checked",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        },
+        {
+          "to": 3,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "add",
+                "path": "assignee",
+                "default": null
+              }
+            ]
+          }
+        },
+        {
+          "to": 3,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "a",
+                "to": "b"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 2,
+        "checked": true
+      },
+      "to": 2,
+      "out": {
+        "v": 2,
+        "checked": true
+      },
+      "lossy": false
+    },
+    {
+      "name": "a step that is not an object is unsupported",
+      "kind": "migrate",
+      "steps": [
+        "step"
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "done": true
+      },
+      "to": 2,
+      "error": "unsupported"
+    },
+    {
+      "name": "a step without to is unsupported",
+      "kind": "migrate",
+      "steps": [
+        {
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "done": true
+      },
+      "to": 2,
+      "error": "unsupported"
+    },
+    {
+      "name": "a step without breaking is unsupported",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "done": true
+      },
+      "to": 2,
+      "error": "unsupported"
+    },
+    {
+      "name": "a step without entries is unsupported",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "done": true
+      },
+      "to": 2,
+      "error": "unsupported"
+    },
+    {
+      "name": "a step with a non-boolean breaking is unsupported",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": "false",
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "done": true
+      },
+      "to": 2,
+      "error": "unsupported"
+    },
+    {
+      "name": "a step with non-object entries is unsupported",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": []
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "done": true
+      },
+      "to": 2,
+      "error": "unsupported"
+    },
+    {
+      "name": "a non-list ops value for the key's family is unsupported",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": {
+              "op": "rename",
+              "from": "done",
+              "to": "checked"
+            }
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "done": true
+      },
+      "to": 2,
+      "error": "unsupported"
+    },
+    {
+      "name": "an entries key that is not a compilable regex is unsupported",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_(": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "done": true
+      },
+      "to": 2,
+      "error": "unsupported"
+    },
+    {
+      "name": "an uncompilable entries key in a step that is not crossed is never checked",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        },
+        {
+          "to": 3,
+          "breaking": false,
+          "entries": {
+            "^item_(": []
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "done": true
+      },
+      "to": 2,
+      "out": {
+        "v": 2,
+        "checked": true
+      },
+      "lossy": false
+    },
+    {
+      "name": "a tombstone passes through unchanged, up",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        },
+        {
+          "to": 3,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "add",
+                "path": "assignee",
+                "default": null
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": "",
+      "to": 3,
+      "out": "",
+      "lossy": false
+    },
+    {
+      "name": "a tombstone passes through unchanged, down",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        },
+        {
+          "to": 3,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "add",
+                "path": "assignee",
+                "default": null
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": "",
+      "to": 1,
+      "out": "",
+      "lossy": false
+    },
+    {
+      "name": "null passes through unchanged",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        },
+        {
+          "to": 3,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "add",
+                "path": "assignee",
+                "default": null
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": null,
+      "to": 2,
+      "out": null,
+      "lossy": false
+    },
+    {
+      "name": "a number passes through unchanged",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        },
+        {
+          "to": 3,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "add",
+                "path": "assignee",
+                "default": null
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": 7,
+      "to": 2,
+      "out": 7,
+      "lossy": false
+    },
+    {
+      "name": "an array passes through unchanged, up",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        },
+        {
+          "to": 3,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "add",
+                "path": "assignee",
+                "default": null
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": [
+        {
+          "v": 1,
+          "done": true
+        }
+      ],
+      "to": 2,
+      "out": [
+        {
+          "v": 1,
+          "done": true
+        }
+      ],
+      "lossy": false
+    },
+    {
+      "name": "an array passes through unchanged, down",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        },
+        {
+          "to": 3,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "add",
+                "path": "assignee",
+                "default": null
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": [
+        {
+          "v": 3,
+          "done": true
+        }
+      ],
+      "to": 1,
+      "out": [
+        {
+          "v": 3,
+          "done": true
+        }
+      ],
+      "lossy": false
+    },
+    {
+      "name": "state ignores values that are not objects",
+      "kind": "state",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "wrap",
+                "path": "tag"
+              }
+            ]
+          }
+        }
+      ],
+      "reader": 1,
+      "entries": [
+        {
+          "key": "item_a",
+          "value": 7
+        },
+        {
+          "key": "item_b",
+          "value": [
+            {
+              "v": 2,
+              "tag": [
+                "a",
+                "b"
+              ]
+            }
+          ]
+        },
+        {
+          "key": "item_c",
+          "value": "text"
+        },
+        {
+          "key": "item_d",
+          "value": {
+            "v": 1,
+            "tag": "a"
+          }
+        }
+      ],
+      "expect": "full"
+    },
+    {
+      "name": "state of values that are not objects leaves the decision to the other entries",
+      "kind": "state",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "wrap",
+                "path": "tag"
+              }
+            ]
+          }
+        }
+      ],
+      "reader": 1,
+      "entries": [
+        {
+          "key": "item_a",
+          "value": 7
+        },
+        {
+          "key": "item_b",
+          "value": [
+            {
+              "v": 2,
+              "tag": [
+                "a",
+                "b"
+              ]
+            }
+          ]
+        },
+        {
+          "key": "item_c",
+          "value": {
+            "v": 2,
+            "tag": [
+              "a"
+            ]
+          }
+        }
+      ],
+      "expect": "read-only"
     }
   ]
 }

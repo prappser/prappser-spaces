@@ -662,6 +662,373 @@
         "checked": true,
         "meta": {}
       }
+    },
+    {
+      "name": "writeback replaces a changed list whole",
+      "kind": "writeback",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "original": {
+        "v": 2,
+        "checked": true,
+        "tags": [
+          "a",
+          "b",
+          "c"
+        ]
+      },
+      "reader": 1,
+      "view": {
+        "v": 1,
+        "done": true,
+        "tags": [
+          "a",
+          "b",
+          "c"
+        ]
+      },
+      "edited": {
+        "v": 1,
+        "done": true,
+        "tags": [
+          "b"
+        ]
+      },
+      "result": {
+        "v": 2,
+        "checked": true,
+        "tags": [
+          "b"
+        ]
+      }
+    },
+    {
+      "name": "writeback replaces a list that gained an element whole",
+      "kind": "writeback",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "original": {
+        "v": 2,
+        "checked": true,
+        "tags": [
+          "a"
+        ]
+      },
+      "reader": 1,
+      "view": {
+        "v": 1,
+        "done": true,
+        "tags": [
+          "a"
+        ]
+      },
+      "edited": {
+        "v": 1,
+        "done": true,
+        "tags": [
+          "a",
+          "b"
+        ]
+      },
+      "result": {
+        "v": 2,
+        "checked": true,
+        "tags": [
+          "a",
+          "b"
+        ]
+      }
+    },
+    {
+      "name": "writeback replaces a scalar with an object",
+      "kind": "writeback",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "original": {
+        "v": 2,
+        "checked": true,
+        "meta": "x"
+      },
+      "reader": 1,
+      "view": {
+        "v": 1,
+        "done": true,
+        "meta": "x"
+      },
+      "edited": {
+        "v": 1,
+        "done": true,
+        "meta": {
+          "a": 1
+        }
+      },
+      "result": {
+        "v": 2,
+        "checked": true,
+        "meta": {
+          "a": 1
+        }
+      }
+    },
+    {
+      "name": "writeback replaces an object with a scalar",
+      "kind": "writeback",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "original": {
+        "v": 2,
+        "checked": true,
+        "meta": {
+          "a": 1,
+          "b": 2
+        }
+      },
+      "reader": 1,
+      "view": {
+        "v": 1,
+        "done": true,
+        "meta": {
+          "a": 1,
+          "b": 2
+        }
+      },
+      "edited": {
+        "v": 1,
+        "done": true,
+        "meta": "x"
+      },
+      "result": {
+        "v": 2,
+        "checked": true,
+        "meta": "x"
+      }
+    },
+    {
+      "name": "writeback replaces a nested scalar with an object",
+      "kind": "writeback",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "original": {
+        "v": 2,
+        "checked": true,
+        "meta": {
+          "a": "x",
+          "b": 2
+        }
+      },
+      "reader": 1,
+      "view": {
+        "v": 1,
+        "done": true,
+        "meta": {
+          "a": "x",
+          "b": 2
+        }
+      },
+      "edited": {
+        "v": 1,
+        "done": true,
+        "meta": {
+          "a": {
+            "c": 1
+          },
+          "b": 2
+        }
+      },
+      "result": {
+        "v": 2,
+        "checked": true,
+        "meta": {
+          "a": {
+            "c": 1
+          },
+          "b": 2
+        }
+      }
+    },
+    {
+      "name": "writeback keeps an explicit empty object after a removed nested leaf",
+      "kind": "writeback",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "original": {
+        "v": 2,
+        "checked": true,
+        "meta": {
+          "a": {
+            "b": 1
+          }
+        }
+      },
+      "reader": 1,
+      "view": {
+        "v": 1,
+        "done": true,
+        "meta": {
+          "a": {
+            "b": 1
+          }
+        }
+      },
+      "edited": {
+        "v": 1,
+        "done": true,
+        "meta": {
+          "a": {}
+        }
+      },
+      "result": {
+        "v": 2,
+        "checked": true,
+        "meta": {
+          "a": {}
+        }
+      }
+    },
+    {
+      "name": "writeback keeps every explicit empty ancestor after a removed leaf at depth three",
+      "kind": "writeback",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "original": {
+        "v": 2,
+        "checked": true,
+        "meta": {
+          "a": {
+            "b": {
+              "c": 1
+            }
+          }
+        }
+      },
+      "reader": 1,
+      "view": {
+        "v": 1,
+        "done": true,
+        "meta": {
+          "a": {
+            "b": {
+              "c": 1
+            }
+          }
+        }
+      },
+      "edited": {
+        "v": 1,
+        "done": true,
+        "meta": {
+          "a": {
+            "b": {}
+          }
+        }
+      },
+      "result": {
+        "v": 2,
+        "checked": true,
+        "meta": {
+          "a": {
+            "b": {}
+          }
+        }
+      }
     }
   ]
 }
