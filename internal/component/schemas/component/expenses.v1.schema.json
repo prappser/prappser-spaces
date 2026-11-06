@@ -73,6 +73,10 @@
     "expense": {
       "type": "object",
       "properties": {
+        "v": {
+          "const": 1,
+          "description": "Entry format version. Absent means 1."
+        },
         "what": {
           "type": "string",
           "description": "What the money was spent on. Example: \"Dinner\"."
@@ -104,6 +108,10 @@
     "settlement": {
       "type": "object",
       "properties": {
+        "v": {
+          "const": 1,
+          "description": "Entry format version. Absent means 1."
+        },
         "from": {
           "type": "string",
           "description": "Public key of the member who paid back."

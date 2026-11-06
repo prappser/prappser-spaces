@@ -1,0 +1,533 @@
+{
+  "cases": [
+    {
+      "name": "wrap scalar up",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "wrap",
+                "path": "tag"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "tag": "a"
+      },
+      "to": 2,
+      "out": {
+        "v": 2,
+        "tag": [
+          "a"
+        ]
+      },
+      "lossy": false
+    },
+    {
+      "name": "wrap null up",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "wrap",
+                "path": "tag"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "tag": null
+      },
+      "to": 2,
+      "out": {
+        "v": 2,
+        "tag": []
+      },
+      "lossy": false
+    },
+    {
+      "name": "wrap array up is unchanged",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "wrap",
+                "path": "tag"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "tag": [
+          "a",
+          "b"
+        ]
+      },
+      "to": 2,
+      "out": {
+        "v": 2,
+        "tag": [
+          "a",
+          "b"
+        ]
+      },
+      "lossy": false
+    },
+    {
+      "name": "wrap absent up is a no-op",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "wrap",
+                "path": "tag"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "title": "Milk"
+      },
+      "to": 2,
+      "out": {
+        "v": 2,
+        "title": "Milk"
+      },
+      "lossy": false
+    },
+    {
+      "name": "wrap one element down",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "wrap",
+                "path": "tag"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 2,
+        "tag": [
+          "a"
+        ]
+      },
+      "to": 1,
+      "out": {
+        "v": 1,
+        "tag": "a"
+      },
+      "lossy": true,
+      "note": "Lossiness is static: ['a'] loses nothing, the traversal is still lossy."
+    },
+    {
+      "name": "wrap empty array down is null",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "wrap",
+                "path": "tag"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 2,
+        "tag": []
+      },
+      "to": 1,
+      "out": {
+        "v": 1,
+        "tag": null
+      },
+      "lossy": true
+    },
+    {
+      "name": "wrap two elements down keeps the first",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "wrap",
+                "path": "tag"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 2,
+        "tag": [
+          "a",
+          "b"
+        ]
+      },
+      "to": 1,
+      "out": {
+        "v": 1,
+        "tag": "a"
+      },
+      "lossy": true
+    },
+    {
+      "name": "wrap array with null down is null",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "wrap",
+                "path": "tag"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 2,
+        "tag": [
+          null
+        ]
+      },
+      "to": 1,
+      "out": {
+        "v": 1,
+        "tag": null
+      },
+      "lossy": true
+    },
+    {
+      "name": "wrap non-array down is unchanged",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "wrap",
+                "path": "tag"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 2,
+        "tag": "a"
+      },
+      "to": 1,
+      "out": {
+        "v": 1,
+        "tag": "a"
+      },
+      "lossy": true
+    },
+    {
+      "name": "wrap absent down is a no-op",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "wrap",
+                "path": "tag"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 2,
+        "title": "Milk"
+      },
+      "to": 1,
+      "out": {
+        "v": 1,
+        "title": "Milk"
+      },
+      "lossy": true
+    },
+    {
+      "name": "wrap keeps unknown fields, up",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "wrap",
+                "path": "tag"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "tag": "a",
+        "zz_unknown": 1,
+        "meta": {
+          "zz_unknown": 2
+        }
+      },
+      "to": 2,
+      "out": {
+        "v": 2,
+        "tag": [
+          "a"
+        ],
+        "zz_unknown": 1,
+        "meta": {
+          "zz_unknown": 2
+        }
+      },
+      "lossy": false
+    },
+    {
+      "name": "wrap keeps unknown fields, down",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "wrap",
+                "path": "tag"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 2,
+        "tag": [
+          "a",
+          "b"
+        ],
+        "zz_unknown": 1,
+        "meta": {
+          "zz_unknown": 2
+        }
+      },
+      "to": 1,
+      "out": {
+        "v": 1,
+        "tag": "a",
+        "zz_unknown": 1,
+        "meta": {
+          "zz_unknown": 2
+        }
+      },
+      "lossy": true
+    },
+    {
+      "name": "wrap writeback from an older client is read-only",
+      "kind": "writeback",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "wrap",
+                "path": "tag"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "original": {
+        "v": 2,
+        "tag": [
+          "a"
+        ]
+      },
+      "reader": 1,
+      "view": {
+        "v": 1,
+        "tag": "a"
+      },
+      "edited": {
+        "v": 1,
+        "tag": "b"
+      },
+      "error": "read-only"
+    },
+    {
+      "name": "wrap writeback upgrade on edit keeps unknown fields",
+      "kind": "writeback",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "wrap",
+                "path": "tag"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "original": {
+        "v": 1,
+        "tag": "a",
+        "zz_unknown": 1,
+        "meta": {
+          "zz_unknown": 2
+        }
+      },
+      "reader": 2,
+      "view": {
+        "v": 2,
+        "tag": [
+          "a"
+        ],
+        "zz_unknown": 1,
+        "meta": {
+          "zz_unknown": 2
+        }
+      },
+      "edited": {
+        "v": 2,
+        "tag": [
+          "a",
+          "b"
+        ],
+        "zz_unknown": 1,
+        "meta": {
+          "zz_unknown": 2
+        }
+      },
+      "result": {
+        "v": 2,
+        "tag": [
+          "a",
+          "b"
+        ],
+        "zz_unknown": 1,
+        "meta": {
+          "zz_unknown": 2
+        }
+      }
+    },
+    {
+      "name": "wrap missing path is unsupported",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "wrap"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "a": 1
+      },
+      "to": 2,
+      "error": "unsupported"
+    },
+    {
+      "name": "wrap empty path is unsupported",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "wrap",
+                "path": ""
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "a": 1
+      },
+      "to": 2,
+      "error": "unsupported"
+    }
+  ]
+}

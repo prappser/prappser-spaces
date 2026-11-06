@@ -1,0 +1,3130 @@
+{
+  "cases": [
+    {
+      "name": "v1 to v3 across rename, move and add",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        },
+        {
+          "to": 3,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "move",
+                "from": "due",
+                "to": "when.date"
+              },
+              {
+                "op": "add",
+                "path": "assignee",
+                "default": null
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "text": "Mleko",
+        "done": true,
+        "due": "2026-11-08"
+      },
+      "to": 3,
+      "out": {
+        "v": 3,
+        "text": "Mleko",
+        "checked": true,
+        "when": {
+          "date": "2026-11-08"
+        },
+        "assignee": null
+      },
+      "lossy": false
+    },
+    {
+      "name": "v3 to v1 across add, move and rename",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        },
+        {
+          "to": 3,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "move",
+                "from": "due",
+                "to": "when.date"
+              },
+              {
+                "op": "add",
+                "path": "assignee",
+                "default": null
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 3,
+        "text": "Mleko",
+        "checked": true,
+        "when": {
+          "date": "2026-11-08"
+        },
+        "assignee": null
+      },
+      "to": 1,
+      "out": {
+        "v": 1,
+        "text": "Mleko",
+        "done": true,
+        "due": "2026-11-08"
+      },
+      "lossy": false
+    },
+    {
+      "name": "explicit v1 reads like absent v",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        },
+        {
+          "to": 3,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "move",
+                "from": "due",
+                "to": "when.date"
+              },
+              {
+                "op": "add",
+                "path": "assignee",
+                "default": null
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "text": "Mleko",
+        "done": true,
+        "due": "2026-11-08"
+      },
+      "to": 3,
+      "out": {
+        "v": 3,
+        "text": "Mleko",
+        "checked": true,
+        "when": {
+          "date": "2026-11-08"
+        },
+        "assignee": null
+      },
+      "lossy": false
+    },
+    {
+      "name": "v3 to v2 crosses only step 3",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        },
+        {
+          "to": 3,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "move",
+                "from": "due",
+                "to": "when.date"
+              },
+              {
+                "op": "add",
+                "path": "assignee",
+                "default": null
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 3,
+        "text": "Mleko",
+        "checked": true,
+        "when": {
+          "date": "2026-11-08"
+        },
+        "assignee": "bartek"
+      },
+      "to": 2,
+      "out": {
+        "v": 2,
+        "text": "Mleko",
+        "checked": true,
+        "due": "2026-11-08"
+      },
+      "lossy": false
+    },
+    {
+      "name": "v equal to the target returns the entry unchanged",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        },
+        {
+          "to": 3,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "move",
+                "from": "due",
+                "to": "when.date"
+              },
+              {
+                "op": "add",
+                "path": "assignee",
+                "default": null
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 3,
+        "text": "Mleko",
+        "checked": true
+      },
+      "to": 3,
+      "out": {
+        "v": 3,
+        "text": "Mleko",
+        "checked": true
+      },
+      "lossy": false
+    },
+    {
+      "name": "ops in a list apply in order, up",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "a",
+                "to": "b"
+              },
+              {
+                "op": "rename",
+                "from": "b",
+                "to": "c"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "a": 1
+      },
+      "to": 2,
+      "out": {
+        "v": 2,
+        "c": 1
+      },
+      "lossy": false
+    },
+    {
+      "name": "ops in a list apply in reverse order, down",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "a",
+                "to": "b"
+              },
+              {
+                "op": "rename",
+                "from": "b",
+                "to": "c"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 2,
+        "c": 1
+      },
+      "to": 1,
+      "out": {
+        "v": 1,
+        "a": 1
+      },
+      "lossy": false
+    },
+    {
+      "name": "unknown fields ride through two steps, up",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        },
+        {
+          "to": 3,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "move",
+                "from": "due",
+                "to": "when.date"
+              },
+              {
+                "op": "add",
+                "path": "assignee",
+                "default": null
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "text": "Mleko",
+        "done": true,
+        "due": "2026-11-08",
+        "zz_unknown": 1,
+        "meta": {
+          "zz_unknown": 2
+        },
+        "when": {
+          "zz_unknown": 3
+        }
+      },
+      "to": 3,
+      "out": {
+        "v": 3,
+        "text": "Mleko",
+        "checked": true,
+        "zz_unknown": 1,
+        "meta": {
+          "zz_unknown": 2
+        },
+        "when": {
+          "zz_unknown": 3,
+          "date": "2026-11-08"
+        },
+        "assignee": null
+      },
+      "lossy": false
+    },
+    {
+      "name": "unknown fields ride through two steps, down",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        },
+        {
+          "to": 3,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "move",
+                "from": "due",
+                "to": "when.date"
+              },
+              {
+                "op": "add",
+                "path": "assignee",
+                "default": null
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 3,
+        "text": "Mleko",
+        "checked": true,
+        "when": {
+          "date": "2026-11-08",
+          "zz_unknown": 3
+        },
+        "assignee": null,
+        "zz_unknown": 1,
+        "meta": {
+          "zz_unknown": 2
+        }
+      },
+      "to": 1,
+      "out": {
+        "v": 1,
+        "text": "Mleko",
+        "done": true,
+        "due": "2026-11-08",
+        "when": {
+          "zz_unknown": 3
+        },
+        "zz_unknown": 1,
+        "meta": {
+          "zz_unknown": 2
+        }
+      },
+      "lossy": false
+    },
+    {
+      "name": "a missing step is missing-step, up",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "text": "Mleko"
+      },
+      "to": 3,
+      "error": "missing-step"
+    },
+    {
+      "name": "a missing step is missing-step, down",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 3,
+        "text": "Mleko"
+      },
+      "to": 1,
+      "error": "missing-step"
+    },
+    {
+      "name": "bad version 0",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        },
+        {
+          "to": 3,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "move",
+                "from": "due",
+                "to": "when.date"
+              },
+              {
+                "op": "add",
+                "path": "assignee",
+                "default": null
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 0,
+        "text": "Mleko"
+      },
+      "to": 3,
+      "error": "bad-version"
+    },
+    {
+      "name": "bad version string",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        },
+        {
+          "to": 3,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "move",
+                "from": "due",
+                "to": "when.date"
+              },
+              {
+                "op": "add",
+                "path": "assignee",
+                "default": null
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": "2",
+        "text": "Mleko"
+      },
+      "to": 3,
+      "error": "bad-version"
+    },
+    {
+      "name": "bad version null",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        },
+        {
+          "to": 3,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "move",
+                "from": "due",
+                "to": "when.date"
+              },
+              {
+                "op": "add",
+                "path": "assignee",
+                "default": null
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": null,
+        "text": "Mleko"
+      },
+      "to": 3,
+      "error": "bad-version"
+    },
+    {
+      "name": "bad version non-integer number",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        },
+        {
+          "to": 3,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "move",
+                "from": "due",
+                "to": "when.date"
+              },
+              {
+                "op": "add",
+                "path": "assignee",
+                "default": null
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1.5,
+        "text": "Mleko"
+      },
+      "to": 3,
+      "error": "bad-version"
+    },
+    {
+      "name": "bad version negative",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        },
+        {
+          "to": 3,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "move",
+                "from": "due",
+                "to": "when.date"
+              },
+              {
+                "op": "add",
+                "path": "assignee",
+                "default": null
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": -1,
+        "text": "Mleko"
+      },
+      "to": 3,
+      "error": "bad-version"
+    },
+    {
+      "name": "unknown op name in a crossed step is unsupported",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "x-future",
+                "path": "a"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "a": 1
+      },
+      "to": 2,
+      "error": "unsupported"
+    },
+    {
+      "name": "unknown op member in a crossed step is unsupported",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "a",
+                "to": "b",
+                "zz": 1
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "a": 1
+      },
+      "to": 2,
+      "error": "unsupported"
+    },
+    {
+      "name": "a bad step that is not crossed is never validated",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "x-future",
+                "path": "a"
+              }
+            ]
+          }
+        },
+        {
+          "to": 3,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "move",
+                "from": "due",
+                "to": "when.date"
+              },
+              {
+                "op": "add",
+                "path": "assignee",
+                "default": null
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 3,
+        "text": "Mleko",
+        "when": {
+          "date": "2026-11-08"
+        },
+        "assignee": null
+      },
+      "to": 2,
+      "out": {
+        "v": 2,
+        "text": "Mleko",
+        "due": "2026-11-08"
+      },
+      "lossy": false
+    },
+    {
+      "name": "a bad step above the target is never validated",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        },
+        {
+          "to": 3,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "x-future",
+                "path": "a"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "text": "Mleko",
+        "done": true
+      },
+      "to": 2,
+      "out": {
+        "v": 2,
+        "text": "Mleko",
+        "checked": true
+      },
+      "lossy": false
+    },
+    {
+      "name": "a bad ops list of another family is never validated",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ],
+            "^other_.+$": [
+              {
+                "op": "x-future"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "done": true
+      },
+      "to": 2,
+      "out": {
+        "v": 2,
+        "checked": true
+      },
+      "lossy": false
+    },
+    {
+      "name": "two matching entries keys are unsupported",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ],
+            "^item_a$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "finished"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "done": true
+      },
+      "to": 2,
+      "error": "unsupported"
+    },
+    {
+      "name": "a family that is not listed has no ops but still gets v",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "note_a",
+      "in": {
+        "v": 1,
+        "done": true
+      },
+      "to": 2,
+      "out": {
+        "v": 2,
+        "done": true
+      },
+      "lossy": false
+    },
+    {
+      "name": "the entries key that matches the key is used",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ],
+            "^list_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "finished"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "list_a",
+      "in": {
+        "v": 1,
+        "done": true
+      },
+      "to": 2,
+      "out": {
+        "v": 2,
+        "finished": true
+      },
+      "lossy": false
+    },
+    {
+      "name": "down across a breaking step is breaking",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        },
+        {
+          "to": 3,
+          "breaking": true,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "move",
+                "from": "due",
+                "to": "when.date"
+              },
+              {
+                "op": "add",
+                "path": "assignee",
+                "default": null
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 3,
+        "text": "Mleko",
+        "checked": true,
+        "when": {
+          "date": "2026-11-08"
+        },
+        "assignee": null
+      },
+      "to": 1,
+      "error": "breaking"
+    },
+    {
+      "name": "down to just below a breaking step is breaking",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        },
+        {
+          "to": 3,
+          "breaking": true,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "move",
+                "from": "due",
+                "to": "when.date"
+              },
+              {
+                "op": "add",
+                "path": "assignee",
+                "default": null
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 3,
+        "text": "Mleko",
+        "checked": true,
+        "when": {
+          "date": "2026-11-08"
+        },
+        "assignee": null
+      },
+      "to": 2,
+      "error": "breaking"
+    },
+    {
+      "name": "down across a step below the breaking one is fine",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        },
+        {
+          "to": 3,
+          "breaking": true,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "move",
+                "from": "due",
+                "to": "when.date"
+              },
+              {
+                "op": "add",
+                "path": "assignee",
+                "default": null
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 2,
+        "text": "Mleko",
+        "checked": true
+      },
+      "to": 1,
+      "out": {
+        "v": 1,
+        "text": "Mleko",
+        "done": true
+      },
+      "lossy": false
+    },
+    {
+      "name": "up across a breaking step is fine",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        },
+        {
+          "to": 3,
+          "breaking": true,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "move",
+                "from": "due",
+                "to": "when.date"
+              },
+              {
+                "op": "add",
+                "path": "assignee",
+                "default": null
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "text": "Mleko",
+        "done": true,
+        "due": "2026-11-08"
+      },
+      "to": 3,
+      "out": {
+        "v": 3,
+        "text": "Mleko",
+        "checked": true,
+        "when": {
+          "date": "2026-11-08"
+        },
+        "assignee": null
+      },
+      "lossy": false
+    },
+    {
+      "name": "a breaking step with empty entries is a valid marker, up",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": true,
+          "entries": {}
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "text": "Mleko"
+      },
+      "to": 2,
+      "out": {
+        "v": 2,
+        "text": "Mleko"
+      },
+      "lossy": false
+    },
+    {
+      "name": "a breaking step with empty entries is breaking, down",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": true,
+          "entries": {}
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 2,
+        "text": "Mleko"
+      },
+      "to": 1,
+      "error": "breaking"
+    },
+    {
+      "name": "a lossy step in the chain makes a down traversal lossy",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        },
+        {
+          "to": 3,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "wrap",
+                "path": "tag"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 3,
+        "checked": true,
+        "tag": [
+          "a"
+        ]
+      },
+      "to": 1,
+      "out": {
+        "v": 1,
+        "done": true,
+        "tag": "a"
+      },
+      "lossy": true
+    },
+    {
+      "name": "a lossy step in the chain is not lossy going up",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        },
+        {
+          "to": 3,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "wrap",
+                "path": "tag"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "done": true,
+        "tag": "a"
+      },
+      "to": 3,
+      "out": {
+        "v": 3,
+        "checked": true,
+        "tag": [
+          "a"
+        ]
+      },
+      "lossy": false
+    },
+    {
+      "name": "a lossy step that is not crossed does not make the traversal lossy",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "wrap",
+                "path": "tag"
+              }
+            ]
+          }
+        },
+        {
+          "to": 3,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 3,
+        "checked": true,
+        "tag": [
+          "a"
+        ]
+      },
+      "to": 2,
+      "out": {
+        "v": 2,
+        "done": true,
+        "tag": [
+          "a"
+        ]
+      },
+      "lossy": false
+    },
+    {
+      "name": "an unwrap step in the chain makes an up traversal lossy",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        },
+        {
+          "to": 3,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "unwrap",
+                "path": "tag"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "done": true,
+        "tag": [
+          "a"
+        ]
+      },
+      "to": 3,
+      "out": {
+        "v": 3,
+        "checked": true,
+        "tag": "a"
+      },
+      "lossy": true
+    },
+    {
+      "name": "v1 client unchecks a v3 entry, assignee survives",
+      "kind": "writeback",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        },
+        {
+          "to": 3,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "move",
+                "from": "due",
+                "to": "when.date"
+              },
+              {
+                "op": "add",
+                "path": "assignee",
+                "default": null
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "original": {
+        "v": 3,
+        "text": "Mleko",
+        "checked": true,
+        "when": {
+          "date": "2026-11-08"
+        },
+        "assignee": "bartek"
+      },
+      "reader": 1,
+      "view": {
+        "v": 1,
+        "text": "Mleko",
+        "done": true,
+        "due": "2026-11-08"
+      },
+      "edited": {
+        "v": 1,
+        "text": "Mleko",
+        "done": false,
+        "due": "2026-11-08"
+      },
+      "result": {
+        "v": 3,
+        "text": "Mleko",
+        "checked": false,
+        "when": {
+          "date": "2026-11-08"
+        },
+        "assignee": "bartek"
+      }
+    },
+    {
+      "name": "v1 client edits a v3 entry, unknown fields survive",
+      "kind": "writeback",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        },
+        {
+          "to": 3,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "move",
+                "from": "due",
+                "to": "when.date"
+              },
+              {
+                "op": "add",
+                "path": "assignee",
+                "default": null
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "original": {
+        "v": 3,
+        "text": "Mleko",
+        "checked": true,
+        "when": {
+          "date": "2026-11-08",
+          "zz_unknown": 3
+        },
+        "assignee": "bartek",
+        "zz_unknown": 1,
+        "meta": {
+          "zz_unknown": 2
+        }
+      },
+      "reader": 1,
+      "view": {
+        "v": 1,
+        "text": "Mleko",
+        "done": true,
+        "due": "2026-11-08",
+        "when": {
+          "zz_unknown": 3
+        },
+        "zz_unknown": 1,
+        "meta": {
+          "zz_unknown": 2
+        }
+      },
+      "edited": {
+        "v": 1,
+        "text": "Mleko",
+        "done": true,
+        "due": "2026-11-09",
+        "when": {
+          "zz_unknown": 3
+        },
+        "zz_unknown": 1,
+        "meta": {
+          "zz_unknown": 2
+        }
+      },
+      "result": {
+        "v": 3,
+        "text": "Mleko",
+        "checked": true,
+        "when": {
+          "date": "2026-11-09",
+          "zz_unknown": 3
+        },
+        "assignee": "bartek",
+        "zz_unknown": 1,
+        "meta": {
+          "zz_unknown": 2
+        }
+      }
+    },
+    {
+      "name": "v2 client edits a v3 entry, assignee survives",
+      "kind": "writeback",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        },
+        {
+          "to": 3,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "move",
+                "from": "due",
+                "to": "when.date"
+              },
+              {
+                "op": "add",
+                "path": "assignee",
+                "default": null
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "original": {
+        "v": 3,
+        "text": "Mleko",
+        "checked": true,
+        "when": {
+          "date": "2026-11-08"
+        },
+        "assignee": "bartek"
+      },
+      "reader": 2,
+      "view": {
+        "v": 2,
+        "text": "Mleko",
+        "checked": true,
+        "due": "2026-11-08"
+      },
+      "edited": {
+        "v": 2,
+        "text": "Mleko",
+        "checked": true,
+        "due": "2026-11-09"
+      },
+      "result": {
+        "v": 3,
+        "text": "Mleko",
+        "checked": true,
+        "when": {
+          "date": "2026-11-09"
+        },
+        "assignee": "bartek"
+      }
+    },
+    {
+      "name": "v3 client edits a v1 entry, upgrade on edit",
+      "kind": "writeback",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        },
+        {
+          "to": 3,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "move",
+                "from": "due",
+                "to": "when.date"
+              },
+              {
+                "op": "add",
+                "path": "assignee",
+                "default": null
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "original": {
+        "v": 1,
+        "text": "Mleko",
+        "done": true,
+        "due": "2026-11-08",
+        "zz_unknown": 1,
+        "meta": {
+          "zz_unknown": 2
+        }
+      },
+      "reader": 3,
+      "view": {
+        "v": 3,
+        "text": "Mleko",
+        "checked": true,
+        "when": {
+          "date": "2026-11-08"
+        },
+        "assignee": null,
+        "zz_unknown": 1,
+        "meta": {
+          "zz_unknown": 2
+        }
+      },
+      "edited": {
+        "v": 3,
+        "text": "Mleko",
+        "checked": false,
+        "when": {
+          "date": "2026-11-08"
+        },
+        "assignee": "ola",
+        "zz_unknown": 1,
+        "meta": {
+          "zz_unknown": 2
+        }
+      },
+      "result": {
+        "v": 3,
+        "text": "Mleko",
+        "checked": false,
+        "when": {
+          "date": "2026-11-08"
+        },
+        "assignee": "ola",
+        "zz_unknown": 1,
+        "meta": {
+          "zz_unknown": 2
+        }
+      }
+    },
+    {
+      "name": "v3 client edits an entry without v, upgrade on edit",
+      "kind": "writeback",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        },
+        {
+          "to": 3,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "move",
+                "from": "due",
+                "to": "when.date"
+              },
+              {
+                "op": "add",
+                "path": "assignee",
+                "default": null
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "original": {
+        "text": "Mleko",
+        "done": true,
+        "due": "2026-11-08"
+      },
+      "reader": 3,
+      "view": {
+        "v": 3,
+        "text": "Mleko",
+        "checked": true,
+        "when": {
+          "date": "2026-11-08"
+        },
+        "assignee": null
+      },
+      "edited": {
+        "v": 3,
+        "text": "Mleko",
+        "checked": true,
+        "when": {
+          "date": "2026-11-09"
+        },
+        "assignee": null
+      },
+      "result": {
+        "v": 3,
+        "text": "Mleko",
+        "checked": true,
+        "when": {
+          "date": "2026-11-09"
+        },
+        "assignee": null
+      }
+    },
+    {
+      "name": "unedited view of a newer entry writes nothing",
+      "kind": "writeback",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        },
+        {
+          "to": 3,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "move",
+                "from": "due",
+                "to": "when.date"
+              },
+              {
+                "op": "add",
+                "path": "assignee",
+                "default": null
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "original": {
+        "v": 3,
+        "text": "Mleko",
+        "checked": true,
+        "when": {
+          "date": "2026-11-08"
+        },
+        "assignee": "bartek"
+      },
+      "reader": 1,
+      "view": {
+        "v": 1,
+        "text": "Mleko",
+        "done": true,
+        "due": "2026-11-08"
+      },
+      "edited": {
+        "v": 1,
+        "text": "Mleko",
+        "done": true,
+        "due": "2026-11-08"
+      },
+      "result": {
+        "v": 3,
+        "text": "Mleko",
+        "checked": true,
+        "when": {
+          "date": "2026-11-08"
+        },
+        "assignee": "bartek"
+      }
+    },
+    {
+      "name": "unedited view of an older entry writes nothing",
+      "kind": "writeback",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        },
+        {
+          "to": 3,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "move",
+                "from": "due",
+                "to": "when.date"
+              },
+              {
+                "op": "add",
+                "path": "assignee",
+                "default": null
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "original": {
+        "v": 1,
+        "text": "Mleko",
+        "done": true,
+        "due": "2026-11-08"
+      },
+      "reader": 3,
+      "view": {
+        "v": 3,
+        "text": "Mleko",
+        "checked": true,
+        "when": {
+          "date": "2026-11-08"
+        },
+        "assignee": null
+      },
+      "edited": {
+        "v": 3,
+        "text": "Mleko",
+        "checked": true,
+        "when": {
+          "date": "2026-11-08"
+        },
+        "assignee": null
+      },
+      "result": {
+        "v": 1,
+        "text": "Mleko",
+        "done": true,
+        "due": "2026-11-08"
+      }
+    },
+    {
+      "name": "unedited view at the entry's own version writes nothing",
+      "kind": "writeback",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        },
+        {
+          "to": 3,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "move",
+                "from": "due",
+                "to": "when.date"
+              },
+              {
+                "op": "add",
+                "path": "assignee",
+                "default": null
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "original": {
+        "v": 3,
+        "text": "Mleko",
+        "checked": true,
+        "when": {
+          "date": "2026-11-08"
+        },
+        "assignee": "bartek"
+      },
+      "reader": 3,
+      "view": {
+        "v": 3,
+        "text": "Mleko",
+        "checked": true,
+        "when": {
+          "date": "2026-11-08"
+        },
+        "assignee": "bartek"
+      },
+      "edited": {
+        "v": 3,
+        "text": "Mleko",
+        "checked": true,
+        "when": {
+          "date": "2026-11-08"
+        },
+        "assignee": "bartek"
+      },
+      "result": {
+        "v": 3,
+        "text": "Mleko",
+        "checked": true,
+        "when": {
+          "date": "2026-11-08"
+        },
+        "assignee": "bartek"
+      }
+    },
+    {
+      "name": "edit at the entry's own version keeps its v",
+      "kind": "writeback",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        },
+        {
+          "to": 3,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "move",
+                "from": "due",
+                "to": "when.date"
+              },
+              {
+                "op": "add",
+                "path": "assignee",
+                "default": null
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "original": {
+        "v": 3,
+        "text": "Mleko",
+        "checked": true,
+        "when": {
+          "date": "2026-11-08"
+        },
+        "assignee": "bartek"
+      },
+      "reader": 3,
+      "view": {
+        "v": 3,
+        "text": "Mleko",
+        "checked": true,
+        "when": {
+          "date": "2026-11-08"
+        },
+        "assignee": "bartek"
+      },
+      "edited": {
+        "v": 3,
+        "text": "Mleko",
+        "checked": false,
+        "when": {
+          "date": "2026-11-08"
+        },
+        "assignee": "bartek"
+      },
+      "result": {
+        "v": 3,
+        "text": "Mleko",
+        "checked": false,
+        "when": {
+          "date": "2026-11-08"
+        },
+        "assignee": "bartek"
+      }
+    },
+    {
+      "name": "edit at the entry's own version keeps an absent v absent",
+      "kind": "writeback",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "original": {
+        "text": "Mleko",
+        "done": true
+      },
+      "reader": 1,
+      "view": {
+        "text": "Mleko",
+        "done": true
+      },
+      "edited": {
+        "text": "Mleko",
+        "done": false
+      },
+      "result": {
+        "text": "Mleko",
+        "done": false
+      }
+    },
+    {
+      "name": "writeback of an older client across a lossy step is read-only",
+      "kind": "writeback",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        },
+        {
+          "to": 3,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "wrap",
+                "path": "tag"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "original": {
+        "v": 3,
+        "checked": true,
+        "tag": [
+          "a"
+        ]
+      },
+      "reader": 1,
+      "view": {
+        "v": 1,
+        "done": true,
+        "tag": "a"
+      },
+      "edited": {
+        "v": 1,
+        "done": false,
+        "tag": "a"
+      },
+      "error": "read-only"
+    },
+    {
+      "name": "writeback of an older client across a breaking step is breaking",
+      "kind": "writeback",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        },
+        {
+          "to": 3,
+          "breaking": true,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "move",
+                "from": "due",
+                "to": "when.date"
+              },
+              {
+                "op": "add",
+                "path": "assignee",
+                "default": null
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "original": {
+        "v": 3,
+        "text": "Mleko",
+        "checked": true,
+        "when": {
+          "date": "2026-11-08"
+        },
+        "assignee": "bartek"
+      },
+      "reader": 1,
+      "view": {
+        "v": 1,
+        "text": "Mleko",
+        "done": true,
+        "due": "2026-11-08"
+      },
+      "edited": {
+        "v": 1,
+        "text": "Mleko",
+        "done": false,
+        "due": "2026-11-08"
+      },
+      "error": "breaking"
+    },
+    {
+      "name": "bad-version entry is never written, 0",
+      "kind": "writeback",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        },
+        {
+          "to": 3,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "move",
+                "from": "due",
+                "to": "when.date"
+              },
+              {
+                "op": "add",
+                "path": "assignee",
+                "default": null
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "original": {
+        "v": 0,
+        "text": "Mleko"
+      },
+      "reader": 3,
+      "view": {
+        "v": 3,
+        "text": "Mleko"
+      },
+      "edited": {
+        "v": 3,
+        "text": "Eggs"
+      },
+      "error": "bad-version"
+    },
+    {
+      "name": "bad-version entry is never written, string",
+      "kind": "writeback",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        },
+        {
+          "to": 3,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "move",
+                "from": "due",
+                "to": "when.date"
+              },
+              {
+                "op": "add",
+                "path": "assignee",
+                "default": null
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "original": {
+        "v": "3",
+        "text": "Mleko"
+      },
+      "reader": 1,
+      "view": {
+        "v": 1,
+        "text": "Mleko"
+      },
+      "edited": {
+        "v": 1,
+        "text": "Eggs"
+      },
+      "error": "bad-version"
+    },
+    {
+      "name": "writeback with a missing step is missing-step",
+      "kind": "writeback",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "original": {
+        "v": 3,
+        "text": "Mleko"
+      },
+      "reader": 1,
+      "view": {
+        "v": 1,
+        "text": "Mleko"
+      },
+      "edited": {
+        "v": 1,
+        "text": "Eggs"
+      },
+      "error": "missing-step"
+    },
+    {
+      "name": "state full",
+      "kind": "state",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        },
+        {
+          "to": 3,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "move",
+                "from": "due",
+                "to": "when.date"
+              },
+              {
+                "op": "add",
+                "path": "assignee",
+                "default": null
+              }
+            ]
+          }
+        }
+      ],
+      "reader": 3,
+      "entries": [
+        {
+          "key": "item_a",
+          "value": {
+            "v": 3,
+            "text": "Mleko",
+            "checked": true,
+            "when": {
+              "date": "2026-11-08"
+            },
+            "assignee": null
+          }
+        },
+        {
+          "key": "item_b",
+          "value": {
+            "v": 1,
+            "text": "Mleko",
+            "done": true,
+            "due": "2026-11-08"
+          }
+        }
+      ],
+      "expect": "full"
+    },
+    {
+      "name": "state full at the entry's own version",
+      "kind": "state",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        },
+        {
+          "to": 3,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "move",
+                "from": "due",
+                "to": "when.date"
+              },
+              {
+                "op": "add",
+                "path": "assignee",
+                "default": null
+              }
+            ]
+          }
+        }
+      ],
+      "reader": 1,
+      "entries": [
+        {
+          "key": "item_a",
+          "value": {
+            "v": 1,
+            "text": "Mleko",
+            "done": true,
+            "due": "2026-11-08"
+          }
+        }
+      ],
+      "expect": "full"
+    },
+    {
+      "name": "state read-only from a lossy down traversal",
+      "kind": "state",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        },
+        {
+          "to": 3,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "wrap",
+                "path": "tag"
+              }
+            ]
+          }
+        }
+      ],
+      "reader": 2,
+      "entries": [
+        {
+          "key": "item_a",
+          "value": {
+            "v": 3,
+            "checked": true,
+            "tag": [
+              "a"
+            ]
+          }
+        }
+      ],
+      "expect": "read-only"
+    },
+    {
+      "name": "state read-only from an unwrap up traversal",
+      "kind": "state",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "unwrap",
+                "path": "tag"
+              }
+            ]
+          }
+        }
+      ],
+      "reader": 2,
+      "entries": [
+        {
+          "key": "item_a",
+          "value": {
+            "v": 1,
+            "tag": [
+              "a"
+            ]
+          }
+        }
+      ],
+      "expect": "read-only"
+    },
+    {
+      "name": "state read-only from wrap even when the value is an array of one",
+      "kind": "state",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "wrap",
+                "path": "tag"
+              }
+            ]
+          }
+        }
+      ],
+      "reader": 1,
+      "entries": [
+        {
+          "key": "item_a",
+          "value": {
+            "v": 2,
+            "tag": [
+              "a"
+            ]
+          }
+        }
+      ],
+      "expect": "read-only",
+      "note": "Lossiness is static, the value does not matter."
+    },
+    {
+      "name": "state needs-update from a breaking step",
+      "kind": "state",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        },
+        {
+          "to": 3,
+          "breaking": true,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "move",
+                "from": "due",
+                "to": "when.date"
+              },
+              {
+                "op": "add",
+                "path": "assignee",
+                "default": null
+              }
+            ]
+          }
+        }
+      ],
+      "reader": 2,
+      "entries": [
+        {
+          "key": "item_a",
+          "value": {
+            "v": 3,
+            "text": "Mleko",
+            "checked": true,
+            "when": {
+              "date": "2026-11-08"
+            },
+            "assignee": null
+          }
+        }
+      ],
+      "expect": "needs-update"
+    },
+    {
+      "name": "state needs-update from a missing step, reader newer than the chain",
+      "kind": "state",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        }
+      ],
+      "reader": 3,
+      "entries": [
+        {
+          "key": "item_a",
+          "value": {
+            "v": 1,
+            "done": true
+          }
+        }
+      ],
+      "expect": "needs-update"
+    },
+    {
+      "name": "state needs-update from a missing step, entry newer than the chain",
+      "kind": "state",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        }
+      ],
+      "reader": 1,
+      "entries": [
+        {
+          "key": "item_a",
+          "value": {
+            "v": 3,
+            "text": "Mleko"
+          }
+        }
+      ],
+      "expect": "needs-update"
+    },
+    {
+      "name": "state needs-update from an unsupported op",
+      "kind": "state",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "x-future",
+                "path": "a"
+              }
+            ]
+          }
+        }
+      ],
+      "reader": 2,
+      "entries": [
+        {
+          "key": "item_a",
+          "value": {
+            "v": 1,
+            "a": 1
+          }
+        }
+      ],
+      "expect": "needs-update"
+    },
+    {
+      "name": "state worst over entries, read-only beats full",
+      "kind": "state",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "wrap",
+                "path": "tag"
+              }
+            ]
+          }
+        }
+      ],
+      "reader": 1,
+      "entries": [
+        {
+          "key": "item_a",
+          "value": {
+            "v": 1,
+            "tag": "a"
+          }
+        },
+        {
+          "key": "item_b",
+          "value": {
+            "v": 2,
+            "tag": [
+              "a"
+            ]
+          }
+        }
+      ],
+      "expect": "read-only"
+    },
+    {
+      "name": "state worst over entries, needs-update beats read-only",
+      "kind": "state",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        },
+        {
+          "to": 3,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "wrap",
+                "path": "tag"
+              }
+            ]
+          }
+        }
+      ],
+      "reader": 1,
+      "entries": [
+        {
+          "key": "item_a",
+          "value": {
+            "v": 1,
+            "done": true
+          }
+        },
+        {
+          "key": "item_b",
+          "value": {
+            "v": 3,
+            "checked": true,
+            "tag": [
+              "a"
+            ]
+          }
+        },
+        {
+          "key": "item_c",
+          "value": {
+            "v": 4,
+            "x": 1
+          }
+        }
+      ],
+      "expect": "needs-update"
+    },
+    {
+      "name": "state ignores tombstones and bad-version entries",
+      "kind": "state",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "wrap",
+                "path": "tag"
+              }
+            ]
+          }
+        }
+      ],
+      "reader": 1,
+      "entries": [
+        {
+          "key": "item_a",
+          "value": ""
+        },
+        {
+          "key": "item_b",
+          "value": null
+        },
+        {
+          "key": "item_c",
+          "value": {
+            "v": 0,
+            "tag": "a"
+          }
+        },
+        {
+          "key": "item_d",
+          "value": {
+            "v": "2",
+            "tag": "a"
+          }
+        },
+        {
+          "key": "item_e",
+          "value": {
+            "v": 1.5,
+            "tag": "a"
+          }
+        },
+        {
+          "key": "item_f",
+          "value": {
+            "v": 1,
+            "tag": "a"
+          }
+        }
+      ],
+      "expect": "full"
+    },
+    {
+      "name": "state of only tombstones and bad-version entries is full",
+      "kind": "state",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "wrap",
+                "path": "tag"
+              }
+            ]
+          }
+        }
+      ],
+      "reader": 1,
+      "entries": [
+        {
+          "key": "item_a",
+          "value": ""
+        },
+        {
+          "key": "item_b",
+          "value": null
+        },
+        {
+          "key": "item_c",
+          "value": {
+            "v": 0
+          }
+        }
+      ],
+      "expect": "full"
+    },
+    {
+      "name": "state with no entries is full",
+      "kind": "state",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        },
+        {
+          "to": 3,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "move",
+                "from": "due",
+                "to": "when.date"
+              },
+              {
+                "op": "add",
+                "path": "assignee",
+                "default": null
+              }
+            ]
+          }
+        }
+      ],
+      "reader": 3,
+      "entries": [],
+      "expect": "full"
+    },
+    {
+      "name": "in one step unsupported wins over breaking, down",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": true,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "bogus",
+                "path": "x"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 2,
+        "text": "Mleko"
+      },
+      "to": 1,
+      "error": "unsupported"
+    },
+    {
+      "name": "read-only is decided before any diff, even for an unedited view",
+      "kind": "writeback",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "wrap",
+                "path": "tag"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "original": {
+        "v": 2,
+        "tag": [
+          "a"
+        ]
+      },
+      "reader": 1,
+      "view": {
+        "v": 1,
+        "tag": "a"
+      },
+      "edited": {
+        "v": 1,
+        "tag": "a"
+      },
+      "error": "read-only"
+    },
+    {
+      "name": "a failing migration wins over read-only in writeback",
+      "kind": "writeback",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": true,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        },
+        {
+          "to": 3,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "wrap",
+                "path": "tags"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "original": {
+        "v": 3,
+        "tags": [
+          "x"
+        ]
+      },
+      "reader": 1,
+      "view": {
+        "v": 1,
+        "tags": [
+          "x"
+        ]
+      },
+      "edited": {
+        "v": 1,
+        "tags": [
+          "y"
+        ]
+      },
+      "error": "breaking"
+    }
+  ]
+}

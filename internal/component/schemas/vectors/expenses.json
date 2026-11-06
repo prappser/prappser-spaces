@@ -227,6 +227,50 @@
         "amount": 1000
       },
       "valid": true
+    },
+    {
+      "name": "expense with v 1",
+      "schema": "https://prappser.app/schemas/component/expenses.v1.schema.json#/$defs/expense",
+      "data": {
+        "v": 1,
+        "what": "Dinner",
+        "payer": "pk-alice",
+        "amount": 4250
+      },
+      "valid": true
+    },
+    {
+      "name": "expense with v 2",
+      "schema": "https://prappser.app/schemas/component/expenses.v1.schema.json#/$defs/expense",
+      "data": {
+        "v": 2,
+        "what": "Dinner",
+        "payer": "pk-alice",
+        "amount": 4250
+      },
+      "valid": false
+    },
+    {
+      "name": "settlement with v 1",
+      "schema": "https://prappser.app/schemas/component/expenses.v1.schema.json#/$defs/settlement",
+      "data": {
+        "v": 1,
+        "from": "pk-bob",
+        "to": "pk-alice",
+        "amount": 1000
+      },
+      "valid": true
+    },
+    {
+      "name": "settlement with v 2",
+      "schema": "https://prappser.app/schemas/component/expenses.v1.schema.json#/$defs/settlement",
+      "data": {
+        "v": 2,
+        "from": "pk-bob",
+        "to": "pk-alice",
+        "amount": 1000
+      },
+      "valid": false
     }
   ]
 }
