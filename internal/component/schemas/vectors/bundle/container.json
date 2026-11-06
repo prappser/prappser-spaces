@@ -1,0 +1,308 @@
+{
+  "cases": [
+    {
+      "name": "valid",
+      "container": {
+        "files": {
+          "component/a.v1.schema.json": "{\"a\": \"café\"}\n",
+          "component/common.v1.schema.json": "{\"c\": 1}\n"
+        },
+        "manifest": "{\n  \"bundle\": 1,\n  \"files\": [\n    {\n      \"path\": \"component/a.v1.schema.json\",\n      \"sha256\": \"8d3af4ba6d21933de9a05986c244f6bafc709fd622ea3a391a810ab9c104b670\"\n    },\n    {\n      \"path\": \"component/common.v1.schema.json\",\n      \"sha256\": \"36a9e8382a28339733e8dc7510554374804111b33013bf18fd24395e66f4fcf7\"\n    }\n  ],\n  \"types\": {\n    \"A\": {\n      \"current\": 1,\n      \"min\": 1\n    }\n  }\n}\n",
+        "signature": "Nd2BXy7dkiP5tgJNiSgXOP2CRI+Ey2/S2rx+I0l+SVWQt5mAnTJQSchnofe8hba2YHK+OdXDi/afp+8qxUbRDg=="
+      },
+      "valid": true
+    },
+    {
+      "name": "valid with unknown top-level member",
+      "container": {
+        "files": {
+          "component/a.v1.schema.json": "{\"a\": \"café\"}\n",
+          "component/common.v1.schema.json": "{\"c\": 1}\n"
+        },
+        "manifest": "{\n  \"bundle\": 1,\n  \"files\": [\n    {\n      \"path\": \"component/a.v1.schema.json\",\n      \"sha256\": \"8d3af4ba6d21933de9a05986c244f6bafc709fd622ea3a391a810ab9c104b670\"\n    },\n    {\n      \"path\": \"component/common.v1.schema.json\",\n      \"sha256\": \"36a9e8382a28339733e8dc7510554374804111b33013bf18fd24395e66f4fcf7\"\n    }\n  ],\n  \"types\": {\n    \"A\": {\n      \"current\": 1,\n      \"min\": 1\n    }\n  }\n}\n",
+        "note": "ignored",
+        "signature": "Nd2BXy7dkiP5tgJNiSgXOP2CRI+Ey2/S2rx+I0l+SVWQt5mAnTJQSchnofe8hba2YHK+OdXDi/afp+8qxUbRDg=="
+      },
+      "valid": true
+    },
+    {
+      "name": "tampered manifest",
+      "container": {
+        "files": {
+          "component/a.v1.schema.json": "{\"a\": \"café\"}\n",
+          "component/common.v1.schema.json": "{\"c\": 1}\n"
+        },
+        "manifest": "{\n  \"bundle\": 1,\n  \"files\": [\n    {\n      \"path\": \"component/a.v1.schema.json\",\n      \"sha256\": \"8d3af4ba6d21933de9a05986c244f6bafc709fd622ea3a391a810ab9c104b670\"\n    },\n    {\n      \"path\": \"component/common.v1.schema.json\",\n      \"sha256\": \"36a9e8382a28339733e8dc7510554374804111b33013bf18fd24395e66f4fcf7\"\n    }\n  ],\n  \"Types\": {\n    \"A\": {\n      \"current\": 1,\n      \"min\": 1\n    }\n  }\n}\n",
+        "signature": "Nd2BXy7dkiP5tgJNiSgXOP2CRI+Ey2/S2rx+I0l+SVWQt5mAnTJQSchnofe8hba2YHK+OdXDi/afp+8qxUbRDg=="
+      },
+      "valid": false
+    },
+    {
+      "name": "tampered file content",
+      "container": {
+        "files": {
+          "component/a.v1.schema.json": "{\"a\": \"café\"}\n ",
+          "component/common.v1.schema.json": "{\"c\": 1}\n"
+        },
+        "manifest": "{\n  \"bundle\": 1,\n  \"files\": [\n    {\n      \"path\": \"component/a.v1.schema.json\",\n      \"sha256\": \"8d3af4ba6d21933de9a05986c244f6bafc709fd622ea3a391a810ab9c104b670\"\n    },\n    {\n      \"path\": \"component/common.v1.schema.json\",\n      \"sha256\": \"36a9e8382a28339733e8dc7510554374804111b33013bf18fd24395e66f4fcf7\"\n    }\n  ],\n  \"types\": {\n    \"A\": {\n      \"current\": 1,\n      \"min\": 1\n    }\n  }\n}\n",
+        "signature": "Nd2BXy7dkiP5tgJNiSgXOP2CRI+Ey2/S2rx+I0l+SVWQt5mAnTJQSchnofe8hba2YHK+OdXDi/afp+8qxUbRDg=="
+      },
+      "valid": false
+    },
+    {
+      "name": "missing file",
+      "container": {
+        "files": {
+          "component/common.v1.schema.json": "{\"c\": 1}\n"
+        },
+        "manifest": "{\n  \"bundle\": 1,\n  \"files\": [\n    {\n      \"path\": \"component/a.v1.schema.json\",\n      \"sha256\": \"8d3af4ba6d21933de9a05986c244f6bafc709fd622ea3a391a810ab9c104b670\"\n    },\n    {\n      \"path\": \"component/common.v1.schema.json\",\n      \"sha256\": \"36a9e8382a28339733e8dc7510554374804111b33013bf18fd24395e66f4fcf7\"\n    }\n  ],\n  \"types\": {\n    \"A\": {\n      \"current\": 1,\n      \"min\": 1\n    }\n  }\n}\n",
+        "signature": "Nd2BXy7dkiP5tgJNiSgXOP2CRI+Ey2/S2rx+I0l+SVWQt5mAnTJQSchnofe8hba2YHK+OdXDi/afp+8qxUbRDg=="
+      },
+      "valid": false
+    },
+    {
+      "name": "extra file",
+      "container": {
+        "files": {
+          "component/a.v1.schema.json": "{\"a\": \"café\"}\n",
+          "component/common.v1.schema.json": "{\"c\": 1}\n",
+          "component/extra.json": "{}"
+        },
+        "manifest": "{\n  \"bundle\": 1,\n  \"files\": [\n    {\n      \"path\": \"component/a.v1.schema.json\",\n      \"sha256\": \"8d3af4ba6d21933de9a05986c244f6bafc709fd622ea3a391a810ab9c104b670\"\n    },\n    {\n      \"path\": \"component/common.v1.schema.json\",\n      \"sha256\": \"36a9e8382a28339733e8dc7510554374804111b33013bf18fd24395e66f4fcf7\"\n    }\n  ],\n  \"types\": {\n    \"A\": {\n      \"current\": 1,\n      \"min\": 1\n    }\n  }\n}\n",
+        "signature": "Nd2BXy7dkiP5tgJNiSgXOP2CRI+Ey2/S2rx+I0l+SVWQt5mAnTJQSchnofe8hba2YHK+OdXDi/afp+8qxUbRDg=="
+      },
+      "valid": false
+    },
+    {
+      "name": "bad signature",
+      "container": {
+        "files": {
+          "component/a.v1.schema.json": "{\"a\": \"café\"}\n",
+          "component/common.v1.schema.json": "{\"c\": 1}\n"
+        },
+        "manifest": "{\n  \"bundle\": 1,\n  \"files\": [\n    {\n      \"path\": \"component/a.v1.schema.json\",\n      \"sha256\": \"8d3af4ba6d21933de9a05986c244f6bafc709fd622ea3a391a810ab9c104b670\"\n    },\n    {\n      \"path\": \"component/common.v1.schema.json\",\n      \"sha256\": \"36a9e8382a28339733e8dc7510554374804111b33013bf18fd24395e66f4fcf7\"\n    }\n  ],\n  \"types\": {\n    \"A\": {\n      \"current\": 1,\n      \"min\": 1\n    }\n  }\n}\n",
+        "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+      },
+      "valid": false
+    },
+    {
+      "name": "signature wrong length",
+      "container": {
+        "files": {
+          "component/a.v1.schema.json": "{\"a\": \"café\"}\n",
+          "component/common.v1.schema.json": "{\"c\": 1}\n"
+        },
+        "manifest": "{\n  \"bundle\": 1,\n  \"files\": [\n    {\n      \"path\": \"component/a.v1.schema.json\",\n      \"sha256\": \"8d3af4ba6d21933de9a05986c244f6bafc709fd622ea3a391a810ab9c104b670\"\n    },\n    {\n      \"path\": \"component/common.v1.schema.json\",\n      \"sha256\": \"36a9e8382a28339733e8dc7510554374804111b33013bf18fd24395e66f4fcf7\"\n    }\n  ],\n  \"types\": {\n    \"A\": {\n      \"current\": 1,\n      \"min\": 1\n    }\n  }\n}\n",
+        "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      },
+      "valid": false
+    },
+    {
+      "name": "signature url-safe base64",
+      "container": {
+        "files": {
+          "component/a.v1.schema.json": "{\"a\": \"café\"}\n",
+          "component/common.v1.schema.json": "{\"c\": 1}\n"
+        },
+        "manifest": "{\n  \"bundle\": 1,\n  \"files\": [\n    {\n      \"path\": \"component/a.v1.schema.json\",\n      \"sha256\": \"8d3af4ba6d21933de9a05986c244f6bafc709fd622ea3a391a810ab9c104b670\"\n    },\n    {\n      \"path\": \"component/common.v1.schema.json\",\n      \"sha256\": \"36a9e8382a28339733e8dc7510554374804111b33013bf18fd24395e66f4fcf7\"\n    }\n  ],\n  \"types\": {\n    \"A\": {\n      \"current\": 1,\n      \"min\": 1\n    }\n  }\n}\n",
+        "signature": "Nd2BXy7dkiP5tgJNiSgXOP2CRI-Ey2_S2rx-I0l-SVWQt5mAnTJQSchnofe8hba2YHK-OdXDi_afp-8qxUbRDg=="
+      },
+      "valid": false
+    },
+    {
+      "name": "sha256 not lowercase hex",
+      "container": {
+        "files": {
+          "component/a.v1.schema.json": "{\"a\": \"café\"}\n",
+          "component/common.v1.schema.json": "{\"c\": 1}\n"
+        },
+        "manifest": "{\n  \"bundle\": 1,\n  \"files\": [\n    {\n      \"path\": \"component/a.v1.schema.json\",\n      \"sha256\": \"8D3AF4BA6D21933DE9A05986C244F6BAFC709FD622EA3A391A810AB9C104B670\"\n    },\n    {\n      \"path\": \"component/common.v1.schema.json\",\n      \"sha256\": \"36a9e8382a28339733e8dc7510554374804111b33013bf18fd24395e66f4fcf7\"\n    }\n  ],\n  \"types\": {\n    \"A\": {\n      \"current\": 1,\n      \"min\": 1\n    }\n  }\n}\n",
+        "signature": "LwU4OrwdCN7nl65L4ODh5ALR450sZv7/jN+pMHs36fOqHnf8RkLBjmdwtMFdBGQr0COmadfFf/rZeJ4PQs3DBw=="
+      },
+      "valid": false
+    },
+    {
+      "name": "duplicate path in manifest",
+      "container": {
+        "files": {
+          "component/a.v1.schema.json": "{\"a\": \"café\"}\n"
+        },
+        "manifest": "{\n  \"bundle\": 1,\n  \"files\": [\n    {\n      \"path\": \"component/a.v1.schema.json\",\n      \"sha256\": \"8d3af4ba6d21933de9a05986c244f6bafc709fd622ea3a391a810ab9c104b670\"\n    },\n    {\n      \"path\": \"component/a.v1.schema.json\",\n      \"sha256\": \"36a9e8382a28339733e8dc7510554374804111b33013bf18fd24395e66f4fcf7\"\n    }\n  ],\n  \"types\": {\n    \"A\": {\n      \"current\": 1,\n      \"min\": 1\n    }\n  }\n}\n",
+        "signature": "MuFHuiKpXbuABahOcA2NAKEU4B4gl3Eel27mDXxJ6l6jOtsf8UN2S+iVFTjZCi/KBIGts1Jg1QuYsVEHgWBJDA=="
+      },
+      "valid": false
+    },
+    {
+      "name": "file value not a string",
+      "container": {
+        "files": {
+          "component/a.v1.schema.json": 5,
+          "component/common.v1.schema.json": "{\"c\": 1}\n"
+        },
+        "manifest": "{\n  \"bundle\": 1,\n  \"files\": [\n    {\n      \"path\": \"component/a.v1.schema.json\",\n      \"sha256\": \"8d3af4ba6d21933de9a05986c244f6bafc709fd622ea3a391a810ab9c104b670\"\n    },\n    {\n      \"path\": \"component/common.v1.schema.json\",\n      \"sha256\": \"36a9e8382a28339733e8dc7510554374804111b33013bf18fd24395e66f4fcf7\"\n    }\n  ],\n  \"types\": {\n    \"A\": {\n      \"current\": 1,\n      \"min\": 1\n    }\n  }\n}\n",
+        "signature": "Nd2BXy7dkiP5tgJNiSgXOP2CRI+Ey2/S2rx+I0l+SVWQt5mAnTJQSchnofe8hba2YHK+OdXDi/afp+8qxUbRDg=="
+      },
+      "valid": false
+    },
+    {
+      "name": "bundle 0",
+      "container": {
+        "files": {
+          "component/a.v1.schema.json": "{\"a\": \"café\"}\n",
+          "component/common.v1.schema.json": "{\"c\": 1}\n"
+        },
+        "manifest": "{\n  \"bundle\": 0,\n  \"files\": [\n    {\n      \"path\": \"component/a.v1.schema.json\",\n      \"sha256\": \"8d3af4ba6d21933de9a05986c244f6bafc709fd622ea3a391a810ab9c104b670\"\n    },\n    {\n      \"path\": \"component/common.v1.schema.json\",\n      \"sha256\": \"36a9e8382a28339733e8dc7510554374804111b33013bf18fd24395e66f4fcf7\"\n    }\n  ],\n  \"types\": {\n    \"A\": {\n      \"current\": 1,\n      \"min\": 1\n    }\n  }\n}\n",
+        "signature": "TdE/co+EGyiId6FMDpMWFP1Wbf/ryaEBJ2XvS35BAXT6DFQhqsJ4v36CtbEQq68OL6ILzHTLItFMRnQTjaf8AQ=="
+      },
+      "valid": false
+    },
+    {
+      "name": "bundle above int32",
+      "container": {
+        "files": {
+          "component/a.v1.schema.json": "{\"a\": \"café\"}\n",
+          "component/common.v1.schema.json": "{\"c\": 1}\n"
+        },
+        "manifest": "{\n  \"bundle\": 2147483648,\n  \"files\": [\n    {\n      \"path\": \"component/a.v1.schema.json\",\n      \"sha256\": \"8d3af4ba6d21933de9a05986c244f6bafc709fd622ea3a391a810ab9c104b670\"\n    },\n    {\n      \"path\": \"component/common.v1.schema.json\",\n      \"sha256\": \"36a9e8382a28339733e8dc7510554374804111b33013bf18fd24395e66f4fcf7\"\n    }\n  ],\n  \"types\": {\n    \"A\": {\n      \"current\": 1,\n      \"min\": 1\n    }\n  }\n}\n",
+        "signature": "tv3Ob1z05mJbfShx6g0V5fRfYHxII9uDbcWSvKje3cGo6J1F2qNHXzRTXYiDIO9OF4Hetc65ostN/VtxpVouBg=="
+      },
+      "valid": false
+    },
+    {
+      "name": "bundle overflows int64",
+      "container": {
+        "files": {
+          "component/a.v1.schema.json": "{\"a\": \"café\"}\n",
+          "component/common.v1.schema.json": "{\"c\": 1}\n"
+        },
+        "manifest": "{\n  \"bundle\": 9999999999999999999,\n  \"files\": [\n    {\n      \"path\": \"component/a.v1.schema.json\",\n      \"sha256\": \"8d3af4ba6d21933de9a05986c244f6bafc709fd622ea3a391a810ab9c104b670\"\n    },\n    {\n      \"path\": \"component/common.v1.schema.json\",\n      \"sha256\": \"36a9e8382a28339733e8dc7510554374804111b33013bf18fd24395e66f4fcf7\"\n    }\n  ],\n  \"types\": {\n    \"A\": {\n      \"current\": 1,\n      \"min\": 1\n    }\n  }\n}\n",
+        "signature": "axEDZgI3kMKEPv0yACEkGJ4RDDuyCRzlhlmF6wMiEHP0lXIhKp4YK/msimCGj+IIXcvZKRNKKMl3n4HeLdD5Dw=="
+      },
+      "valid": false
+    },
+    {
+      "name": "bundle not an integer",
+      "container": {
+        "files": {
+          "component/a.v1.schema.json": "{\"a\": \"café\"}\n",
+          "component/common.v1.schema.json": "{\"c\": 1}\n"
+        },
+        "manifest": "{\n  \"bundle\": 1.5,\n  \"files\": [\n    {\n      \"path\": \"component/a.v1.schema.json\",\n      \"sha256\": \"8d3af4ba6d21933de9a05986c244f6bafc709fd622ea3a391a810ab9c104b670\"\n    },\n    {\n      \"path\": \"component/common.v1.schema.json\",\n      \"sha256\": \"36a9e8382a28339733e8dc7510554374804111b33013bf18fd24395e66f4fcf7\"\n    }\n  ],\n  \"types\": {\n    \"A\": {\n      \"current\": 1,\n      \"min\": 1\n    }\n  }\n}\n",
+        "signature": "8vO6B2YR00g7RJ7ErkV3EjN4+bcVxKfG7M4rcW0ttnZhCj+wQ/XhEI00MJSAX0Nj7++zIrSPEFl/eeksUsR7Ag=="
+      },
+      "valid": false
+    },
+    {
+      "name": "bundle written as 1.0",
+      "container": {
+        "files": {
+          "component/a.v1.schema.json": "{\"a\": \"café\"}\n",
+          "component/common.v1.schema.json": "{\"c\": 1}\n"
+        },
+        "manifest": "{\n  \"bundle\": 1.0,\n  \"files\": [\n    {\n      \"path\": \"component/a.v1.schema.json\",\n      \"sha256\": \"8d3af4ba6d21933de9a05986c244f6bafc709fd622ea3a391a810ab9c104b670\"\n    },\n    {\n      \"path\": \"component/common.v1.schema.json\",\n      \"sha256\": \"36a9e8382a28339733e8dc7510554374804111b33013bf18fd24395e66f4fcf7\"\n    }\n  ],\n  \"types\": {\n    \"A\": {\n      \"current\": 1,\n      \"min\": 1\n    }\n  }\n}\n",
+        "signature": "w2ms4o+ybdorh87krnU9LoRqA5Mo5YwCNYxOWVQvP6fl5fvEzihTSRyuMAFSd4d4gwKXnJ8MUq5iZFkxcIURCQ=="
+      },
+      "valid": false
+    },
+    {
+      "name": "bundle written as 1e0",
+      "container": {
+        "files": {
+          "component/a.v1.schema.json": "{\"a\": \"café\"}\n",
+          "component/common.v1.schema.json": "{\"c\": 1}\n"
+        },
+        "manifest": "{\n  \"bundle\": 1e0,\n  \"files\": [\n    {\n      \"path\": \"component/a.v1.schema.json\",\n      \"sha256\": \"8d3af4ba6d21933de9a05986c244f6bafc709fd622ea3a391a810ab9c104b670\"\n    },\n    {\n      \"path\": \"component/common.v1.schema.json\",\n      \"sha256\": \"36a9e8382a28339733e8dc7510554374804111b33013bf18fd24395e66f4fcf7\"\n    }\n  ],\n  \"types\": {\n    \"A\": {\n      \"current\": 1,\n      \"min\": 1\n    }\n  }\n}\n",
+        "signature": "fPW5JOQ381TclIkUwuxvYr45dT4K+fOEzM7dqtfzrEi/Xnz/3TqbI1ibEOi4Mwz+O/q30Rh2VNIRrZsGKdWWBQ=="
+      },
+      "valid": false
+    },
+    {
+      "name": "container files is an array",
+      "container": {
+        "files": [],
+        "manifest": "{\n  \"bundle\": 1,\n  \"files\": [\n    {\n      \"path\": \"component/a.v1.schema.json\",\n      \"sha256\": \"8d3af4ba6d21933de9a05986c244f6bafc709fd622ea3a391a810ab9c104b670\"\n    },\n    {\n      \"path\": \"component/common.v1.schema.json\",\n      \"sha256\": \"36a9e8382a28339733e8dc7510554374804111b33013bf18fd24395e66f4fcf7\"\n    }\n  ],\n  \"types\": {\n    \"A\": {\n      \"current\": 1,\n      \"min\": 1\n    }\n  }\n}\n",
+        "signature": "Nd2BXy7dkiP5tgJNiSgXOP2CRI+Ey2/S2rx+I0l+SVWQt5mAnTJQSchnofe8hba2YHK+OdXDi/afp+8qxUbRDg=="
+      },
+      "valid": false
+    },
+    {
+      "name": "manifest is not JSON",
+      "container": {
+        "files": {
+          "component/a.v1.schema.json": "{\"a\": \"café\"}\n",
+          "component/common.v1.schema.json": "{\"c\": 1}\n"
+        },
+        "manifest": "not json\n",
+        "signature": "j5JjviNQaWbQ2ItrrFW5wR4wqXawqh5XtEcMrtWDkGutaV6yYN+o1mbDZLPF1U5sXSk+CkYCys/JOafqmYE3DQ=="
+      },
+      "valid": false
+    },
+    {
+      "name": "manifest is a JSON array",
+      "container": {
+        "files": {
+          "component/a.v1.schema.json": "{\"a\": \"café\"}\n",
+          "component/common.v1.schema.json": "{\"c\": 1}\n"
+        },
+        "manifest": "[]\n",
+        "signature": "sYjfKnMull3rdHq5PN98eKq9nMEfD+sXPR88Kw5/Uza7KkbxBDrJ3v1P7dh5ZlWt4LooDNvd/1WZL6V+7b0dDA=="
+      },
+      "valid": false
+    },
+    {
+      "name": "container missing signature",
+      "container": {
+        "files": {
+          "component/a.v1.schema.json": "{\"a\": \"café\"}\n",
+          "component/common.v1.schema.json": "{\"c\": 1}\n"
+        },
+        "manifest": "{\n  \"bundle\": 1,\n  \"files\": [\n    {\n      \"path\": \"component/a.v1.schema.json\",\n      \"sha256\": \"8d3af4ba6d21933de9a05986c244f6bafc709fd622ea3a391a810ab9c104b670\"\n    },\n    {\n      \"path\": \"component/common.v1.schema.json\",\n      \"sha256\": \"36a9e8382a28339733e8dc7510554374804111b33013bf18fd24395e66f4fcf7\"\n    }\n  ],\n  \"types\": {\n    \"A\": {\n      \"current\": 1,\n      \"min\": 1\n    }\n  }\n}\n"
+      },
+      "valid": false
+    },
+    {
+      "name": "container missing manifest",
+      "container": {
+        "files": {
+          "component/a.v1.schema.json": "{\"a\": \"café\"}\n",
+          "component/common.v1.schema.json": "{\"c\": 1}\n"
+        },
+        "signature": "Nd2BXy7dkiP5tgJNiSgXOP2CRI+Ey2/S2rx+I0l+SVWQt5mAnTJQSchnofe8hba2YHK+OdXDi/afp+8qxUbRDg=="
+      },
+      "valid": false
+    },
+    {
+      "name": "container missing files",
+      "container": {
+        "manifest": "{\n  \"bundle\": 1,\n  \"files\": [\n    {\n      \"path\": \"component/a.v1.schema.json\",\n      \"sha256\": \"8d3af4ba6d21933de9a05986c244f6bafc709fd622ea3a391a810ab9c104b670\"\n    },\n    {\n      \"path\": \"component/common.v1.schema.json\",\n      \"sha256\": \"36a9e8382a28339733e8dc7510554374804111b33013bf18fd24395e66f4fcf7\"\n    }\n  ],\n  \"types\": {\n    \"A\": {\n      \"current\": 1,\n      \"min\": 1\n    }\n  }\n}\n",
+        "signature": "Nd2BXy7dkiP5tgJNiSgXOP2CRI+Ey2/S2rx+I0l+SVWQt5mAnTJQSchnofe8hba2YHK+OdXDi/afp+8qxUbRDg=="
+      },
+      "valid": false
+    },
+    {
+      "name": "signature with non-canonical trailing bits",
+      "container": {
+        "files": {
+          "component/a.v1.schema.json": "{\"a\": \"café\"}\n",
+          "component/common.v1.schema.json": "{\"c\": 1}\n"
+        },
+        "manifest": "{\n  \"bundle\": 1,\n  \"files\": [\n    {\n      \"path\": \"component/a.v1.schema.json\",\n      \"sha256\": \"8d3af4ba6d21933de9a05986c244f6bafc709fd622ea3a391a810ab9c104b670\"\n    },\n    {\n      \"path\": \"component/common.v1.schema.json\",\n      \"sha256\": \"36a9e8382a28339733e8dc7510554374804111b33013bf18fd24395e66f4fcf7\"\n    }\n  ],\n  \"types\": {\n    \"A\": {\n      \"current\": 1,\n      \"min\": 1\n    }\n  }\n}\n",
+        "signature": "Nd2BXy7dkiP5tgJNiSgXOP2CRI+Ey2/S2rx+I0l+SVWQt5mAnTJQSchnofe8hba2YHK+OdXDi/afp+8qxUbRDh=="
+      },
+      "valid": false
+    },
+    {
+      "name": "signed by a different key",
+      "container": {
+        "files": {
+          "component/a.v1.schema.json": "{\"a\": \"café\"}\n",
+          "component/common.v1.schema.json": "{\"c\": 1}\n"
+        },
+        "manifest": "{\n  \"bundle\": 1,\n  \"files\": [\n    {\n      \"path\": \"component/a.v1.schema.json\",\n      \"sha256\": \"8d3af4ba6d21933de9a05986c244f6bafc709fd622ea3a391a810ab9c104b670\"\n    },\n    {\n      \"path\": \"component/common.v1.schema.json\",\n      \"sha256\": \"36a9e8382a28339733e8dc7510554374804111b33013bf18fd24395e66f4fcf7\"\n    }\n  ],\n  \"types\": {\n    \"A\": {\n      \"current\": 1,\n      \"min\": 1\n    }\n  }\n}\n",
+        "signature": "4jxli/3r/qp97TUg6AUwxgxsWkyBHcJjKTFNuzx8/Othr1cdSOsDL5p3zn0gFov4l7TfvpymG0yamkbem7G4Bw=="
+      },
+      "valid": false
+    }
+  ],
+  "publicKey": "uUWFSrd5UNra5gdpCY59jV6YSifiKzl7nIRgmrwt8T0="
+}

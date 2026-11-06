@@ -41,6 +41,7 @@ import (
 	"github.com/prappser/prappser-spaces/internal/profile"
 	"github.com/prappser/prappser-spaces/internal/push"
 	"github.com/prappser/prappser-spaces/internal/reminder"
+	"github.com/prappser/prappser-spaces/internal/schemabundle"
 	"github.com/prappser/prappser-spaces/internal/setup"
 	"github.com/prappser/prappser-spaces/internal/space"
 	"github.com/prappser/prappser-spaces/internal/spaceprofile"
@@ -269,6 +270,15 @@ func main() {
 	oauthEndpoints := oauth.NewEndpoints(oauth.NewService(agentService, userRepository, config.ExternalURL, config.AppURL), config.ClientIP())
 
 	requestHandler := internal.NewRequestHandler(config, userEndpoints, statusEndpoints, healthEndpoints, userService, appEndpoints, invitationEndpoints, eventEndpoints, setupEndpoints, storageEndpoints, wsHandler, spaceEndpoints, pushEndpoints, profileEndpoints, deviceEndpoints, passwordEndpoints, assertionEndpoints, ownerClaimEndpoints, keyEndpoints, accountEndpoints, adminEndpoints, registerEndpoints, spaceprofile.NewSpaceProfileEndpoints(spaceProfileRepository, storageRepo, eventService), moveEndpoints, oauthEndpoints)
+
+	switch bundle, err := schemabundle.Embedded(); {
+	case err != nil:
+		log.Warn().Err(err).Msg("Embedded schema bundle failed verification")
+	case bundle == nil:
+		log.Info().Msg("No signed schema bundle embedded")
+	default:
+		log.Info().Msgf("Schema bundle %d embedded", bundle.Manifest.Bundle)
+	}
 
 	var handler fasthttp.RequestHandler = requestHandler
 	if config.MCPEnabled {

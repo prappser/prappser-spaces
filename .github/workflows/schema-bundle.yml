@@ -1,0 +1,126 @@
+name: Schema bundle
+
+on:
+  pull_request:
+    paths:
+      - internal/component/schemas/**
+      - internal/schemabundle/**
+      - .github/workflows/schema-bundle.yml
+  workflow_dispatch:
+  workflow_call:
+    secrets:
+      SCHEMA_SIGNING_KEY:
+        required: false
+    outputs:
+      action:
+        value: ${{ jobs.bundle.outputs.action }}
+      upload:
+        value: ${{ jobs.bundle.outputs.upload }}
+
+concurrency:
+  group: schema-bundle-${{ github.event_name == 'pull_request' && github.ref || 'main' }}
+  cancel-in-progress: false
+
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      action: ${{ steps.build.outputs.action }}
+      upload: ${{ steps.decide.outputs.upload }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Test
+        run: go test ./internal/schemabundle ./internal/component
+
+      - name: Find the latest published bundle
+        id: prev
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Highest bundle number, not newest date.
+          tag=$(gh release list --limit 1000 --json tagName \
+            | jq -r '[.[].tagName | select(test("^schemas-[0-9]+$"))] | sort_by(ltrimstr("schemas-") | tonumber) | last // empty')
+          if [ -n "$tag" ]; then
+            mkdir -p "$RUNNER_TEMP/prev"
+            if ! gh release download "$tag" --pattern schema-bundle.json --output "$RUNNER_TEMP/prev/schema-bundle.json"; then
+              echo "::error::Release ${tag} is missing its schema-bundle.json asset. Recovery: delete that release and its tag, then rerun this workflow."
+              exit 1
+            fi
+            echo "path=$RUNNER_TEMP/prev/schema-bundle.json" >> "$GITHUB_OUTPUT"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Build bundle
+        id: build
+        env:
+          # Only a main push, dispatch or workflow_call from main gets the key. A same-repo
+          # PR run receives secrets too, so the PR path must never see it.
+          SCHEMA_SIGNING_KEY: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && secrets.SCHEMA_SIGNING_KEY || '' }}
+          PREV: ${{ steps.prev.outputs.path }}
+        run: |
+          set -euo pipefail
+          args=(-out "$RUNNER_TEMP/out/schema-bundle.json")
+          [ -n "$PREV" ] && args+=(-previous "$PREV")
+          if [ "$GITHUB_REF" = refs/heads/main ] && [ "$GITHUB_EVENT_NAME" != pull_request ]; then
+            echo "mode=real" >> "$GITHUB_OUTPUT"
+          else
+            args+=(-dry-run)
+            echo "mode=dry-run" >> "$GITHUB_OUTPUT"
+          fi
+          go run ./internal/schemabundle/cmd build "${args[@]}"
+
+      - name: Decide upload
+        id: decide
+        env:
+          ACTION: ${{ steps.build.outputs.action }}
+          MODE: ${{ steps.build.outputs.mode }}
+        run: |
+          set -euo pipefail
+          # A dry-run publish is signed with a throwaway key and must never reach the image.
+          if [ "$ACTION" = reuse ] || { [ "$ACTION" = publish ] && [ "$MODE" = real ]; }; then
+            echo "upload=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "upload=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Every schemas-<n> release is marked latest so releases/latest/download/schema-bundle.json
+      # always resolves; any future non-schema release must be created with --latest=false.
+      # No --clobber: a published bundle is never overwritten, gh fails if the tag exists.
+      - name: Publish release
+        if: steps.build.outputs.mode == 'real' && steps.build.outputs.action == 'publish'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUNDLE: ${{ steps.build.outputs.bundle }}
+        run: |
+          set -euo pipefail
+          gh release create "schemas-${BUNDLE}" "$RUNNER_TEMP/out/schema-bundle.json" \
+            --latest --target "$GITHUB_SHA" --title "Schema bundle ${BUNDLE}" \
+            --notes "Signed schema bundle ${BUNDLE}, built from ${GITHUB_SHA}."
+
+      - name: Upload bundle
+        if: steps.decide.outputs.upload == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: schema-bundle
+          path: ${{ runner.temp }}/out/schema-bundle.json
+          if-no-files-found: error
+
+      - name: Summary
+        env:
+          ACTION: ${{ steps.build.outputs.action }}
+          BUNDLE: ${{ steps.build.outputs.bundle }}
+          MODE: ${{ steps.build.outputs.mode }}
+        run: echo "Schema bundle, action=${ACTION} bundle=${BUNDLE} mode=${MODE}" >> "$GITHUB_STEP_SUMMARY"
