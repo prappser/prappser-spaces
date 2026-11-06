@@ -36,6 +36,7 @@ docker compose up -d && go test -tags=integration ./internal/... .  # Integratio
 | `SIGNUP_SINGLE_USE_INVITES` | No | `false` | `true` = a new account can only join through a single-use invite (hosted-space friends beta) |
 | `OPEN_REGISTRATION` | No | `false` | `true` = anyone can create a `user` account with username + password via `POST /users/register`; capped by `MAX_ACCOUNTS`, 5 attempts/hour per IP |
 | `SCHEMA_BUNDLE_URL` | No | `https://github.com/prappser/prappser-spaces/releases/latest/download/schema-bundle.json` | `off` never fetches; fetched bundle is only stored and served, MCP validation keeps the image's schemas |
+| `PUSH_ALLOW_PRIVATE_ENDPOINTS` | No | `false` | `true` lets the push sender deliver to loopback, private (RFC1918, IPv6 ULA) and CGNAT addresses, for a LAN-only push server such as self-hosted ntfy. Link-local and cloud-metadata addresses stay blocked; endpoints must be https and redirects are never followed |
 | `MAX_ACCOUNTS` | No | `0` | Max accounts on the space, owner included; `0` = off. Full space refuses new accounts |
 | `APP_URL` | No | `https://prappser.app` | Prappser web app URL; the OAuth consent screen lives at `{APP_URL}/#/oauth/consent`. Self-hosters add it to `ALLOWED_ORIGINS` |
 | `MCP_ENABLED` | No | `true` | On by default, `false` turns MCP off; needs `EXTERNAL_URL` (without it MCP stays off and startup logs a warning); reported on `/health` as `mcpEnabled` |
@@ -132,6 +133,8 @@ internal/
     client_metadata.go     - SSRF-safe client metadata document fetch, validation, redirect matching
     oauth_service.go       - Service: authorize, consent approve/deny, token (code + refresh)
     oauth_endpoints.go     - Endpoints: AS metadata, authorize, token, consent API
+  netguard/
+    netguard.go            - IsPublic, NewClient: SSRF-safe HTTP client (dial-time address check, no redirects, no proxy), shared by oauth and push
   component/
     schemas/               — copy of the app repo's JSON Schemas, synced by scripts/sync-schemas.sh (hash manifest in schemas.sha256)
     validator.go           — Validator: ValidateComponentData, ValidateTemplateDoc, MergeMode (x-merge)

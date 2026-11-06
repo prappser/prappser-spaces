@@ -16,6 +16,8 @@ import (
 	"github.com/goccy/go-json"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/prappser/prappser-spaces/internal/netguard"
 )
 
 const (
@@ -35,7 +37,7 @@ func docServer(t *testing.T, handler func(w http.ResponseWriter, r *http.Request
 	t.Cleanup(srv.Close)
 	pool := x509.NewCertPool()
 	pool.AddCert(srv.Certificate())
-	return srv, &metadataFetcher{client: newSafeClient(func(netip.Addr) bool { return true }, pool)}
+	return srv, &metadataFetcher{client: netguard.NewClient(func(netip.Addr) bool { return true }, pool, fetchTimeout, false)}
 }
 
 func serveDoc(t *testing.T, build func(clientID string) map[string]any) (*Service, string) {
@@ -68,25 +70,6 @@ func baseParams(clientID string) authorizeParams {
 		CodeChallenge:       testChallenge,
 		CodeChallengeMethod: "S256",
 		State:               "st",
-	}
-}
-
-func TestIsPublicAddr_ShouldRejectNonGlobalRanges(t *testing.T) {
-	// given
-	blocked := []string{
-		"127.0.0.1", "::1", "10.0.0.1", "172.16.5.4", "192.168.1.1", "fd00::1", "169.254.169.254",
-		"fe80::1", "224.0.0.1", "ff02::1", "0.0.0.0", "::", "0.1.2.3", "100.64.0.1", "192.0.0.8",
-		"192.0.2.1", "198.18.0.1", "198.51.100.7", "203.0.113.9", "240.0.0.1", "255.255.255.255",
-		"64:ff9b::808:808", "64:ff9b:1::1", "2002:808:808::1", "2001:db8::1", "::ffff:127.0.0.1", "::ffff:10.0.0.1", "ff01::1",
-	}
-	allowed := []string{"8.8.8.8", "1.1.1.1", "93.184.216.34", "2606:4700:4700::1111", "::ffff:8.8.8.8"}
-
-	// when / then
-	for _, s := range blocked {
-		assert.False(t, isPublicAddr(netip.MustParseAddr(s)), s)
-	}
-	for _, s := range allowed {
-		assert.True(t, isPublicAddr(netip.MustParseAddr(s)), s)
 	}
 }
 

@@ -34,6 +34,8 @@ type Config struct {
 	SignupSingleUseInvites bool
 	// OpenRegistration lets anyone create a user account via POST /users/register.
 	OpenRegistration bool
+	// PushAllowPrivateEndpoints lets the push sender reach loopback, private and CGNAT addresses.
+	PushAllowPrivateEndpoints bool
 	// MaxAccounts caps accounts on the space, owner included; 0 means unlimited.
 	MaxAccounts int
 	// SchemaBundleURL is where the signed schema bundle is fetched from; empty means never fetch.
@@ -245,6 +247,17 @@ func LoadConfig() (*Config, error) {
 		} else {
 			log.Warn().Str("var", "OPEN_REGISTRATION").Str("value", v).Msg("invalid value, registration disabled")
 		}
+	}
+
+	if v := os.Getenv("PUSH_ALLOW_PRIVATE_ENDPOINTS"); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			config.PushAllowPrivateEndpoints = b
+		} else {
+			log.Warn().Str("var", "PUSH_ALLOW_PRIVATE_ENDPOINTS").Str("value", v).Msg("invalid value, private endpoints blocked")
+		}
+	}
+	if config.PushAllowPrivateEndpoints {
+		log.Warn().Msg("PUSH_ALLOW_PRIVATE_ENDPOINTS is on: push delivery may reach loopback, private and CGNAT addresses")
 	}
 
 	config.MCPEnabled = true
