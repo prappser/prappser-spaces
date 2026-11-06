@@ -630,6 +630,23 @@ func TestNewValidator_ShouldRejectFileAboveBundleCurrent(t *testing.T) {
 	assert.ErrorContains(t, err, "x.v2.schema.json is above current version 1 of X")
 }
 
+func TestNewValidator_ShouldReportLowestFileAboveBundleCurrent(t *testing.T) {
+	// given
+	fsys := versionFixtureFS(map[string]string{
+		"component/x.v1.schema.json": xV1,
+		"component/x.v2.schema.json": xV2,
+		"component/x.v3.schema.json": strings.ReplaceAll(xV2, "x.v2", "x.v3"),
+		"component/x.v4.schema.json": strings.ReplaceAll(xV2, "x.v2", "x.v4"),
+		"bundle.json":                `{"types":{"X":{"min":1,"current":2}}}`,
+	})
+
+	// when
+	_, err := NewValidatorFS(fsys)
+
+	// then
+	assert.ErrorContains(t, err, "x.v3.schema.json is above current version 2 of X")
+}
+
 func TestNewValidator_ShouldRejectBundleCurrentWithoutFile(t *testing.T) {
 	// given
 	fsys := versionFixtureFS(map[string]string{

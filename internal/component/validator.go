@@ -7,8 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"path"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -241,7 +243,7 @@ func NewValidatorFS(fsys fs.FS) (*Validator, error) {
 		if tv.lo < 1 || tv.lo > tv.current {
 			return nil, fmt.Errorf("invalid version range %d..%d of %s", tv.lo, tv.current, name)
 		}
-		for n := range byVersion {
+		for _, n := range slices.Sorted(maps.Keys(byVersion)) {
 			if n > tv.current {
 				return nil, fmt.Errorf("schema file %s is above current version %d of %s", byVersion[n].file, tv.current, name)
 			}
