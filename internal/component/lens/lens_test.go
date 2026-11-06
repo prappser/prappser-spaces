@@ -121,6 +121,58 @@ func TestMigrateEncoded_ShouldPassThroughNonObjects(t *testing.T) {
 	}
 }
 
+func TestMigrateEncoded_ShouldReturnNonObjectBeforeCheckingTo(t *testing.T) {
+	// when
+	out, lossy, err := MigrateEncoded(nil, keyA, "not json", 0)
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, "not json", out)
+	assert.False(t, lossy)
+}
+
+func TestMigrateEncoded_ShouldReturnRawWhenAlreadyAtTarget(t *testing.T) {
+	// given
+	raw := `{ "v": 2.0, "a": 1 }`
+
+	// when
+	out, lossy, err := MigrateEncoded(nil, keyA, raw, 2)
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, raw, out)
+	assert.False(t, lossy)
+}
+
+func TestWriteBack_ShouldWriteIntegerVersionWhenOriginalHadFloatVersion(t *testing.T) {
+	// given
+	original := obj(t, `{"v":2.0,"a":1}`)
+
+	// when
+	out, wrote, err := WriteBack(nil, keyA, original, 2, obj(t, `{"v":2,"a":2}`))
+
+	// then
+	require.NoError(t, err)
+	assert.True(t, wrote)
+	enc, err := encode(out)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"v":2,"a":2}`, enc)
+	assert.Contains(t, enc, `"v":2`)
+	assert.NotContains(t, enc, "2.0")
+}
+
+func TestWriteBack_ShouldNotWriteWhenOnlyFloatVersionDiffers(t *testing.T) {
+	// given
+	original := obj(t, `{"v":2.0,"a":1}`)
+
+	// when
+	_, wrote, err := WriteBack(nil, keyA, original, 2, obj(t, `{"v":2,"a":1}`))
+
+	// then
+	require.NoError(t, err)
+	assert.False(t, wrote)
+}
+
 func TestWriteBackEncoded_ShouldReturnOriginalBytesWhenNothingChanges(t *testing.T) {
 	// given
 	original := `{ "v": 1,   "a": 1 }`

@@ -7,6 +7,7 @@ import (
 	"math"
 	"regexp"
 	"strconv"
+	"sync"
 )
 
 var (
@@ -72,6 +73,20 @@ func stepTo(el any) (to int64, valid bool) {
 	return n.Int64(), true
 }
 
+var patternCache sync.Map
+
+func compilePattern(pattern string) (*regexp.Regexp, error) {
+	if re, ok := patternCache.Load(pattern); ok {
+		return re.(*regexp.Regexp), nil
+	}
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return nil, err
+	}
+	patternCache.Store(pattern, re)
+	return re, nil
+}
+
 func lookup(steps any, k int64, key string) (ops []op, breaking bool, err error) {
 	list, ok := steps.([]any)
 	if !ok {
@@ -110,7 +125,7 @@ func lookup(steps any, k int64, key string) (ops []op, breaking bool, err error)
 	var found any
 	hits := 0
 	for pattern, candidate := range entries {
-		re, err := regexp.Compile(pattern)
+		re, err := compilePattern(pattern)
 		if err != nil {
 			return nil, false, unsupported("step %d: bad entries pattern %q", k, pattern)
 		}
@@ -404,17 +419,18 @@ func (o op) apply(root map[string]any, up bool) {
 			setPath(root, o.path, o.fallback)
 		}
 	case "wrap":
-		setPath(root, o.path, pick(up, wrapUp, wrapDown)(cur))
+		if up {
+			setPath(root, o.path, wrapUp(cur))
+		} else {
+			setPath(root, o.path, wrapDown(cur))
+		}
 	case "unwrap":
-		setPath(root, o.path, pick(up, wrapDown, wrapUp)(cur))
+		if up {
+			setPath(root, o.path, wrapDown(cur))
+		} else {
+			setPath(root, o.path, wrapUp(cur))
+		}
 	}
-}
-
-func pick(up bool, a, b func(any) any) func(any) any {
-	if up {
-		return a
-	}
-	return b
 }
 
 func (o op) lossy(up bool) bool {

@@ -71,6 +71,9 @@ func WriteBack(steps any, key string, original any, reader int, edited map[strin
 	}
 	res := cloneMap(o)
 	diffApply(res, u, u2, nil)
+	if _, ok := res["v"]; ok {
+		res["v"] = num(e)
+	}
 	if equal(res, o) {
 		return original, false, nil
 	}
@@ -115,7 +118,7 @@ func ComponentState(steps any, reader int, entries []Entry) (State, error) {
 	if err := checkArg("reader", reader); err != nil {
 		return StateFull, err
 	}
-	worst := StateFull
+	state := StateFull
 	for _, en := range entries {
 		m, ok := en.Value.(map[string]any)
 		if !ok {
@@ -125,14 +128,14 @@ func ComponentState(steps any, reader int, entries []Entry) (State, error) {
 			continue
 		}
 		_, lossy, err := migrate(steps, en.Key, m, int64(reader))
-		switch {
-		case err != nil:
-			worst = StateNeedsUpdate
-		case lossy && worst < StateReadOnly:
-			worst = StateReadOnly
+		if err != nil {
+			return StateNeedsUpdate, nil
+		}
+		if lossy {
+			state = StateReadOnly
 		}
 	}
-	return worst, nil
+	return state, nil
 }
 
 func DecodeEncoded(raw string) any {
@@ -154,11 +157,14 @@ func encode(v any) (string, error) {
 }
 
 func MigrateEncoded(steps any, key, raw string, to int) (string, bool, error) {
+	m, ok := DecodeEncoded(raw).(map[string]any)
+	if !ok {
+		return raw, false, nil
+	}
 	if err := checkArg("to", to); err != nil {
 		return "", false, err
 	}
-	m, ok := DecodeEncoded(raw).(map[string]any)
-	if !ok {
+	if v, err := version(m); err == nil && v == int64(to) {
 		return raw, false, nil
 	}
 	out, lossy, err := migrate(steps, key, m, int64(to))
