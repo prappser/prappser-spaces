@@ -212,6 +212,18 @@ Client-produced events architecture:
 - Endpoints map errors to HTTP status codes using `errors.Is()` or `err.Error()` string match
 - Never panic in business logic
 
+## Schema bundle
+
+`internal/schemabundle` signs the component JSON Schemas (`internal/component/schemas`) into one `schema-bundle.json` that is embedded in the image from `internal/schemabundle/signed/` (gitignored, filled by CI).
+- Build locally: `go run ./internal/schemabundle/cmd build -dry-run` (throwaway key, no secret needed; writes to the OS temp dir `schema-bundle-dryrun.json` and refuses `-out` inside `internal/schemabundle/signed/`); flags `-schemas`, `-previous`, `-out`.
+- `SCHEMA_SIGNING_KEY` is the standard base64 of the 32-byte ed25519 seed; only main runs get it (`.github/workflows/schema-bundle.yml`, called by `docker-publish.yml`). Without it the image builds keyless with a warning.
+- Unchanged schemas reuse the previous bundle; changed ones publish release `schemas-<n>` with a higher number; a change without a higher number fails the run.
+- Releases are never overwritten (no `--clobber`) and every `schemas-<n>` is marked latest, so create any other release with `--latest=false`.
+- A release that exists without its `schema-bundle.json` asset fails the run with an error naming the tag; recover by deleting that release and its tag, then rerun the workflow via dispatch.
+- A previous release asset that fails Verify blocks every main deploy by design; fix it by deleting or replacing the bad `schemas-<n>` release (and its tag) so the previous highest release verifies, or none exists.
+- A `SCHEMA_SIGNING_KEY` that parses but does not match the compiled public key (a fork with its own key) only warns and builds the image without a bundle; an unparseable key fails the run.
+- A queued main push superseded by a newer main push does not build its own image (concurrency group `schema-bundle-main`; pull request dry runs use their own per-ref group and never queue against main); the newer push builds the latest code.
+
 ## Convention Skill Files
 
 Detailed conventions are documented as skill files in `.claude/skills/`:

@@ -10,7 +10,20 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  schema-bundle:
+    # Job-level: a workflow-level group inside a called workflow may not apply under workflow_call.
+    # Named differently from the inner schema-bundle-main group, because equal names deadlock.
+    concurrency:
+      group: schema-bundle
+      cancel-in-progress: false
+    uses: ./.github/workflows/schema-bundle.yml
+    secrets:
+      SCHEMA_SIGNING_KEY: ${{ secrets.SCHEMA_SIGNING_KEY }}
+    permissions:
+      contents: write
+
   build-and-push:
+    needs: schema-bundle
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -19,6 +32,15 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Download schema bundle
+        if: needs.schema-bundle.outputs.upload == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: schema-bundle
+          path: internal/schemabundle/signed
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -42,6 +64,7 @@ jobs:
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
+          # Explicit path context: the default git context would drop the downloaded bundle.
           context: .
           push: true
           tags: ${{ steps.meta.outputs.tags }}
