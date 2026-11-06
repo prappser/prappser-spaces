@@ -72,6 +72,14 @@ func (e *ProfileEndpoints) UpdateProfile(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
+	if localeChanged {
+		if err := e.userRepo.UpdateLocale(publicKey, locale); err != nil {
+			log.Error().Err(err).Str("publicKey", publicKey).Msg("[PROFILE] Failed to update locale")
+			ctx.Error("Failed to update profile", fasthttp.StatusInternalServerError)
+			return
+		}
+	}
+
 	if nameChanged {
 		if err := e.userRepo.UpdateUsername(publicKey, displayName); err != nil {
 			if errors.Is(err, user.ErrUsernameTaken) {
@@ -84,14 +92,6 @@ func (e *ProfileEndpoints) UpdateProfile(ctx *fasthttp.RequestCtx) {
 			return
 		}
 	}
-	if localeChanged {
-		if err := e.userRepo.UpdateLocale(publicKey, locale); err != nil {
-			log.Error().Err(err).Str("publicKey", publicKey).Msg("[PROFILE] Failed to update locale")
-			ctx.Error("Failed to update profile", fasthttp.StatusInternalServerError)
-			return
-		}
-	}
-
 	updatedUser, err := e.userRepo.GetUserByPublicKey(publicKey)
 	if err != nil || updatedUser == nil {
 		log.Error().Err(err).Str("publicKey", publicKey).Msg("[PROFILE] Failed to reload user after update")

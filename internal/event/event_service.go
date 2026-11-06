@@ -474,10 +474,10 @@ func (s *EventService) broadcastEvent(event *Event, agent bool) {
 		switch {
 		case event.Type == EventTypeMemberRoleChanged:
 			// Only the member whose role changed hears about it, and only
-			// while still a member; an unknown key must not fall back to everyone.
+			// while still a member and not the author; an unknown key must not fall back to everyone.
 			target, _ := event.Data["memberPublicKey"].(string)
 			for _, m := range members {
-				if target != "" && m.PublicKey == target {
+				if target != "" && target != event.CreatorPublicKey && m.PublicKey == target {
 					recipientKeys = []string{target}
 					break
 				}

@@ -162,7 +162,7 @@ func appName(app *application.Application) string {
 }
 
 func buildPayload(ev *event.Event, name string, n notice) ([]byte, error) {
-	if name == "" {
+	if name = cut(name); name == "" {
 		name = "Prappser"
 	}
 	return json.Marshal(pushPayload{

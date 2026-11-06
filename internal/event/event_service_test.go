@@ -447,6 +447,19 @@ func TestBroadcastEvent_ShouldSendRoleChangeOnlyToTargetMember(t *testing.T) {
 	assert.Equal(t, []string{"member-2"}, pusher.recipients)
 }
 
+func TestBroadcastEvent_ShouldSendNothingWhenRoleChangeTargetIsAuthor(t *testing.T) {
+	// given
+	_, pusher, svc := roleChangeSetup(t, "app-r4")
+	evt := &Event{ID: "evt-r4", Type: EventTypeMemberRoleChanged, ApplicationID: "app-r4", CreatorPublicKey: "member-1",
+		Data: map[string]interface{}{"memberPublicKey": "member-1", "newRole": "admin"}}
+
+	// when
+	svc.broadcastEvent(evt, false)
+
+	// then
+	assert.Equal(t, 0, pusher.calls)
+}
+
 func TestBroadcastEvent_ShouldSendNothingWhenRoleChangeTargetNotMember(t *testing.T) {
 	// given
 	_, pusher, svc := roleChangeSetup(t, "app-r2")

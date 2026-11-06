@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -430,6 +431,27 @@ func TestBuildPayload_ShouldFallBackToPrappserTitleWhenAppNameEmpty(t *testing.T
 	var decoded map[string]interface{}
 	assert.NoError(t, json.Unmarshal(payloadJSON, &decoded))
 	assert.Equal(t, "Prappser", decoded["title"])
+}
+
+func TestBuildPayload_ShouldCutLongTitleAndKeepShortOne(t *testing.T) {
+	// given
+	ev := makeEvent(event.EventTypeMemberAdded, "creator-pk", "app-1")
+	long := strings.Repeat("a", 200)
+
+	// when
+	longJSON, err1 := buildPayload(ev, long, notice{kind: KindMember, scope: ev.ID})
+	shortJSON, err2 := buildPayload(ev, "Short", notice{kind: KindMember, scope: ev.ID})
+
+	// then
+	assert.NoError(t, err1)
+	assert.NoError(t, err2)
+	var l, sh map[string]interface{}
+	assert.NoError(t, json.Unmarshal(longJSON, &l))
+	assert.NoError(t, json.Unmarshal(shortJSON, &sh))
+	title := []rune(l["title"].(string))
+	assert.Len(t, title, 121)
+	assert.Equal(t, '…', title[120])
+	assert.Equal(t, "Short", sh["title"])
 }
 
 func TestBuildPayload_ShouldPrefixTagWithApplicationId(t *testing.T) {
