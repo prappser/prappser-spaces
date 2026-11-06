@@ -3,6 +3,7 @@ package internal
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -35,6 +36,8 @@ type Config struct {
 	OpenRegistration bool
 	// MaxAccounts caps accounts on the space, owner included; 0 means unlimited.
 	MaxAccounts int
+	// SchemaBundleURL is where the signed schema bundle is fetched from; empty means never fetch.
+	SchemaBundleURL string
 	MCPEnabled bool
 	AppURL string
 }
@@ -120,6 +123,8 @@ func (c *Config) String() string {
 	}
 	return string(b)
 }
+
+const defaultSchemaBundleURL = "https://github.com/prappser/prappser-spaces/releases/latest/download/schema-bundle.json"
 
 func LoadConfig() (*Config, error) {
 	envPort := os.Getenv("PORT")
@@ -262,6 +267,19 @@ func LoadConfig() (*Config, error) {
 		} else {
 			log.Warn().Str("var", "MAX_ACCOUNTS").Str("value", maxAccountsStr).Msg("invalid value, limit disabled")
 		}
+	}
+
+	switch v := strings.TrimSpace(os.Getenv("SCHEMA_BUNDLE_URL")); {
+	case v == "":
+		config.SchemaBundleURL = defaultSchemaBundleURL
+	case strings.EqualFold(v, "off"):
+		config.SchemaBundleURL = ""
+	default:
+		u, err := url.Parse(v)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return nil, fmt.Errorf("invalid SCHEMA_BUNDLE_URL %q: want off or an http(s) URL", v)
+		}
+		config.SchemaBundleURL = v
 	}
 
 	chunkSizeMBStr := os.Getenv("STORAGE_CHUNK_SIZE_MB")

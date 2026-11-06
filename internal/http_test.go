@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/goccy/go-json"
+	"github.com/prappser/prappser-spaces/internal/health"
 	"github.com/prappser/prappser-spaces/internal/user"
 	"github.com/stretchr/testify/assert"
 	"github.com/valyala/fasthttp"
@@ -195,4 +196,42 @@ func TestRateLimiting_RegisterIsCappedPerIPIncludingRefusals(t *testing.T) {
 
 func (noopUserRepository) ReviveDevice(_, _ string, _ int64) (bool, error) {
 	return false, nil
+}
+
+func newSchemasRouteHandler(t *testing.T) fasthttp.RequestHandler {
+	t.Helper()
+	cfg := &Config{AllowedOrigins: []string{"https://prappser.app"}}
+	he := health.NewEndpoints("1.0.0", func() bool { return false }, false, nil)
+	return NewRequestHandler(cfg, nil, nil, he, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+}
+
+func TestCORS_PreflightHealthAndSchemas_ShouldReturn204(t *testing.T) {
+	// given
+	handler := newSchemasRouteHandler(t)
+
+	for _, path := range []string{"/schemas", "/health"} {
+		// when
+		ctx := newAuthRouteRequestCtxWithMethod("OPTIONS", path)
+		ctx.Request.Header.Set("Origin", "https://prappser.app")
+		handler(ctx)
+
+		// then
+		assert.Equal(t, fasthttp.StatusNoContent, ctx.Response.StatusCode(), path)
+		assert.Equal(t, "https://prappser.app", string(ctx.Response.Header.Peek("Access-Control-Allow-Origin")), path)
+		assert.Contains(t, string(ctx.Response.Header.Peek("Access-Control-Allow-Methods")), "GET", path)
+	}
+}
+
+func TestSchemas_NoContainer_ShouldReturn404WithCORS(t *testing.T) {
+	// given
+	handler := newSchemasRouteHandler(t)
+
+	// when
+	ctx := newAuthRouteRequestCtxWithMethod("GET", "/schemas")
+	ctx.Request.Header.Set("Origin", "https://prappser.app")
+	handler(ctx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusNotFound, ctx.Response.StatusCode())
+	assert.Equal(t, "https://prappser.app", string(ctx.Response.Header.Peek("Access-Control-Allow-Origin")))
 }

@@ -42,6 +42,7 @@ import (
 	"github.com/prappser/prappser-spaces/internal/push"
 	"github.com/prappser/prappser-spaces/internal/reminder"
 	"github.com/prappser/prappser-spaces/internal/schemabundle"
+	"github.com/prappser/prappser-spaces/internal/schemas"
 	"github.com/prappser/prappser-spaces/internal/setup"
 	"github.com/prappser/prappser-spaces/internal/space"
 	"github.com/prappser/prappser-spaces/internal/spaceprofile"
@@ -53,6 +54,8 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/valyala/fasthttp"
 )
+
+const schemaRefreshInterval = 24 * time.Hour
 
 // spaceLookupAdapter adapts space.SpaceRepository to user.SpaceLookup.
 type spaceLookupAdapter struct {
@@ -261,7 +264,10 @@ func main() {
 	passwordEndpoints := user.NewPasswordEndpoints(userRepository, saltSecret, verifierKey, spacePublicKeyString)
 	ownerClaimEndpoints := user.NewOwnerClaimEndpoints(userRepository, verifierKey, time.Now(), &spaceCreatorAdapter{service: spaceService})
 	registerEndpoints := user.NewRegisterEndpoints(userRepository, verifierKey, config.OpenRegistration, config.MaxAccounts)
-	healthEndpoints := health.NewEndpoints("1.0.0", registerEndpoints.RegistrationOpen, config.MCPEnabled)
+	schemaService := schemas.NewService(schemas.NewRepository(db), schemabundle.PublicKey(), config.SchemaBundleURL)
+	embeddedBundle, _ := schemabundle.Signed()
+	schemaService.Load(embeddedBundle)
+	healthEndpoints := health.NewEndpoints("1.0.0", registerEndpoints.RegistrationOpen, config.MCPEnabled, schemaService)
 	assertionEndpoints := user.NewAssertionEndpoints(userRepository, privateKey, spacePublicKeyString, bindings)
 
 	adminEndpoints := admin.NewAdminEndpoints(admin.NewRepository(db), admin.Limits{AccountQuotaBytes: config.Storage.AccountQuota, MaxAppsPerAccount: config.MaxAppsPerAccount})
@@ -271,13 +277,8 @@ func main() {
 
 	requestHandler := internal.NewRequestHandler(config, userEndpoints, statusEndpoints, healthEndpoints, userService, appEndpoints, invitationEndpoints, eventEndpoints, setupEndpoints, storageEndpoints, wsHandler, spaceEndpoints, pushEndpoints, profileEndpoints, deviceEndpoints, passwordEndpoints, assertionEndpoints, ownerClaimEndpoints, keyEndpoints, accountEndpoints, adminEndpoints, registerEndpoints, spaceprofile.NewSpaceProfileEndpoints(spaceProfileRepository, storageRepo, eventService), moveEndpoints, oauthEndpoints)
 
-	switch bundle, err := schemabundle.Embedded(); {
-	case err != nil:
-		log.Warn().Err(err).Msg("Embedded schema bundle failed verification")
-	case bundle == nil:
-		log.Info().Msg("No signed schema bundle embedded")
-	default:
-		log.Info().Msgf("Schema bundle %d embedded", bundle.Manifest.Bundle)
+	if config.SchemaBundleURL != "" {
+		go schemaService.Run(context.Background(), schemaRefreshInterval)
 	}
 
 	var handler fasthttp.RequestHandler = requestHandler

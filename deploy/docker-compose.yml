@@ -44,6 +44,7 @@ services:
       EXTERNAL_URL: https://${DOMAIN}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://prappser.app}
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      SCHEMA_BUNDLE_URL: ${SCHEMA_BUNDLE_URL:-}
       STORAGE_TYPE: local
       STORAGE_PATH: /app/storage
       STORAGE_MAX_FILE_SIZE_MB: "50"
