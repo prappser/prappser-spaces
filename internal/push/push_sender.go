@@ -21,7 +21,7 @@ func NewHTTPWebpushSender() *HTTPWebpushSender {
 // Send delivers payloadJSON to the given subscription using VAPID authentication.
 // A 10-second per-call context timeout is applied automatically.
 // The response body is drained and closed before returning.
-func (s *HTTPWebpushSender) Send(sub *Subscription, vapid *SpaceVapid, payloadJSON []byte) SendResult {
+func (s *HTTPWebpushSender) Send(sub *Subscription, vapid *SpaceVapid, payloadJSON []byte, opts SendOptions) SendResult {
 	sendCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -36,7 +36,9 @@ func (s *HTTPWebpushSender) Send(sub *Subscription, vapid *SpaceVapid, payloadJS
 	resp, err := webpush.SendNotificationWithContext(sendCtx, payloadJSON, wpSub, &webpush.Options{
 		VAPIDPublicKey:  vapid.VapidPublicKey,
 		VAPIDPrivateKey: vapid.VapidPrivateKey,
-		TTL:             60,
+		TTL:             opts.TTL,
+		Urgency:         opts.Urgency,
+		Topic:           opts.Topic,
 	})
 	if err != nil {
 		return SendResult{Err: err}

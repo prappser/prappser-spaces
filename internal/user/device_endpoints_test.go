@@ -50,6 +50,7 @@ func (r *deviceTestRepo) UpdateUserRole(publicKey, role string) error { return n
 func (r *deviceTestRepo) UpdateAvatarStorageID(publicKey string, avatarStorageID *string) error {
 	return nil
 }
+func (r *deviceTestRepo) UpdateLocale(string, string) error { return nil }
 func (r *deviceTestRepo) UpdateUsername(publicKey, username string) error {
 	if account, ok := r.accounts[publicKey]; ok {
 		account.Username = username

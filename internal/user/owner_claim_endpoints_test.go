@@ -50,6 +50,7 @@ func (r *ownerClaimTestRepo) UpdateUserRole(publicKey, role string) error { retu
 func (r *ownerClaimTestRepo) UpdateAvatarStorageID(publicKey string, avatarStorageID *string) error {
 	return nil
 }
+func (r *ownerClaimTestRepo) UpdateLocale(string, string) error               { return nil }
 func (r *ownerClaimTestRepo) UpdateUsername(publicKey, username string) error { return nil }
 func (r *ownerClaimTestRepo) AcceptBinding(_, _ string, _ int64, _, _ string) (string, string, bool, error) {
 	return "", "", false, nil
@@ -60,7 +61,9 @@ func (r *ownerClaimTestRepo) EnsureDevice(devicePublicKey, userPublicKey string,
 func (r *ownerClaimTestRepo) GetDevice(devicePublicKey string) (*Device, error) {
 	return r.devices[devicePublicKey], nil
 }
-func (r *ownerClaimTestRepo) ListDevices(userPublicKey string, includeRevoked bool) ([]*Device, error) { return nil, nil }
+func (r *ownerClaimTestRepo) ListDevices(userPublicKey string, includeRevoked bool) ([]*Device, error) {
+	return nil, nil
+}
 func (r *ownerClaimTestRepo) RevokeDevice(devicePublicKey string, ts int64) error { return nil }
 func (r *ownerClaimTestRepo) RenameDevice(devicePublicKey, deviceName string) error {
 	return nil

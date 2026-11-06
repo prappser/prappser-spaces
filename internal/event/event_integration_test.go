@@ -337,3 +337,28 @@ func TestAcceptEvent_UserScopedWithForeignIdentity_ShouldReachOnlySubmitter(t *t
 	assert.Empty(t, stored.ApplicationID)
 	assert.Equal(t, outsider, stored.CreatorPublicKey)
 }
+
+func TestAcceptEvent_ShouldPassSubmitterAgentFlagToPusher_Integration(t *testing.T) {
+	db := testdb.Connect(t, "event")
+	defer db.Close()
+	prefix := "test-push-agent-"
+	appRepo := seedRoleApp(t, db, prefix)
+	pusher := &capturingPusher{}
+	service := NewEventService(NewEventRepository(db), appRepo, nil, pusher)
+	evt := &Event{
+		ID:               prefix + "evt",
+		Type:             EventTypeMemberRoleChanged,
+		CreatorPublicKey: prefix + "admin",
+		Version:          1,
+		CreatedAt:        time.Now().Unix(),
+		Data: map[string]interface{}{
+			"applicationId": prefix + "app", "memberPublicKey": prefix + "member", "oldRole": "member", "newRole": "admin",
+		},
+	}
+
+	_, err := service.AcceptEvent(context.Background(), evt, &user.User{PublicKey: prefix + "admin", Agent: true})
+
+	require.NoError(t, err)
+	assert.True(t, pusher.agent)
+	assert.Equal(t, []string{prefix + "member"}, pusher.recipients)
+}

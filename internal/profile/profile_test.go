@@ -16,6 +16,7 @@ import (
 type mockUserRepo struct {
 	users             map[string]*user.User
 	updateUsernameErr error
+	localeCalls       []string
 	updateCalls       []struct {
 		publicKey string
 		username  string
@@ -47,6 +48,16 @@ func (m *mockUserRepo) UpdateUsername(publicKey, username string) error {
 		return fmt.Errorf("user not found")
 	}
 	u.Username = username
+	return nil
+}
+
+func (m *mockUserRepo) UpdateLocale(publicKey, locale string) error {
+	m.localeCalls = append(m.localeCalls, locale)
+	u, ok := m.users[publicKey]
+	if !ok {
+		return fmt.Errorf("user not found")
+	}
+	u.Locale = locale
 	return nil
 }
 
@@ -273,4 +284,91 @@ func TestUpdateProfile_ShouldReturn200WhenFanOutFails(t *testing.T) {
 	// then
 	assert.Equal(t, fasthttp.StatusOK, ctx.Response.StatusCode())
 	assert.Equal(t, "NewName", repo.users["pk-1"].Username)
+}
+
+func patchLocale(t *testing.T, body string, current *user.User) (*fasthttp.RequestCtx, *mockUserRepo, *mockEventService) {
+	t.Helper()
+	repo := newMockUserRepo()
+	stored := *current
+	repo.users[current.PublicKey] = &stored
+	events := &mockEventService{}
+	ep := NewProfileEndpoints(repo, &mockAppLister{apps: []*application.Application{{ID: "app-1"}}}, events)
+	ctx := newTestRequestCtx("PATCH", body)
+	setAuthUser(ctx, current)
+	ep.UpdateProfile(ctx)
+	return ctx, repo, events
+}
+
+func TestUpdateProfile_ShouldUpdateLocaleOnlyWithoutFanOut(t *testing.T) {
+	// when
+	ctx, repo, events := patchLocale(t, `{"locale":"pl"}`, &user.User{PublicKey: "pk-1", Username: "Alice"})
+
+	// then
+	assert.Equal(t, fasthttp.StatusOK, ctx.Response.StatusCode())
+	assert.Equal(t, []string{"pl"}, repo.localeCalls)
+	assert.Empty(t, repo.updateCalls)
+	assert.Empty(t, events.produced)
+	assert.Contains(t, string(ctx.Response.Body()), `"locale":"pl"`)
+}
+
+func TestUpdateProfile_ShouldNormalizeLocaleToBaseLanguage(t *testing.T) {
+	for raw, want := range map[string]string{"pl-PL": "pl", "PL": "pl", "pt_BR": "pt"} {
+		// when
+		ctx, repo, _ := patchLocale(t, `{"locale":"`+raw+`"}`, &user.User{PublicKey: "pk-1", Username: "Alice"})
+
+		// then
+		assert.Equal(t, fasthttp.StatusOK, ctx.Response.StatusCode(), raw)
+		assert.Equal(t, []string{want}, repo.localeCalls, raw)
+	}
+}
+
+func TestUpdateProfile_ShouldReturn400WhenLocaleInvalid(t *testing.T) {
+	for _, raw := range []string{"", "polish", "p1", "ü"} {
+		// when
+		ctx, repo, _ := patchLocale(t, `{"locale":"`+raw+`"}`, &user.User{PublicKey: "pk-1", Username: "Alice"})
+
+		// then
+		assert.Equal(t, fasthttp.StatusBadRequest, ctx.Response.StatusCode(), raw)
+		assert.Empty(t, repo.localeCalls, raw)
+	}
+}
+
+func TestUpdateProfile_ShouldReturn400WhenBothFieldsAbsent(t *testing.T) {
+	// when
+	ctx, repo, _ := patchLocale(t, `{}`, &user.User{PublicKey: "pk-1", Username: "Alice"})
+
+	// then
+	assert.Equal(t, fasthttp.StatusBadRequest, ctx.Response.StatusCode())
+	assert.Empty(t, repo.updateCalls)
+	assert.Empty(t, repo.localeCalls)
+}
+
+func TestUpdateProfile_ShouldUpdateNameAndLocaleTogether(t *testing.T) {
+	// when
+	ctx, repo, events := patchLocale(t, `{"displayName":"Bob","locale":"de-AT"}`, &user.User{PublicKey: "pk-1", Username: "Alice"})
+
+	// then
+	assert.Equal(t, fasthttp.StatusOK, ctx.Response.StatusCode())
+	assert.Equal(t, "Bob", repo.users["pk-1"].Username)
+	assert.Equal(t, []string{"de"}, repo.localeCalls)
+	assert.Len(t, events.produced, 1)
+	assert.Contains(t, string(ctx.Response.Body()), `"locale":"de"`)
+}
+
+func TestUpdateProfile_ShouldNotWriteLocaleWhenNameInvalid(t *testing.T) {
+	// when
+	ctx, repo, _ := patchLocale(t, `{"displayName":"   ","locale":"pl"}`, &user.User{PublicKey: "pk-1", Username: "Alice"})
+
+	// then
+	assert.Equal(t, fasthttp.StatusBadRequest, ctx.Response.StatusCode())
+	assert.Empty(t, repo.localeCalls)
+}
+
+func TestUpdateProfile_ShouldNotWriteWhenLocaleUnchanged(t *testing.T) {
+	// when
+	ctx, repo, _ := patchLocale(t, `{"locale":"pl-PL"}`, &user.User{PublicKey: "pk-1", Username: "Alice", Locale: "pl"})
+
+	// then
+	assert.Equal(t, fasthttp.StatusOK, ctx.Response.StatusCode())
+	assert.Empty(t, repo.localeCalls)
 }

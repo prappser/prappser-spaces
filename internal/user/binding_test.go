@@ -496,3 +496,16 @@ func TestGetProfile_ShouldExposeIdentityBindingOnlyThere(t *testing.T) {
 	assert.NotContains(t, string(plain), "identityBinding")
 	assert.NotContains(t, string(plain), "stored-jws")
 }
+
+func TestGetProfile_ShouldAlwaysIncludeLocaleKey(t *testing.T) {
+	// given
+	ue := UserEndpoints{userRepository: &bindingTestRepo{}}
+	ctx := &fasthttp.RequestCtx{}
+	ctx.SetUserValue("user", &User{PublicKey: "acct", Username: "alice"})
+
+	// when
+	ue.GetProfile(ctx)
+
+	// then
+	assert.Contains(t, string(ctx.Response.Body()), `"locale":""`)
+}

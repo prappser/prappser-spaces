@@ -27,7 +27,7 @@ type EventBroadcaster interface {
 // Defined here to avoid an import cycle: push imports event, so event cannot import push.
 // push.PushService satisfies this interface by signature.
 type EventPusher interface {
-	Push(event *Event, appName string, creatorDisplayName string, recipientPublicKeys []string)
+	Push(event *Event, app *application.Application, creatorDisplayName string, agent bool, recipientPublicKeys []string)
 }
 
 // ReminderStore applies a reminder_changed rule update to the reminder
@@ -159,7 +159,7 @@ func (s *EventService) AcceptEvent(ctx context.Context, event *Event, submitter 
 		Msg("[EVENT] Accepted successfully")
 
 	// Broadcast to WebSocket clients
-	s.broadcastEvent(stored)
+	s.broadcastEvent(stored, submitter.Agent)
 
 	return stored, nil
 }
@@ -245,7 +245,7 @@ func (s *EventService) ProduceEvent(ctx context.Context, event *Event) (*Event, 
 		Msg("[EVENT] Space-produced event accepted successfully")
 
 	// Broadcast to WebSocket clients
-	s.broadcastEvent(stored)
+	s.broadcastEvent(stored, false)
 
 	return stored, nil
 }
@@ -438,7 +438,7 @@ func isUserChannelFanout(t EventType) bool {
 // notifications for offline members.
 // For application_deleted and application_moved events, it additionally broadcasts to each
 // member's user channel so all devices receive them regardless of which app they have focused.
-func (s *EventService) broadcastEvent(event *Event) {
+func (s *EventService) broadcastEvent(event *Event, agent bool) {
 	if s.broadcaster != nil {
 		s.broadcaster.BroadcastToApplication(event.ApplicationID, event)
 	}
@@ -471,31 +471,41 @@ func (s *EventService) broadcastEvent(event *Event) {
 	// code fell through to the default branch.
 	if s.pusher != nil && event.ApplicationID != "" {
 		var recipientKeys []string
-		if explicitRecipientEventTypes[event.Type] {
-			recipientKeys = extractRecipients(event.Data)
-		}
-		if len(recipientKeys) == 0 {
-			recipientKeys = make([]string, 0, len(members))
-			for _, member := range members {
-				if member.PublicKey != event.CreatorPublicKey {
-					recipientKeys = append(recipientKeys, member.PublicKey)
+		switch {
+		case event.Type == EventTypeMemberRoleChanged:
+			// Only the member whose role changed hears about it, and only
+			// while still a member and not the author; an unknown key must not fall back to everyone.
+			target, _ := event.Data["memberPublicKey"].(string)
+			for _, m := range members {
+				if target != "" && target != event.CreatorPublicKey && m.PublicKey == target {
+					recipientKeys = []string{target}
+					break
+				}
+			}
+		default:
+			if explicitRecipientEventTypes[event.Type] {
+				recipientKeys = extractRecipients(event.Data)
+			}
+			if len(recipientKeys) == 0 {
+				recipientKeys = make([]string, 0, len(members))
+				for _, member := range members {
+					if member.PublicKey != event.CreatorPublicKey {
+						recipientKeys = append(recipientKeys, member.PublicKey)
+					}
 				}
 			}
 		}
 
 		if len(recipientKeys) > 0 {
-			// Look up the application name so the browser SW can title notifications.
-			// On error or nil result, fall back to empty string; the client falls back to "Prappser".
-			appName := ""
+			// The app title and component types drive the notification text.
+			// On error the push still goes out for kinds that need no component.
 			app, err := s.appRepo.GetApplicationByID(event.ApplicationID)
 			if err != nil {
-				log.Debug().Err(err).Str("applicationId", event.ApplicationID).Msg("[EVENT] Failed to get application name for push")
-			} else if app != nil {
-				appName = app.Name
+				log.Debug().Err(err).Str("applicationId", event.ApplicationID).Msg("[EVENT] Failed to get application for push")
+				app = nil
 			}
 
 			// Resolve the actor's display name from the already-fetched members slice.
-			// No additional DB call needed. Empty string if not found or name is nil.
 			creatorDisplayName := ""
 			for _, m := range members {
 				if m.PublicKey == event.CreatorPublicKey && m.UserDisplayName != nil {
@@ -504,7 +514,7 @@ func (s *EventService) broadcastEvent(event *Event) {
 				}
 			}
 
-			s.pusher.Push(event, appName, creatorDisplayName, recipientKeys)
+			s.pusher.Push(event, app, creatorDisplayName, agent, recipientKeys)
 		}
 	}
 }

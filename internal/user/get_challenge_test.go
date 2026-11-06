@@ -37,6 +37,7 @@ func (r *getChallengeTestRepo) UpdateUserRole(publicKey, role string) error { re
 func (r *getChallengeTestRepo) UpdateAvatarStorageID(publicKey string, avatarStorageID *string) error {
 	return nil
 }
+func (r *getChallengeTestRepo) UpdateLocale(string, string) error               { return nil }
 func (r *getChallengeTestRepo) UpdateUsername(publicKey, username string) error { return nil }
 func (r *getChallengeTestRepo) AcceptBinding(_, _ string, _ int64, _, _ string) (string, string, bool, error) {
 	return "", "", false, nil
@@ -60,7 +61,9 @@ func (r *getChallengeTestRepo) GetDevice(devicePublicKey string) (*Device, error
 	}
 	return d, nil
 }
-func (r *getChallengeTestRepo) ListDevices(userPublicKey string, includeRevoked bool) ([]*Device, error)   { return nil, nil }
+func (r *getChallengeTestRepo) ListDevices(userPublicKey string, includeRevoked bool) ([]*Device, error) {
+	return nil, nil
+}
 func (r *getChallengeTestRepo) RevokeDevice(devicePublicKey string, ts int64) error   { return nil }
 func (r *getChallengeTestRepo) RenameDevice(devicePublicKey, deviceName string) error { return nil }
 func (r *getChallengeTestRepo) TouchDeviceLastSeen(devicePublicKey string, ts int64) error {

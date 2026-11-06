@@ -70,6 +70,7 @@ func (m *mockUserRepository) UpdateUserRole(publicKey string, role string) error
 func (m *mockUserRepository) UpdateAvatarStorageID(publicKey string, avatarStorageID *string) error {
 	return nil
 }
+func (m *mockUserRepository) UpdateLocale(string, string) error               { return nil }
 func (m *mockUserRepository) UpdateUsername(publicKey, username string) error { return nil }
 func (m *mockUserRepository) AcceptBinding(_, _ string, _ int64, _, _ string) (string, string, bool, error) {
 	return "", "", false, nil
