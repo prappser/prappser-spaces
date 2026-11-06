@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://prappser.app/schemas/component/list.v1.schema.json",
+  "title": "List component data (test fixture)",
+  "description": "Fixture list. item_<id> objects, e_<id> encoded JSON strings, n_<id> objects.",
+  "type": "object",
+  "properties": {
+    "allowAddInUsage": {
+      "type": "boolean",
+      "default": true,
+      "x-merge": "single",
+      "x-access": "manage"
+    },
+    "allowToggleInUsage": {
+      "type": "boolean",
+      "default": true,
+      "x-merge": "single",
+      "x-access": "manage"
+    }
+  },
+  "patternProperties": {
+    "^item_.+$": {
+      "anyOf": [{ "$ref": "#/$defs/item" }, { "const": "" }],
+      "x-merge": "per-entry",
+      "x-access": {
+        "gate": "allowAddInUsage",
+        "fields": { "done": "allowToggleInUsage" }
+      }
+    },
+    "^e_.+$": {
+      "type": "string",
+      "contentMediaType": "application/json",
+      "x-merge": "per-entry",
+      "x-access": { "content": "expense" }
+    },
+    "^n_.+$": {
+      "anyOf": [{ "$ref": "#/$defs/note" }, { "const": "" }],
+      "x-merge": "per-entry",
+      "x-access": "member"
+    },
+    "^_": {
+      "x-merge": "single",
+      "x-access": "manage"
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "item": {
+      "type": "object",
+      "properties": {
+        "v": { "const": 1 },
+        "title": { "type": "string" },
+        "done": { "type": "boolean" },
+        "order": { "type": "number" }
+      },
+      "required": ["title", "done"],
+      "additionalProperties": false
+    },
+    "expense": {
+      "type": "object",
+      "properties": {
+        "v": { "const": 1 },
+        "what": { "type": "string" },
+        "amt": { "type": "integer", "minimum": 0 }
+      },
+      "required": ["what", "amt"],
+      "additionalProperties": false
+    },
+    "note": {
+      "type": "object",
+      "properties": {
+        "v": { "const": 1 },
+        "title": { "type": "string" },
+        "tags": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["title"],
+      "additionalProperties": false
+    }
+  }
+}

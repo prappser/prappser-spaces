@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"reflect"
 	"slices"
 	"sort"
@@ -151,7 +152,7 @@ func checkWrite(v *component.Validator, typ string, old, data map[string]any, pu
 		}
 	}
 	if err := validate(typ, data); err != nil {
-		if res, ok := validationResult(err, "invalid data"); ok {
+		if res, ok := validationResult(err, "invalid data"+shapeHint(v, typ)); ok {
 			return nil, res, nil
 		}
 		return nil, nil, toolError(err)
@@ -161,7 +162,7 @@ func checkWrite(v *component.Validator, typ string, old, data map[string]any, pu
 		acc := access[k]
 		if str, ok := data[k].(string); acc.Content != "" && ok && str != "" {
 			if err := v.ValidateContent(typ, acc.Content, str); err != nil {
-				if res, ok := validationResult(err, "key "+k+": invalid value"); ok {
+				if res, ok := validationResult(err, "key "+k+": invalid value"+shapeHint(v, typ)); ok {
 					return nil, res, nil
 				}
 				return nil, nil, toolError(err)
@@ -176,6 +177,7 @@ func addUpdateComponent(s *sdk.Server, d Deps) {
 		Name: "update_component",
 		Description: "Write keys of one component's data as this account. Call describe_component with the component's type (its name in get_app) first to see keys, value encodings and x-access. " +
 			"set maps key to its whole new value (no deep merge: send the full object or encoded string); '' deletes where the schema allows. " +
+			"Entries are shown and written in the type's current version; entries flagged in get_app's entryStates cannot be edited. A value equal to the stored one writes nothing, and keys then comes back empty; so does deleting an entry that is absent or already deleted. " +
 			"A key ending in * (such as m_*, item_* or e_*) gets a new id, returned in keys. All keys go in one change or none do. Viewers cannot write." + untrustedHint,
 	}, func(ctx context.Context, req *sdk.CallToolRequest, in updateComponentIn) (*sdk.CallToolResult, updateComponentOut, error) {
 		u, err := caller(req)
@@ -199,14 +201,17 @@ func addUpdateComponent(s *sdk.Server, d Deps) {
 			return nil, updateComponentOut{}, errors.New("component not found")
 		}
 
-		data := mintKeys(in.Set)
-		keys, res, err := checkWrite(d.Validator, comp.Name, comp.Data, data, u.PublicKey, privileged, d.Validator.ValidateComponentKeys)
+		written, res, err := planWrite(d.Validator, comp.Name, comp.Data, in.Set, u.PublicKey, privileged)
 		if res != nil || err != nil {
 			return res, updateComponentOut{}, err
 		}
+		if len(written) == 0 {
+			return nil, updateComponentOut{Keys: []string{}}, nil
+		}
+		keys := slices.Sorted(maps.Keys(written))
 		changed := make(map[string]any, len(keys))
 		for _, k := range keys {
-			changed[k] = map[string]any{"oldValue": comp.Data[k], "newValue": data[k]}
+			changed[k] = map[string]any{"oldValue": comp.Data[k], "newValue": written[k]}
 		}
 
 		ev := event.Event{

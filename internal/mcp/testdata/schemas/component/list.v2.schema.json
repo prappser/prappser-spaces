@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://prappser.app/schemas/component/list.v2.schema.json",
+  "title": "List component data (test fixture)",
+  "description": "Fixture list. item_<id> objects, e_<id> encoded JSON strings, n_<id> objects.",
+  "type": "object",
+  "properties": {
+    "allowAddInUsage": {
+      "type": "boolean",
+      "default": true,
+      "x-merge": "single",
+      "x-access": "manage"
+    },
+    "allowToggleInUsage": {
+      "type": "boolean",
+      "default": true,
+      "x-merge": "single",
+      "x-access": "manage"
+    }
+  },
+  "patternProperties": {
+    "^item_.+$": {
+      "anyOf": [{ "$ref": "#/$defs/item" }, { "const": "" }],
+      "x-merge": "per-entry",
+      "x-access": {
+        "gate": "allowAddInUsage",
+        "fields": { "checked": "allowToggleInUsage" }
+      }
+    },
+    "^e_.+$": {
+      "type": "string",
+      "contentMediaType": "application/json",
+      "x-merge": "per-entry",
+      "x-access": { "content": "expense" }
+    },
+    "^n_.+$": {
+      "anyOf": [{ "$ref": "#/$defs/note" }, { "const": "" }],
+      "x-merge": "per-entry",
+      "x-access": "member"
+    },
+    "^_": {
+      "x-merge": "single",
+      "x-access": "manage"
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "item": {
+      "type": "object",
+      "properties": {
+        "v": { "const": 2 },
+        "title": { "type": "string" },
+        "checked": { "type": "boolean" },
+        "order": { "type": "number" }
+      },
+      "required": ["title", "checked"],
+      "additionalProperties": false
+    },
+    "expense": {
+      "type": "object",
+      "properties": {
+        "v": { "const": 2 },
+        "what": { "type": "string" },
+        "amount": { "type": "integer", "minimum": 0 }
+      },
+      "required": ["what", "amount"],
+      "additionalProperties": false
+    },
+    "note": {
+      "type": "object",
+      "properties": {
+        "v": { "const": 2 },
+        "title": { "type": "string" },
+        "tags": { "type": "string" }
+      },
+      "required": ["title"],
+      "additionalProperties": false
+    }
+  },
+  "x-migrations": [
+    {
+      "to": 2,
+      "breaking": false,
+      "entries": {
+        "^item_.+$": [{ "op": "rename", "from": "done", "to": "checked" }],
+        "^e_.+$": [{ "op": "rename", "from": "amt", "to": "amount" }],
+        "^n_.+$": [{ "op": "unwrap", "path": "tags" }]
+      }
+    }
+  ]
+}

@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -78,6 +79,13 @@ func newEnv(t *testing.T) *env {
 
 func newEnvWithAppLimit(t *testing.T, maxApps int) *env {
 	t.Helper()
+	validator, err := component.NewValidator()
+	require.NoError(t, err)
+	return newEnvWithValidator(t, maxApps, validator)
+}
+
+func newEnvWithValidator(t *testing.T, maxApps int, validator *component.Validator) *env {
+	t.Helper()
 	db := testdb.Connect(t, "mcp")
 	t.Cleanup(func() { db.Close() })
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -94,9 +102,6 @@ func newEnvWithAppLimit(t *testing.T, maxApps int) *env {
 	invites.ExternalURL = "https://prappser.app"
 	agents := user.NewAgentService(db, userRepo, priv, pub, base)
 	apps := application.NewApplicationService(appRepo, maxApps, "space-key")
-
-	validator, err := component.NewValidator()
-	require.NoError(t, err)
 
 	next := func(ctx *fasthttp.RequestCtx) { ctx.Error("fallthrough", fasthttp.StatusNotFound) }
 	srv := &fasthttp.Server{Handler: Mount(next, Deps{Apps: apps, Invitations: invites, Events: events, Agents: agents, Validator: validator, ExternalURL: base, ClientIP: middleware.NewClientIPResolver("", false)})}
@@ -1353,5 +1358,177 @@ func TestMCP_EditApp_ShouldReportFieldsWhenComponentDataIsInvalid(t *testing.T) 
 	require.True(t, res.IsError)
 	assert.Equal(t, "invalid data", out["error"])
 	assert.NotEmpty(t, out["untrusted"].(map[string]any)["fields"])
+	assert.Equal(t, 0, e.eventCount(appID))
+}
+
+func listEnv(t *testing.T) *env {
+	t.Helper()
+	v, err := component.NewValidatorFS(os.DirFS("testdata"))
+	require.NoError(t, err)
+	return newEnvWithValidator(t, 0, v)
+}
+
+func TestMCP_UpdateComponent_ShouldPersistV2ShapeAndEmitOneEventWhenEditingV1Entry(t *testing.T) {
+	// given
+	e := listEnv(t)
+	owner := e.account()
+	appID, compID := e.componentApp(owner, "List", map[string]any{"item_a": map[string]any{"title": "Milk", "done": false}})
+	session, _ := e.connect(owner)
+
+	// when
+	res, out := update(t, session, appID, compID, map[string]any{"item_a": map[string]any{"title": "Milk", "checked": true}})
+
+	// then
+	require.False(t, res.IsError, errText(res))
+	assert.Equal(t, []any{"item_a"}, out["keys"])
+	assert.Equal(t, map[string]any{"v": float64(2), "title": "Milk", "checked": true}, e.compData(compID)["item_a"])
+	assert.Equal(t, 1, e.eventCount(appID))
+}
+
+func TestMCP_UpdateComponent_ShouldEmitNoEventAndReturnEmptyKeysWhenValueIsUnchanged(t *testing.T) {
+	// given
+	e := listEnv(t)
+	owner := e.account()
+	appID, compID := e.componentApp(owner, "List", map[string]any{"item_a": map[string]any{"v": 2, "title": "Milk", "checked": false}})
+	session, _ := e.connect(owner)
+
+	// when
+	res, out := update(t, session, appID, compID, map[string]any{"item_a": map[string]any{"title": "Milk", "checked": false}})
+
+	// then
+	require.False(t, res.IsError, errText(res))
+	assert.Equal(t, []any{}, out["keys"])
+	assert.Equal(t, 0, e.eventCount(appID))
+}
+
+func TestMCP_UpdateComponent_ShouldRefuseFlaggedEntriesAndGetAppShouldShowEntryStates(t *testing.T) {
+	// given
+	e := listEnv(t)
+	owner := e.account()
+	newer := map[string]any{"v": 3, "title": "Milk", "checked": false}
+	readOnly := map[string]any{"title": "t", "tags": []any{"a", "b"}}
+	appID, compID := e.componentApp(owner, "List", map[string]any{"item_new": newer, "n_ro": readOnly, "item_ok": map[string]any{"title": "Eggs", "done": true}, "item_bad": map[string]any{"v": "x", "title": "t", "done": false}})
+	session, _ := e.connect(owner)
+
+	_, before := call(t, session, "get_app", map[string]any{"appId": appID})
+	assert.Equal(t, map[string]any{"item_new": "needs-update", "n_ro": "read-only", "item_bad": "bad-version"}, viewOf(before, compID)["entryStates"])
+
+	// when
+	editNewer, _ := update(t, session, appID, compID, map[string]any{"item_new": map[string]any{"title": "Milk", "checked": true}})
+	deleteNewer, _ := update(t, session, appID, compID, map[string]any{"item_new": ""})
+	editReadOnly, _ := update(t, session, appID, compID, map[string]any{"n_ro": map[string]any{"title": "t", "tags": "a"}})
+	deleteReadOnly, _ := update(t, session, appID, compID, map[string]any{"n_ro": ""})
+	_, app := call(t, session, "get_app", map[string]any{"appId": appID})
+
+	// then
+	assert.Contains(t, errText(editNewer), "needs an app update")
+	assert.Contains(t, errText(deleteNewer), "needs an app update")
+	assert.Contains(t, errText(editReadOnly), "read-only")
+	require.False(t, deleteReadOnly.IsError, errText(deleteReadOnly))
+	assert.Equal(t, 1, e.eventCount(appID))
+	assert.Equal(t, "", e.compData(compID)["n_ro"])
+
+	view := viewOf(app, compID)
+	require.NotNil(t, view)
+	assert.Equal(t, map[string]any{"item_new": "needs-update", "item_bad": "bad-version"}, view["entryStates"])
+	data := view["data"].(map[string]any)
+	assert.Equal(t, newer["title"], data["item_new"].(map[string]any)["title"])
+	assert.Equal(t, float64(3), data["item_new"].(map[string]any)["v"])
+	assert.Equal(t, map[string]any{"v": float64(2), "title": "Eggs", "checked": true}, data["item_ok"])
+}
+
+func viewOf(app map[string]any, compID string) map[string]any {
+	for _, g := range app["untrusted"].(map[string]any)["componentGroups"].([]any) {
+		for _, c := range g.(map[string]any)["components"].([]any) {
+			if c.(map[string]any)["id"] == compID {
+				return c.(map[string]any)
+			}
+		}
+	}
+	return nil
+}
+
+func TestMCP_UpdateComponent_ShouldPersistNothingWhenOneKeyOfTheBatchIsRefused(t *testing.T) {
+	// given
+	e := listEnv(t)
+	owner := e.account()
+	appID, compID := e.componentApp(owner, "List", map[string]any{
+		"item_ok":  map[string]any{"v": 2, "title": "Milk", "checked": false},
+		"item_new": map[string]any{"v": 3, "title": "x", "checked": false},
+	})
+	session, _ := e.connect(owner)
+
+	// when
+	res, _ := update(t, session, appID, compID, map[string]any{
+		"item_ok":  map[string]any{"title": "Milk", "checked": true},
+		"item_new": map[string]any{"title": "x", "checked": true},
+	})
+
+	// then
+	require.True(t, res.IsError)
+	assert.Equal(t, 0, e.eventCount(appID))
+	assert.Equal(t, false, e.compData(compID)["item_ok"].(map[string]any)["checked"])
+}
+
+func TestMCP_EditApp_ShouldInjectVersionIntoNewEntryAndRejectOutOfRangeVersion(t *testing.T) {
+	// given
+	e := listEnv(t)
+	owner := e.account()
+	appID := e.app(owner, 0)
+	session, _ := e.connect(owner)
+	add := func(data map[string]any) (*sdk.CallToolResult, map[string]any) {
+		return edit(t, session, appID, map[string]any{"op": "add_component", "groupId": appID + "-g", "type": "List", "data": data})
+	}
+
+	// when
+	bad, _ := add(map[string]any{"item_a": map[string]any{"v": 3, "title": "x", "checked": false}})
+	good, _ := add(map[string]any{"item_a": map[string]any{"title": "x", "checked": false}})
+
+	// then
+	require.True(t, bad.IsError)
+	assert.Contains(t, errText(bad), "v must be an integer between 1 and 2")
+	require.False(t, good.IsError, errText(good))
+	var data string
+	require.NoError(t, e.db.QueryRow(`SELECT data FROM components WHERE application_id = $1 AND name = 'List'`, appID).Scan(&data))
+	assert.JSONEq(t, `{"item_a":{"v":2,"title":"x","checked":false}}`, data)
+}
+
+func TestMCP_UpdateComponent_ShouldEmitNoEventWhenDeletingAbsentOrDeletedEntry(t *testing.T) {
+	// given
+	e := listEnv(t)
+	owner := e.account()
+	appID, compID := e.componentApp(owner, "List", map[string]any{"item_gone": ""})
+	session, _ := e.connect(owner)
+
+	// when
+	res, out := update(t, session, appID, compID, map[string]any{"item_never": "", "item_gone": ""})
+
+	// then
+	require.False(t, res.IsError, errText(res))
+	assert.Equal(t, []any{}, out["keys"])
+	assert.Equal(t, 0, e.eventCount(appID))
+}
+
+func TestMCP_UpdateComponent_ShouldFlagMalformedEntriesAndRefuseEditAndDelete(t *testing.T) {
+	// given
+	e := listEnv(t)
+	owner := e.account()
+	appID, compID := e.componentApp(owner, "List", map[string]any{"item_a": "oops", "e_a": "[1]", "item_gone": ""})
+	session, _ := e.connect(owner)
+
+	// when
+	_, app := call(t, session, "get_app", map[string]any{"appId": appID})
+	editObj, _ := update(t, session, appID, compID, map[string]any{"item_a": map[string]any{"title": "x", "checked": true}})
+	deleteObj, _ := update(t, session, appID, compID, map[string]any{"item_a": ""})
+	editEnc, _ := update(t, session, appID, compID, map[string]any{"e_a": `{"v":2,"what":"x","amount":1}`})
+	deleteEnc, _ := update(t, session, appID, compID, map[string]any{"e_a": ""})
+
+	// then
+	view := viewOf(app, compID)
+	assert.Equal(t, map[string]any{"item_a": "bad-version", "e_a": "bad-version"}, view["entryStates"])
+	assert.Equal(t, "oops", view["data"].(map[string]any)["item_a"])
+	for _, res := range []*sdk.CallToolResult{editObj, deleteObj, editEnc, deleteEnc} {
+		assert.Contains(t, errText(res), "needs an app update")
+	}
 	assert.Equal(t, 0, e.eventCount(appID))
 }

@@ -46,7 +46,7 @@ func WriteBack(steps any, key string, original any, reader int, edited map[strin
 	if lossy {
 		return nil, false, fmt.Errorf("%w: entry %s is lossy at version %d", ErrReadOnly, key, r)
 	}
-	e, _ := version(o)
+	e, _ := Version(o)
 	if e < r {
 		a, b := cloneMap(view), cloneMap(edited)
 		delete(a, "v")
@@ -124,7 +124,7 @@ func ComponentState(steps any, reader int, entries []Entry) (State, error) {
 		if !ok {
 			continue
 		}
-		if _, err := version(m); err != nil {
+		if _, err := Version(m); err != nil {
 			continue
 		}
 		_, lossy, err := migrate(steps, en.Key, m, int64(reader))
@@ -146,7 +146,7 @@ func DecodeEncoded(raw string) any {
 	return raw
 }
 
-func encode(v any) (string, error) {
+func Encode(v any) (string, error) {
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
 	enc.SetEscapeHTML(false)
@@ -164,7 +164,7 @@ func MigrateEncoded(steps any, key, raw string, to int) (string, bool, error) {
 	if err := checkArg("to", to); err != nil {
 		return "", false, err
 	}
-	if v, err := version(m); err == nil && v == int64(to) {
+	if v, err := Version(m); err == nil && v == int64(to) {
 		return raw, false, nil
 	}
 	out, lossy, err := migrate(steps, key, m, int64(to))
@@ -174,7 +174,7 @@ func MigrateEncoded(steps any, key, raw string, to int) (string, bool, error) {
 	if equal(out, m) {
 		return raw, lossy, nil
 	}
-	s, err := encode(out)
+	s, err := Encode(out)
 	return s, lossy, err
 }
 
@@ -190,6 +190,6 @@ func WriteBackEncoded(steps any, key, original string, reader int, edited map[st
 	if err != nil || !wrote {
 		return original, false, err
 	}
-	s, err := encode(out)
+	s, err := Encode(out)
 	return s, true, err
 }

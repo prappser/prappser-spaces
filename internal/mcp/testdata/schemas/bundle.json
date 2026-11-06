@@ -1,0 +1,9 @@
+{
+  "bundle": 1,
+  "types": {
+    "List": {
+      "min": 1,
+      "current": 2
+    }
+  }
+}

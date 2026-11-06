@@ -170,6 +170,11 @@ func addEditApp(s *sdk.Server, d Deps) {
 					return nil, editAppOut{}, errors.New("unknown component type, call describe_component with no type")
 				}
 				data := mintKeys(c.Data)
+				if r, versioned := readerFor(d.Validator, c.Type); versioned {
+					if data, err = r.prepare(d.Validator, c.Type, nil, data); err != nil {
+						return nil, editAppOut{}, err
+					}
+				}
 				if _, res, err := checkWrite(d.Validator, c.Type, nil, data, u.PublicKey, true, d.Validator.ValidateComponentData); res != nil || err != nil {
 					return res, editAppOut{}, err
 				}
