@@ -112,8 +112,8 @@ func referenceErrors(typeName, base string, data map[string]any) []component.Fie
 				continue
 			}
 			p := base + "/" + k
-			if s, _ := item["assignedMemberId"].(string); s != "" {
-				add(p+"/assignedMemberId", "a template cannot assign items to members")
+			if s, _ := item["assigneePublicKey"].(string); s != "" {
+				add(p+"/assigneePublicKey", "a template cannot assign items to members")
 			}
 			if a, _ := item["attachmentIds"].([]any); len(a) > 0 {
 				add(p+"/attachmentIds", "a template cannot carry attachments")

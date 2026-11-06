@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -182,8 +183,13 @@ func TestVectors_ShouldCoverEverySchema(t *testing.T) {
 
 	// when
 	loaded := map[string]bool{templateSchema: true}
-	for _, id := range v.componentIDs {
-		loaded[id] = true
+	for name, id := range v.componentIDs {
+		lo, cur, _ := v.Versions(name)
+		for n := lo; n <= cur; n++ {
+			suffix := fmt.Sprintf(".v%d.schema.json", cur)
+			require.True(t, strings.HasSuffix(id, suffix), "%s: id %s must end in %s", name, id, suffix)
+			loaded[strings.TrimSuffix(id, suffix)+fmt.Sprintf(".v%d.schema.json", n)] = true
+		}
 	}
 
 	// then
@@ -733,16 +739,26 @@ func TestVersions_ShouldReadEmbeddedBundle(t *testing.T) {
 
 	// when
 	types := v.Types()
+	raw, err := os.ReadFile("schemas/bundle.json")
+	require.NoError(t, err)
+	var bundle struct {
+		Types map[string]struct{ Min, Current int } `json:"types"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &bundle))
 
 	// then
 	require.NotEmpty(t, types)
 	for _, ti := range types {
 		lo, cur, ok := v.Versions(ti.Type)
 		assert.True(t, ok, ti.Type)
-		assert.Equal(t, 1, lo, ti.Type)
-		assert.Equal(t, 1, cur, ti.Type)
+		assert.Equal(t, bundle.Types[ti.Type].Min, lo, ti.Type)
+		assert.Equal(t, bundle.Types[ti.Type].Current, cur, ti.Type)
 	}
-	_, _, ok := v.Versions("Nope")
+	lo, cur, ok := v.Versions("Checklist")
+	assert.True(t, ok)
+	assert.Equal(t, 1, lo)
+	assert.Equal(t, 2, cur)
+	_, _, ok = v.Versions("Nope")
 	assert.False(t, ok)
 }
 

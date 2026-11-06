@@ -94,7 +94,7 @@ func TestCreateAppResult_ShouldWarnNotToRetryWhenEventFailed(t *testing.T) {
 func TestTemplateReferenceErrors_ShouldAcceptTemplateWithoutReferences(t *testing.T) {
 	// given
 	doc := map[string]any{"groups": []any{map[string]any{"components": []any{
-		map[string]any{"type": "Checklist", "data": map[string]any{"item_a": map[string]any{"title": "t", "checked": false, "assignedMemberId": nil, "attachmentIds": []any{}, "detailsDocument": []any{map[string]any{"insert": "hi\n"}}}}},
+		map[string]any{"type": "Checklist", "data": map[string]any{"item_a": map[string]any{"title": "t", "checked": false, "assigneePublicKey": nil, "attachmentIds": []any{}, "detailsDocument": []any{map[string]any{"insert": "hi\n"}}}}},
 		map[string]any{"type": "Map", "data": map[string]any{"markers": []any{map[string]any{"id": "1", "createdBy": ""}}, "otherUsers": []any{}}},
 		map[string]any{"type": "Files", "data": map[string]any{"items": []any{}}},
 		map[string]any{"type": "Text", "data": map[string]any{"document": []any{map[string]any{"insert": "hi\n"}}}},
@@ -111,9 +111,9 @@ func TestTemplateReferenceErrors_ShouldRejectChecklistMemberAttachmentAndMedia(t
 	// given
 	doc := docWith(map[string]any{"type": "Checklist", "data": map[string]any{"item_x": map[string]any{
 		"title": "t", "checked": false,
-		"assignedMemberId": "pk",
-		"attachmentIds":    []any{"f"},
-		"detailsDocument":  []any{map[string]any{"insert": "a"}, map[string]any{"insert": map[string]any{"image": "u"}}},
+		"assigneePublicKey": "pk",
+		"attachmentIds":     []any{"f"},
+		"detailsDocument":   []any{map[string]any{"insert": "a"}, map[string]any{"insert": map[string]any{"image": "u"}}},
 	}}})
 
 	// when
@@ -121,7 +121,7 @@ func TestTemplateReferenceErrors_ShouldRejectChecklistMemberAttachmentAndMedia(t
 
 	// then
 	base := "/groups/0/components/0/data/item_x"
-	assert.Equal(t, []string{base + "/assignedMemberId", base + "/attachmentIds", base + "/detailsDocument/1/insert"}, got)
+	assert.Equal(t, []string{base + "/assigneePublicKey", base + "/attachmentIds", base + "/detailsDocument/1/insert"}, got)
 }
 
 func TestTemplateReferenceErrors_ShouldRejectMapAuthorAndLiveLocations(t *testing.T) {

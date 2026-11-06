@@ -1,5 +1,5 @@
 {
-  "bundle": 1,
+  "bundle": 2,
   "types": {
     "Text": {
       "min": 1,
@@ -7,7 +7,7 @@
     },
     "Checklist": {
       "min": 1,
-      "current": 1
+      "current": 2
     },
     "Files": {
       "min": 1,
@@ -44,6 +44,10 @@
       "sha256": "93d2da378ee39b47b499eaa306167c7800433f73b30b6a6957cef974552c1b25"
     },
     {
+      "path": "component/checklist.v2.schema.json",
+      "sha256": "9d2b18f650578b91448902e78e9783e403ef7d1f0657b94c30465d1ead37e3ed"
+    },
+    {
       "path": "component/common.v1.schema.json",
       "sha256": "b228a12302c21f81f3f1ec168832e80827049e7b46eec663d2ddafa2ab093fb6"
     },
@@ -73,7 +77,7 @@
     },
     {
       "path": "template/template-doc.v1.schema.json",
-      "sha256": "f0a00711961906d4b93e1302aa84eeaacee5963b979edd47a50a16842ce221a9"
+      "sha256": "3d96966165dfcebe481969134ec2bf1af411da3e0151c08a087eefdf4628f3fd"
     }
   ]
 }

@@ -517,7 +517,7 @@ func TestMCP_CreateApp_ShouldCreateAppOwnedByCallerWithFreshIDs(t *testing.T) {
 		}
 	}
 	require.NotNil(t, checklist)
-	assert.Equal(t, map[string]any{"title": "Pack", "checked": false, "order": 0.0}, checklist["data"].(map[string]any)["item_x"])
+	assert.Equal(t, map[string]any{"v": 2.0, "title": "Pack", "checked": false, "order": 0.0}, checklist["data"].(map[string]any)["item_x"])
 	var indexes []int
 	rows, err := e.db.Query(`SELECT index_order FROM component_groups WHERE application_id = $1 ORDER BY index_order`, appID)
 	require.NoError(t, err)
@@ -552,12 +552,12 @@ func TestMCP_CreateApp_ShouldRejectDocWithMessageKey(t *testing.T) {
 	assert.Equal(t, 0, e.appCount(owner))
 }
 
-func TestMCP_CreateApp_ShouldRejectAssignedMemberAndNameTooLongInUTF16(t *testing.T) {
+func TestMCP_CreateApp_ShouldRejectAssigneeAndNameTooLongInUTF16(t *testing.T) {
 	// given
 	e := newEnv(t)
 	owner := e.account()
 	session, _ := e.connect(owner)
-	assigned := templateDoc("Ok", checklistComp(map[string]any{"title": "t", "checked": false, "assignedMemberId": "somebody"}))
+	assigned := templateDoc("Ok", checklistComp(map[string]any{"title": "t", "checked": false, "assigneePublicKey": "somebody"}))
 	tooLong := templateDoc(strings.Repeat("a", 63) + "😀")
 
 	// when
@@ -566,9 +566,35 @@ func TestMCP_CreateApp_ShouldRejectAssignedMemberAndNameTooLongInUTF16(t *testin
 
 	// then
 	assert.True(t, resAssigned.IsError)
-	assert.Contains(t, toJSON(outAssigned["untrusted"]), "/groups/0/components/0/data/item_x/assignedMemberId")
+	assert.Contains(t, toJSON(outAssigned["untrusted"]), "/groups/0/components/0/data/item_x/assigneePublicKey")
 	assert.True(t, resLong.IsError)
 	assert.Contains(t, toJSON(outLong["untrusted"]), "/name")
+	assert.Equal(t, 0, e.appCount(owner))
+}
+
+func TestMCP_CreateApp_ShouldRejectOldAssigneeNameVersionAndLegacyItemsInChecklistTemplate(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner := e.account()
+	session, _ := e.connect(owner)
+	base := "/groups/0/components/0/data"
+	cases := map[string]struct {
+		comp map[string]any
+		path string
+	}{
+		"old assignee name": {checklistComp(map[string]any{"title": "t", "checked": false, "assignedMemberId": "x"}), base + "/item_x"},
+		"version marker":    {checklistComp(map[string]any{"v": 1, "title": "t", "checked": false}), base + "/item_x"},
+		"legacy items list": {map[string]any{"type": "Checklist", "index": 0, "data": map[string]any{"items": []any{map[string]any{"title": "t", "checked": false, "assignedMemberId": "x"}}}}, base},
+	}
+
+	for name, c := range cases {
+		// when
+		res, out := call(t, session, "create_app", map[string]any{"doc": templateDoc("Ok", c.comp)})
+
+		// then
+		assert.True(t, res.IsError, name)
+		assert.Contains(t, toJSON(out["untrusted"]), c.path, name)
+	}
 	assert.Equal(t, 0, e.appCount(owner))
 }
 
@@ -769,7 +795,7 @@ func TestMCP_UpdateComponent_ShouldWriteOnlyTheNewKeyAndKeepConcurrentEdits(t *t
 	// then
 	require.False(t, res.IsError, toJSON(out))
 	data := e.compData(compID)
-	assert.Equal(t, map[string]any{"title": "sunscreen", "checked": false, "order": 5.5}, data[out["keys"].([]any)[0].(string)])
+	assert.Equal(t, map[string]any{"v": 2.0, "title": "sunscreen", "checked": false, "order": 5.5}, data[out["keys"].([]any)[0].(string)])
 	assert.Equal(t, friendItem, data["item_f"])
 	assert.Equal(t, "Packing", data["title"])
 	assert.Len(t, data, 3)
@@ -790,7 +816,7 @@ func TestMCP_UpdateComponent_ShouldWriteKeyedItemAndLeaveLegacyItemsAlone(t *tes
 	// then
 	require.False(t, res.IsError, toJSON(out))
 	data := e.compData(compID)
-	assert.Equal(t, map[string]any{"title": "x", "checked": true, "order": 0.0}, data["item_a"])
+	assert.Equal(t, map[string]any{"v": 2.0, "title": "x", "checked": true, "order": 0.0}, data["item_a"])
 	assert.Equal(t, legacy, data["items"])
 }
 
@@ -806,7 +832,7 @@ func TestMCP_UpdateComponent_ShouldReportFieldPathWhenValueIsInvalid(t *testing.
 
 	// then
 	assert.True(t, res.IsError)
-	assert.Equal(t, "invalid data", out["error"])
+	assert.Equal(t, "invalid data: values must use the v2 shape, see describe_component", out["error"])
 	assert.Contains(t, toJSON(out["untrusted"]), "/item_a")
 }
 
@@ -1356,7 +1382,7 @@ func TestMCP_EditApp_ShouldReportFieldsWhenComponentDataIsInvalid(t *testing.T) 
 
 	// then
 	require.True(t, res.IsError)
-	assert.Equal(t, "invalid data", out["error"])
+	assert.Equal(t, "invalid data: values must use the v2 shape, see describe_component", out["error"])
 	assert.NotEmpty(t, out["untrusted"].(map[string]any)["fields"])
 	assert.Equal(t, 0, e.eventCount(appID))
 }

@@ -41,7 +41,7 @@ Both checklist tools write only the one `item_<itemId>` key, so a concurrent edi
 1. At most 64 KiB as JSON, else "template is too large".
 2. The TemplateDoc schema (also the component data schemas). Chat messages, reactions, votes and expenses (`m_`, `react_`, `vote_`, `e_`, `s_` keys) and a checklist's legacy `items` list are not allowed.
 3. Name 1 to 64 characters after trimming, counted in UTF-16 units like the app. The schema requires `description`, but it is ignored and not stored.
-4. No references to people or files. These are rejected, not stripped: a checklist item's `assignedMemberId` or `attachmentIds`, images and videos in checklist details or Text, a Map marker's `createdBy` and any `otherUsers`, and any Files `items`.
+4. No references to people or files. These are rejected, not stripped: a checklist item's `assigneePublicKey` or `attachmentIds`, images and videos in checklist details or Text, a Map marker's `createdBy` and any `otherUsers`, and any Files `items`.
 
 A rejected document comes back as an error listing the field paths under `untrusted`; an oversized document gets one field at path `""` with its byte count. Every app, group, component and member id is new; `index` values and component data (including `item_<id>` keys) are kept, and the description is ignored. The account is the only member, as owner. A non-owner account that already has its maximum number of apps gets the error "you have reached your app limit" with an empty field list. If the app is created but announcing it to the account's other devices fails, the result carries a `warning` and the call must not be retried, since a retry creates a second app. The new app is open to agents like any other (`agentReadEnabled` is on by default).
 
