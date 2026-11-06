@@ -154,7 +154,7 @@ func TestWriteBack_ShouldWriteIntegerVersionWhenOriginalHadFloatVersion(t *testi
 	// then
 	require.NoError(t, err)
 	assert.True(t, wrote)
-	enc, err := encode(out)
+	enc, err := Encode(out)
 	require.NoError(t, err)
 	assert.JSONEq(t, `{"v":2,"a":2}`, enc)
 	assert.Contains(t, enc, `"v":2`)

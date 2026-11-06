@@ -1,14 +1,11 @@
 package mcp
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
-	"math"
 	"slices"
-	"strings"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -45,32 +42,9 @@ func plain(v any) any {
 	return out
 }
 
-func encode(v any) string {
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-	_ = enc.Encode(v)
-	return strings.TrimRight(buf.String(), "\n")
-}
-
-func entryVersion(m map[string]any) (int, bool) {
-	raw, ok := m["v"]
-	if !ok {
-		return 1, true
-	}
-	var f float64
-	switch n := raw.(type) {
-	case float64:
-		f = n
-	case json.Number:
-		f, _ = n.Float64()
-	default:
-		return 0, false
-	}
-	if f < 1 || f != math.Trunc(f) || f > 1<<53-1 {
-		return 0, false
-	}
-	return int(f), true
+func absent(m map[string]any, k string) bool {
+	v, ok := m[k]
+	return !ok || v == ""
 }
 
 func entryMap(encoded bool, raw any) (map[string]any, bool) {
@@ -86,11 +60,11 @@ func entryMap(encoded bool, raw any) (map[string]any, bool) {
 }
 
 func (r reader) classify(key string, m map[string]any) (map[string]any, string) {
-	e, ok := entryVersion(m)
-	if !ok {
+	e, err := lens.Version(m)
+	if err != nil {
 		return nil, stateBadVersion
 	}
-	if e > r.cur {
+	if e > int64(r.cur) {
 		return nil, stateNeedsUpdate
 	}
 	out, lossy, err := lens.Migrate(r.steps, key, m, r.cur)
@@ -105,9 +79,12 @@ func (r reader) classify(key string, m map[string]any) (map[string]any, string) 
 }
 
 func (r reader) entryRead(encoded bool, key string, raw any) (any, string) {
+	if raw == "" {
+		return raw, stateFull
+	}
 	m, ok := entryMap(encoded, raw)
 	if !ok {
-		return raw, stateFull
+		return raw, stateBadVersion
 	}
 	view, state := r.classify(key, m)
 	if state == stateNeedsUpdate || state == stateBadVersion {
@@ -154,11 +131,11 @@ func (r reader) shape(encoded bool, val any, inject bool) (any, error) {
 		return val, nil
 	}
 	if _, has := m["v"]; has {
-		n, ok := entryVersion(m)
-		if !ok || n < r.lo || n > r.cur {
+		n, err := lens.Version(m)
+		if err != nil || n < int64(r.lo) || n > int64(r.cur) {
 			return nil, fmt.Errorf("v must be an integer between %d and %d", r.lo, r.cur)
 		}
-		if n == r.cur {
+		if n == int64(r.cur) {
 			return val, nil
 		}
 	} else if !inject {
@@ -167,7 +144,7 @@ func (r reader) shape(encoded bool, val any, inject bool) (any, error) {
 	out := maps.Clone(m)
 	out["v"] = float64(r.cur)
 	if encoded {
-		return encode(out), nil
+		return lens.Encode(out)
 	}
 	return out, nil
 }
@@ -181,13 +158,16 @@ func (r reader) prepare(v *component.Validator, typ string, stored, data map[str
 		}
 		fail := func(why string) error { return errors.New("key " + k + ": " + why) }
 		val := data[k]
-		orig, exists := entryMap(encoded, stored[k])
 		state := stateFull
 		inject := r.cur >= 2
-		if exists {
-			var view map[string]any
-			view, state = r.classify(k, orig)
-			_, inject = view["v"]
+		if !absent(stored, k) {
+			if orig, ok := entryMap(encoded, stored[k]); !ok {
+				state = stateBadVersion
+			} else {
+				var view map[string]any
+				view, state = r.classify(k, orig)
+				_, inject = view["v"]
+			}
 		}
 		blocked := state == stateNeedsUpdate || state == stateBadVersion
 		if val == "" {
@@ -216,11 +196,11 @@ func (r reader) apply(v *component.Validator, typ string, stored, data map[strin
 	for _, k := range slices.Sorted(maps.Keys(data)) {
 		val := data[k]
 		encoded, isEntry := v.Entry(typ, k)
-		orig, exists := entryMap(encoded, stored[k])
-		if !isEntry || !exists || val == "" {
+		if !isEntry || absent(stored, k) || val == "" {
 			out[k] = val
 			continue
 		}
+		orig, _ := entryMap(encoded, stored[k])
 		edited, ok := entryMap(encoded, val)
 		if !ok {
 			return nil, errors.New("key " + k + ": value must be an object")
@@ -267,9 +247,17 @@ func planWrite(v *component.Validator, typ string, stored, set map[string]any, p
 	if _, res, err := checkWrite(v, typ, old, data, publicKey, privileged, v.ValidateComponentKeys); res != nil || err != nil {
 		return nil, res, err
 	}
-	if !versioned {
-		return data, nil, nil
+	written := data
+	if versioned {
+		var err error
+		if written, err = r.apply(v, typ, stored, data); err != nil {
+			return nil, nil, err
+		}
 	}
-	written, err := r.apply(v, typ, stored, data)
-	return written, nil, err
+	for k, val := range written {
+		if _, isEntry := v.Entry(typ, k); isEntry && val == "" && absent(stored, k) {
+			delete(written, k)
+		}
+	}
+	return written, nil, nil
 }

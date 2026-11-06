@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"encoding/json"
 	"os"
 	"testing"
 
@@ -107,10 +108,10 @@ func TestComponentData_ShouldReturnStoredDataForV1Types(t *testing.T) {
 	assert.Empty(t, states)
 }
 
-func TestComponentData_ShouldPassThroughUnknownTypesAndNonObjectEntries(t *testing.T) {
+func TestComponentData_ShouldPassThroughUnknownTypesAndTombstones(t *testing.T) {
 	// given
 	v := listValidator(t)
-	stored := map[string]any{"e_a": "not json", "item_gone": "", "n_a": "oops"}
+	stored := map[string]any{"item_gone": "", "e_gone": ""}
 
 	// when
 	view, states := componentData(v, "List", stored)
@@ -449,4 +450,164 @@ func TestPlanWrite_ShouldRefuseWholeBatchWhenOneKeyIsRefused(t *testing.T) {
 	// then
 	require.Error(t, err)
 	assert.Empty(t, written)
+}
+
+func TestComponentData_ShouldFlagMalformedEntriesAsBadVersion(t *testing.T) {
+	// given
+	v := listValidator(t)
+	stored := map[string]any{
+		"item_a": "oops",
+		"n_a":    float64(7),
+		"e_a":    "not json",
+		"e_b":    "[1]",
+		"e_c":    float64(7),
+		"item_g": "",
+		"e_g":    "",
+	}
+
+	// when
+	view, states := componentData(v, "List", stored)
+
+	// then
+	assert.Equal(t, map[string]string{"item_a": "bad-version", "n_a": "bad-version", "e_a": "bad-version", "e_b": "bad-version", "e_c": "bad-version"}, states)
+	assert.Equal(t, stored, view)
+}
+
+func TestPlanWrite_ShouldRefuseEditAndDeleteOfMalformedEntry(t *testing.T) {
+	// given
+	v := listValidator(t)
+	for _, tc := range []struct {
+		key string
+		raw any
+		set any
+	}{
+		{"item_a", "oops", map[string]any{"title": "x", "checked": true}},
+		{"e_a", "not json", `{"v":2,"what":"x","amount":1}`},
+		{"e_b", "[1]", `{"v":2,"what":"x","amount":1}`},
+	} {
+		stored := map[string]any{tc.key: tc.raw}
+
+		// when
+		_, _, editErr := plan(t, v, "List", stored, map[string]any{tc.key: tc.set})
+		_, _, delErr := plan(t, v, "List", stored, map[string]any{tc.key: ""})
+
+		// then
+		require.Error(t, editErr, tc.key)
+		assert.Contains(t, editErr.Error(), "needs an app update")
+		require.Error(t, delErr, tc.key)
+		assert.Contains(t, delErr.Error(), "needs an app update")
+	}
+}
+
+func TestPlanWrite_ShouldTreatTombstoneAsNewEntry(t *testing.T) {
+	// given
+	v := listValidator(t)
+	stored := map[string]any{"item_a": ""}
+
+	// when
+	written, res, err := plan(t, v, "List", stored, map[string]any{"item_a": map[string]any{"title": "Milk", "checked": false}})
+
+	// then
+	require.NoError(t, err)
+	require.Nil(t, res)
+	assert.Equal(t, map[string]any{"item_a": v2Item("Milk", false)}, written)
+}
+
+func TestPlanWrite_ShouldWriteNothingWhenDeletingAbsentOrDeletedEntry(t *testing.T) {
+	// given
+	v := listValidator(t)
+	stored := map[string]any{"item_b": "", "e_b": ""}
+
+	// when
+	written, res, err := plan(t, v, "List", stored, map[string]any{"item_a": "", "item_b": "", "e_a": "", "e_b": ""})
+	mixed, _, mixedErr := plan(t, v, "List", stored, map[string]any{"item_a": "", "item_c": map[string]any{"title": "Eggs", "checked": true}})
+
+	// then
+	require.NoError(t, err)
+	require.Nil(t, res)
+	assert.Empty(t, written)
+	require.NoError(t, mixedErr)
+	assert.Equal(t, map[string]any{"item_c": v2Item("Eggs", true)}, mixed)
+}
+
+func TestPlanWrite_ShouldStillDeleteExistingEntry(t *testing.T) {
+	// given
+	v := listValidator(t)
+	stored := map[string]any{"item_a": v2Item("Milk", false)}
+
+	// when
+	written, _, err := plan(t, v, "List", stored, map[string]any{"item_a": ""})
+
+	// then
+	require.NoError(t, err)
+	assert.Equal(t, map[string]any{"item_a": ""}, written)
+}
+
+func TestComponentData_ShouldClassifyVersionLikeLens(t *testing.T) {
+	// given
+	v := listValidator(t)
+	for _, raw := range []string{"2.0000000000000001", "2", "2.0", "1e0", "0", "1.5", `"2"`} {
+		obj := map[string]any{"title": "t", "checked": false, "v": json.Number(raw)}
+		if raw == `"2"` {
+			obj["v"] = "2"
+		}
+		_, lensErr := lens.Version(obj)
+		stored := map[string]any{"item_a": obj, "e_a": `{"what":"t","amount":1,"v":` + raw + `}`}
+
+		// when
+		_, states := componentData(v, "List", stored)
+
+		// then
+		if lensErr != nil {
+			assert.Equal(t, "bad-version", states["item_a"], raw)
+			assert.Equal(t, "bad-version", states["e_a"], raw)
+		} else {
+			assert.NotEqual(t, "bad-version", states["item_a"], raw)
+			assert.NotEqual(t, "bad-version", states["e_a"], raw)
+		}
+	}
+}
+
+func TestComponentData_ShouldFlagNullEntriesAsBadVersion(t *testing.T) {
+	// given
+	v := listValidator(t)
+	stored := map[string]any{"item_a": nil, "e_a": nil}
+
+	// when
+	view, states := componentData(v, "List", stored)
+
+	// then
+	assert.Equal(t, map[string]string{"item_a": "bad-version", "e_a": "bad-version"}, states)
+	assert.Equal(t, stored, view)
+}
+
+func TestPlanWrite_ShouldRefuseEditAndDeleteOfNullEntry(t *testing.T) {
+	// given
+	v := listValidator(t)
+	stored := map[string]any{"item_a": nil, "e_a": nil}
+
+	// when
+	_, _, editObj := plan(t, v, "List", stored, map[string]any{"item_a": map[string]any{"title": "x", "checked": true}})
+	_, _, deleteObj := plan(t, v, "List", stored, map[string]any{"item_a": ""})
+	_, _, editEnc := plan(t, v, "List", stored, map[string]any{"e_a": `{"v":2,"what":"x","amount":1}`})
+	_, _, deleteEnc := plan(t, v, "List", stored, map[string]any{"e_a": ""})
+
+	// then
+	for _, err := range []error{editObj, deleteObj, editEnc, deleteEnc} {
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "needs an app update")
+	}
+}
+
+func TestComponentData_ShouldPassNonObjectEntriesThroughForUnversionedType(t *testing.T) {
+	// given
+	v := listValidator(t)
+	stored := map[string]any{"e_a": "not json", "n_a": "oops", "item_a": nil, "item_b": float64(3)}
+
+	// when
+	view, states := componentData(v, "Nope", stored)
+
+	// then
+	assert.Equal(t, stored, view)
+	assert.Empty(t, states)
 }

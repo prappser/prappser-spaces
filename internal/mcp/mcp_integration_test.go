@@ -1492,3 +1492,43 @@ func TestMCP_EditApp_ShouldInjectVersionIntoNewEntryAndRejectOutOfRangeVersion(t
 	require.NoError(t, e.db.QueryRow(`SELECT data FROM components WHERE application_id = $1 AND name = 'List'`, appID).Scan(&data))
 	assert.JSONEq(t, `{"item_a":{"v":2,"title":"x","checked":false}}`, data)
 }
+
+func TestMCP_UpdateComponent_ShouldEmitNoEventWhenDeletingAbsentOrDeletedEntry(t *testing.T) {
+	// given
+	e := listEnv(t)
+	owner := e.account()
+	appID, compID := e.componentApp(owner, "List", map[string]any{"item_gone": ""})
+	session, _ := e.connect(owner)
+
+	// when
+	res, out := update(t, session, appID, compID, map[string]any{"item_never": "", "item_gone": ""})
+
+	// then
+	require.False(t, res.IsError, errText(res))
+	assert.Equal(t, []any{}, out["keys"])
+	assert.Equal(t, 0, e.eventCount(appID))
+}
+
+func TestMCP_UpdateComponent_ShouldFlagMalformedEntriesAndRefuseEditAndDelete(t *testing.T) {
+	// given
+	e := listEnv(t)
+	owner := e.account()
+	appID, compID := e.componentApp(owner, "List", map[string]any{"item_a": "oops", "e_a": "[1]", "item_gone": ""})
+	session, _ := e.connect(owner)
+
+	// when
+	_, app := call(t, session, "get_app", map[string]any{"appId": appID})
+	editObj, _ := update(t, session, appID, compID, map[string]any{"item_a": map[string]any{"title": "x", "checked": true}})
+	deleteObj, _ := update(t, session, appID, compID, map[string]any{"item_a": ""})
+	editEnc, _ := update(t, session, appID, compID, map[string]any{"e_a": `{"v":2,"what":"x","amount":1}`})
+	deleteEnc, _ := update(t, session, appID, compID, map[string]any{"e_a": ""})
+
+	// then
+	view := viewOf(app, compID)
+	assert.Equal(t, map[string]any{"item_a": "bad-version", "e_a": "bad-version"}, view["entryStates"])
+	assert.Equal(t, "oops", view["data"].(map[string]any)["item_a"])
+	for _, res := range []*sdk.CallToolResult{editObj, deleteObj, editEnc, deleteEnc} {
+		assert.Contains(t, errText(res), "needs an app update")
+	}
+	assert.Equal(t, 0, e.eventCount(appID))
+}

@@ -177,7 +177,7 @@ func addUpdateComponent(s *sdk.Server, d Deps) {
 		Name: "update_component",
 		Description: "Write keys of one component's data as this account. Call describe_component with the component's type (its name in get_app) first to see keys, value encodings and x-access. " +
 			"set maps key to its whole new value (no deep merge: send the full object or encoded string); '' deletes where the schema allows. " +
-			"Entries are shown and written in the type's current version; entries flagged in get_app's entryStates cannot be edited. A value equal to the stored one writes nothing, and keys then comes back empty. " +
+			"Entries are shown and written in the type's current version; entries flagged in get_app's entryStates cannot be edited. A value equal to the stored one writes nothing, and keys then comes back empty; so does deleting an entry that is absent or already deleted. " +
 			"A key ending in * (such as m_*, item_* or e_*) gets a new id, returned in keys. All keys go in one change or none do. Viewers cannot write." + untrustedHint,
 	}, func(ctx context.Context, req *sdk.CallToolRequest, in updateComponentIn) (*sdk.CallToolResult, updateComponentOut, error) {
 		u, err := caller(req)

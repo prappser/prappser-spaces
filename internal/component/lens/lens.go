@@ -41,7 +41,7 @@ func checkArg(name string, n int) error {
 
 func num(n int64) json.Number { return json.Number(strconv.FormatInt(n, 10)) }
 
-func version(m map[string]any) (int64, error) {
+func Version(m map[string]any) (int64, error) {
 	v, ok := m["v"]
 	if !ok {
 		return 1, nil
@@ -446,7 +446,7 @@ func (o op) lossy(up bool) bool {
 }
 
 func migrate(steps any, key string, m map[string]any, to int64) (map[string]any, bool, error) {
-	e, err := version(m)
+	e, err := Version(m)
 	if err != nil {
 		return nil, false, err
 	}
