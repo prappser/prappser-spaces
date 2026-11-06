@@ -12,6 +12,7 @@ import (
 
 	webpush "github.com/SherClockHolmes/webpush-go"
 	"github.com/prappser/prappser-spaces/internal/event"
+	"github.com/prappser/prappser-spaces/internal/user"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -569,4 +570,55 @@ func TestPushService_Push_ShouldSkipWhenEventHasNoRule(t *testing.T) {
 	// then
 	time.Sleep(100 * time.Millisecond)
 	assert.Equal(t, 0, sender.callCount())
+}
+
+func TestKindSendsIn_ShouldFollowNotifyMode(t *testing.T) {
+	chatModeKinds := map[Kind]bool{KindChat: true, KindReminder: true, KindRole: true}
+	for _, kind := range []Kind{KindChat, KindItem, KindPoll, KindFile, KindMember, KindRole, KindReminder} {
+		// when
+		inAll := kind.sendsIn(user.NotifyModeAll)
+		inChat := kind.sendsIn(user.NotifyModeChat)
+		inEmpty := kind.sendsIn("")
+
+		// then
+		assert.True(t, inAll, kind)
+		assert.Equal(t, chatModeKinds[kind], inChat, kind)
+		assert.True(t, inEmpty, kind)
+	}
+}
+
+func TestPushService_Fanout_ShouldFilterEveryKindByNotifyMode(t *testing.T) {
+	cases := []struct {
+		name       string
+		ev         *event.Event
+		chatGetsIt bool
+	}{
+		{"chat", gComp("chat-1", gChange(gChatA, nil, `{"body":"hi"}`)), true},
+		{"item", gComp("list-1", gChange("item_a", nil, gItem("Milk"))), false},
+		{"poll", gComp("poll-1", gChange("closed", false, true)), false},
+		{"file", gComp("files-1", gChange("items", nil, []any{map[string]any{"id": "f9", "filename": "a.pdf"}})), false},
+		{"member", gTyped(event.EventTypeMemberAdded, map[string]any{"userDisplayName": "Bo"}), false},
+		{"role", gTyped(event.EventTypeMemberRoleChanged, map[string]any{"newRole": "admin"}), true},
+		{"reminder", gTyped(event.EventTypeReminderFired, map[string]any{"itemTitle": "Call mom"}), true},
+	}
+	for _, tc := range cases {
+		// given
+		repo := newMockPushRepository()
+		sender := newMockWebpushSender(SendResult{StatusCode: 201})
+		svc := newGoldenService(repo, sender)
+		repo.subscriptions["sub-all"] = &Subscription{ID: "sub-all", DevicePublicKey: "pk-all", NotifyMode: user.NotifyModeAll, MutedApplicationIDs: []string{}}
+		repo.subscriptions["sub-chat"] = &Subscription{ID: "sub-chat", DevicePublicKey: "pk-chat", NotifyMode: user.NotifyModeChat, MutedApplicationIDs: []string{}}
+
+		// when
+		svc.fanout(tc.ev, goldenApp(), "Ann", false, []string{"pk-all", "pk-chat"})
+
+		// then
+		got := map[string]bool{}
+		for _, c := range sender.calls {
+			got[c.sub.ID] = true
+		}
+		assert.True(t, got["sub-all"], tc.name)
+		assert.Equal(t, tc.chatGetsIt, got["sub-chat"], tc.name)
+		assert.Len(t, sender.calls, len(got), tc.name)
+	}
 }

@@ -12,6 +12,7 @@ import (
 type UpdateProfileRequest struct {
 	DisplayName *string `json:"displayName"`
 	Locale      *string `json:"locale"`
+	NotifyMode  *string `json:"notifyMode"`
 }
 
 // EventService is the interface for producing space-generated events.
@@ -29,4 +30,5 @@ type userRepository interface {
 	GetUserByPublicKey(publicKey string) (*user.User, error)
 	UpdateUsername(publicKey, username string) error
 	UpdateLocale(publicKey, locale string) error
+	UpdateNotifyMode(publicKey, mode string) error
 }

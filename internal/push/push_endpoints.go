@@ -33,12 +33,11 @@ func (pe *PushEndpoints) GetVapidPublicKey(ctx *fasthttp.RequestCtx) {
 
 // createSubscriptionRequest is the request body for POST /push/subscriptions.
 type createSubscriptionRequest struct {
-	Endpoint            string     `json:"endpoint"`
-	P256dh              string     `json:"p256dh"`
-	Auth                string     `json:"auth"`
-	DeviceLabel         *string    `json:"deviceLabel,omitempty"`
-	Categories          Categories `json:"categories"`
-	MutedApplicationIDs []string   `json:"mutedApplicationIds"`
+	Endpoint            string   `json:"endpoint"`
+	P256dh              string   `json:"p256dh"`
+	Auth                string   `json:"auth"`
+	DeviceLabel         *string  `json:"deviceLabel,omitempty"`
+	MutedApplicationIDs []string `json:"mutedApplicationIds"`
 }
 
 // CreateSubscription handles POST /push/subscriptions.
@@ -87,7 +86,6 @@ func (pe *PushEndpoints) CreateSubscription(ctx *fasthttp.RequestCtx) {
 		P256dh:              req.P256dh,
 		Auth:                req.Auth,
 		DeviceLabel:         req.DeviceLabel,
-		Categories:          req.Categories,
 		MutedApplicationIDs: req.MutedApplicationIDs,
 		CreatedAt:           time.Now().Unix(),
 	}
@@ -106,11 +104,10 @@ func (pe *PushEndpoints) CreateSubscription(ctx *fasthttp.RequestCtx) {
 
 // updateSubscriptionRequest is the request body for PATCH /push/subscriptions/:id.
 type updateSubscriptionRequest struct {
-	Endpoint            string     `json:"endpoint"`
-	P256dh              string     `json:"p256dh"`
-	Auth                string     `json:"auth"`
-	Categories          Categories `json:"categories"`
-	MutedApplicationIDs []string   `json:"mutedApplicationIds"`
+	Endpoint            string   `json:"endpoint"`
+	P256dh              string   `json:"p256dh"`
+	Auth                string   `json:"auth"`
+	MutedApplicationIDs []string `json:"mutedApplicationIds"`
 }
 
 // UpdateSubscription handles PATCH /push/subscriptions/:id.
@@ -174,7 +171,6 @@ func (pe *PushEndpoints) UpdateSubscription(ctx *fasthttp.RequestCtx) {
 	if req.Auth != "" {
 		existing.Auth = req.Auth
 	}
-	existing.Categories = req.Categories
 	existing.MutedApplicationIDs = req.MutedApplicationIDs
 
 	if err := pe.repo.UpdateSubscription(existing); err != nil {

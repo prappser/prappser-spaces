@@ -56,9 +56,9 @@ func (r *userRepository) GetUserByPublicKey(publicKey string) (*User, error) {
 	var user User
 	var avatarStorageID, identityBinding sql.NullString
 	err := r.db.QueryRow(
-		"SELECT public_key, username, role, created_at, avatar_storage_id, identity_binding, binding_iat, binding_sub, locale FROM users WHERE public_key = $1",
+		"SELECT public_key, username, role, created_at, avatar_storage_id, identity_binding, binding_iat, binding_sub, locale, notify_mode FROM users WHERE public_key = $1",
 		publicKey,
-	).Scan(&user.PublicKey, &user.Username, &user.Role, &user.CreatedAt, &avatarStorageID, &identityBinding, &user.BindingIat, &user.BindingSub, &user.Locale)
+	).Scan(&user.PublicKey, &user.Username, &user.Role, &user.CreatedAt, &avatarStorageID, &identityBinding, &user.BindingIat, &user.BindingSub, &user.Locale, &user.NotifyMode)
 
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -113,6 +113,21 @@ func (r *userRepository) UpdateUsername(publicKey, username string) error {
 			return ErrUsernameTaken
 		}
 		return fmt.Errorf("failed to update username: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to check rows affected: %w", err)
+	}
+	if rows == 0 {
+		return fmt.Errorf("user with public key %s not found", publicKey)
+	}
+	return nil
+}
+
+func (r *userRepository) UpdateNotifyMode(publicKey, mode string) error {
+	result, err := r.db.Exec("UPDATE users SET notify_mode = $1 WHERE public_key = $2", mode, publicKey)
+	if err != nil {
+		return fmt.Errorf("failed to update notify mode: %w", err)
 	}
 	rows, err := result.RowsAffected()
 	if err != nil {

@@ -186,3 +186,37 @@ func TestUpdateProfile_ShouldRoundTripLocaleThroughGetProfile_Integration(t *tes
 	assert.Equal(t, fasthttp.StatusOK, patchCtx.Response.StatusCode())
 	assert.Contains(t, string(getCtx.Response.Body()), `"locale":"pl"`)
 }
+
+func TestUpdateProfile_ShouldRoundTripNotifyModeThroughGetProfile_Integration(t *testing.T) {
+	// given
+	db := testdb.Connect(t, "profile")
+	defer db.Close()
+	userRepo := user.NewUserRepository(db)
+	const pk = "notify-pk-0123456789abcdefghij"
+	testdb.InsertTestUser(t, db, pk)
+	current, err := userRepo.GetUserByPublicKey(pk)
+	require.NoError(t, err)
+	require.NotNil(t, current)
+	userEndpoints := user.NewEndpoints(userRepo, user.Config{}, nil, nil, nil, nil)
+	beforeCtx := &fasthttp.RequestCtx{}
+	beforeCtx.SetUserValue("user", current)
+	ep := NewProfileEndpoints(userRepo, application.NewRepository(db), &mockEventService{})
+	patchCtx := &fasthttp.RequestCtx{}
+	patchCtx.Request.Header.SetMethod("PATCH")
+	patchCtx.Request.SetBody([]byte(`{"notifyMode":"chat"}`))
+	patchCtx.SetUserValue("user", current)
+
+	// when
+	userEndpoints.GetProfile(beforeCtx)
+	ep.UpdateProfile(patchCtx)
+	reloaded, err := userRepo.GetUserByPublicKey(pk)
+	require.NoError(t, err)
+	afterCtx := &fasthttp.RequestCtx{}
+	afterCtx.SetUserValue("user", reloaded)
+	userEndpoints.GetProfile(afterCtx)
+
+	// then
+	assert.Contains(t, string(beforeCtx.Response.Body()), `"notifyMode":"all"`)
+	assert.Equal(t, fasthttp.StatusOK, patchCtx.Response.StatusCode())
+	assert.Contains(t, string(afterCtx.Response.Body()), `"notifyMode":"chat"`)
+}
