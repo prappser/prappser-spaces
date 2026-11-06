@@ -667,6 +667,44 @@
           "k": 1
         }
       }
+    },
+    {
+      "name": "add writeback does not replace a non-object parent when the diff only deletes under it",
+      "kind": "writeback",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "add",
+                "path": "meta",
+                "default": {
+                  "k": 1
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "original": {
+        "v": 2,
+        "meta": 5
+      },
+      "reader": 1,
+      "view": {
+        "v": 1
+      },
+      "edited": {
+        "v": 1,
+        "meta": {}
+      },
+      "result": {
+        "v": 2,
+        "meta": 5
+      }
     }
   ]
 }

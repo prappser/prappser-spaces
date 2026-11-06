@@ -412,6 +412,31 @@
           "zz_unknown": 2
         }
       }
+    },
+    {
+      "name": "unwrap path starting with v is unsupported",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "unwrap",
+                "path": "v"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "a": 1
+      },
+      "to": 2,
+      "error": "unsupported"
     }
   ]
 }
