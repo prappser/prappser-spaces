@@ -7,18 +7,23 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"path"
 	"regexp"
+	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
+	"github.com/prappser/prappser-spaces/internal/component/lens"
+	"github.com/prappser/prappser-spaces/internal/schemabundle"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/santhosh-tekuri/jsonschema/v6/kind"
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
 )
 
-//go:embed schemas/component/*.schema.json schemas/template/*.schema.json
+//go:embed schemas/component/*.schema.json schemas/template/*.schema.json schemas/bundle.json
 var schemaFS embed.FS
 
 var (
@@ -27,8 +32,8 @@ var (
 )
 
 const (
-	commonSchemaFile = "common.v1.schema.json"
-	templateSchema   = "https://prappser.app/schemas/template/template-doc.v1.schema.json"
+	bundleFile     = "schemas/bundle.json"
+	templateSchema = "https://prappser.app/schemas/template/template-doc.v1.schema.json"
 )
 
 type FieldError struct {
@@ -97,9 +102,10 @@ type TypeInfo struct {
 }
 
 type rule struct {
-	re     *regexp.Regexp
-	merge  string
-	access Access
+	re      *regexp.Regexp
+	merge   string
+	access  Access
+	encoded bool
 }
 
 type rules struct {
@@ -117,7 +123,23 @@ type Validator struct {
 	content      map[[2]string]*jsonschema.Schema
 	raw          map[string][]byte
 	desc         map[string]string
+	versions     map[string]typeVersions
 }
+
+type typeVersions struct {
+	lo, current int
+	steps       any
+}
+
+type schemaFile struct {
+	file string
+	raw  []byte
+	doc  map[string]any
+	id   string
+	rs   rules
+}
+
+var schemaFileName = regexp.MustCompile(`^([a-z][a-z0-9-]*)\.v([1-9][0-9]*)\.schema\.json$`)
 
 type componentSchema struct {
 	name string
@@ -127,10 +149,10 @@ type componentSchema struct {
 var mergeModes = map[string]bool{"single": true, "per-entry": true, "per-member": true}
 
 func NewValidator() (*Validator, error) {
-	return newValidator(schemaFS)
+	return NewValidatorFS(schemaFS)
 }
 
-func newValidator(fsys fs.FS) (*Validator, error) {
+func NewValidatorFS(fsys fs.FS) (*Validator, error) {
 	v := &Validator{
 		compiler:     jsonschema.NewCompiler(),
 		components:   map[string]*jsonschema.Schema{},
@@ -139,11 +161,13 @@ func newValidator(fsys fs.FS) (*Validator, error) {
 		content:      map[[2]string]*jsonschema.Schema{},
 		raw:          map[string][]byte{},
 		desc:         map[string]string{},
+		versions:     map[string]typeVersions{},
 	}
 
 	v.compiler.UseLoader(denyLoader{})
 
 	var pending []componentSchema
+	found := map[string]map[int]schemaFile{}
 	for _, dir := range []string{"schemas/component", "schemas/template"} {
 		files, err := fs.Glob(fsys, dir+"/*.schema.json")
 		if err != nil {
@@ -170,19 +194,74 @@ func newValidator(fsys fs.FS) (*Validator, error) {
 			switch {
 			case dir == "schemas/template":
 				pending = append(pending, componentSchema{id: id})
-			case path.Base(file) != commonSchemaFile:
-				name := strings.TrimSuffix(path.Base(file), ".v1.schema.json")
-				name = strings.ToUpper(name[:1]) + name[1:]
+			default:
+				m := schemaFileName.FindStringSubmatch(path.Base(file))
+				if m == nil {
+					return nil, fmt.Errorf("invalid schema file name %s", file)
+				}
+				if m[1] == "common" {
+					continue
+				}
+				n, err := strconv.Atoi(m[2])
+				if err != nil {
+					return nil, fmt.Errorf("invalid schema file name %s: %w", file, err)
+				}
+				name := strings.ToUpper(m[1][:1]) + m[1][1:]
 				rs, err := parseRules(doc)
 				if err != nil {
 					return nil, fmt.Errorf("failed to read x-merge or x-access of %s: %w", file, err)
 				}
-				v.rules[name] = rs
-				v.raw[name] = raw
-				v.desc[name], _ = doc["description"].(string)
-				pending = append(pending, componentSchema{name: name, id: id})
+				if found[name] == nil {
+					found[name] = map[int]schemaFile{}
+				}
+				found[name][n] = schemaFile{file: file, raw: raw, doc: doc, id: id, rs: rs}
 			}
 		}
+	}
+
+	ranges, err := readBundleRanges(fsys)
+	if err != nil {
+		return nil, err
+	}
+	for name := range ranges {
+		if _, ok := found[name]; !ok {
+			return nil, fmt.Errorf("bundle lists %s but it has no schema file", name)
+		}
+	}
+	names := make([]string, 0, len(found))
+	for name := range found {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		byVersion := found[name]
+		r, ok := ranges[name]
+		if !ok {
+			return nil, fmt.Errorf("%s has schema files but is not listed in %s", name, bundleFile)
+		}
+		tv := typeVersions{lo: r.Min, current: r.Current}
+		if tv.lo < 1 || tv.lo > tv.current {
+			return nil, fmt.Errorf("invalid version range %d..%d of %s", tv.lo, tv.current, name)
+		}
+		for _, n := range slices.Sorted(maps.Keys(byVersion)) {
+			if n > tv.current {
+				return nil, fmt.Errorf("schema file %s is above current version %d of %s", byVersion[n].file, tv.current, name)
+			}
+		}
+		for n := tv.lo; n <= tv.current; n++ {
+			if _, ok := byVersion[n]; !ok {
+				return nil, fmt.Errorf("version %d of %s has no schema file", n, name)
+			}
+		}
+		cur := byVersion[tv.current]
+		if tv.steps, err = lens.Steps(cur.raw); err != nil {
+			return nil, fmt.Errorf("failed to read x-migrations of %s: %w", cur.file, err)
+		}
+		v.versions[name] = tv
+		v.rules[name] = cur.rs
+		v.raw[name] = cur.raw
+		v.desc[name], _ = cur.doc["description"].(string)
+		pending = append(pending, componentSchema{name: name, id: cur.id})
 	}
 
 	for _, c := range pending {
@@ -217,6 +296,23 @@ func newValidator(fsys fs.FS) (*Validator, error) {
 		return nil, errors.New("template doc schema not found")
 	}
 	return v, nil
+}
+
+func readBundleRanges(fsys fs.FS) (map[string]schemabundle.TypeRange, error) {
+	raw, err := fs.ReadFile(fsys, bundleFile)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, fmt.Errorf("%s is missing", bundleFile)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to read %s: %w", bundleFile, err)
+	}
+	var m struct {
+		Types map[string]schemabundle.TypeRange `json:"types"`
+	}
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return nil, fmt.Errorf("failed to parse %s: %w", bundleFile, err)
+	}
+	return m.Types, nil
 }
 
 func parseFlag(props map[string]any, name string) (*Flag, error) {
@@ -306,7 +402,7 @@ func parseRule(key string, entry any, props, defs map[string]any, pattern bool) 
 	if err != nil {
 		return rule{}, fmt.Errorf("%q: %w", key, err)
 	}
-	r := rule{access: acc}
+	r := rule{access: acc, encoded: m["contentMediaType"] == "application/json"}
 	if raw, ok := m["x-merge"]; ok {
 		mode, _ := raw.(string)
 		if !mergeModes[mode] {
@@ -481,4 +577,23 @@ func (v *Validator) MergeMode(componentType, key string) (string, bool) {
 func (v *Validator) Access(componentType, key string) (Access, bool) {
 	r, ok := v.resolve(componentType, key)
 	return r.access, ok
+}
+
+func (v *Validator) Versions(componentType string) (lo, cur int, ok bool) {
+	tv, ok := v.versions[componentType]
+	return tv.lo, tv.current, ok
+}
+
+// Steps returns the migration steps declared by the current schema file, an empty list when it has none.
+func (v *Validator) Steps(componentType string) any {
+	return v.versions[componentType].steps
+}
+
+// Entry reports whether key belongs to a per-entry family and, if so, whether its value is a JSON string (contentMediaType application/json) rather than an object.
+func (v *Validator) Entry(componentType, key string) (encoded, ok bool) {
+	r, found := v.resolve(componentType, key)
+	if !found || r.merge != "per-entry" {
+		return false, false
+	}
+	return r.encoded, true
 }

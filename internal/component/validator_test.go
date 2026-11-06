@@ -323,12 +323,13 @@ func TestValidateComponentData_ShouldReportFieldErrors(t *testing.T) {
 func TestNewValidator_ShouldRejectExternalRef(t *testing.T) {
 	// given
 	fsys := fstest.MapFS{
+		"schemas/bundle.json": {Data: []byte(`{"types":{}}`)},
 		"schemas/template/template-doc.v1.schema.json": {Data: []byte(
 			`{"$id":"` + templateSchema + `","$ref":"file:///etc/passwd"}`)},
 	}
 
 	// when
-	_, err := newValidator(fsys)
+	_, err := NewValidatorFS(fsys)
 
 	// then
 	assert.ErrorContains(t, err, "not allowed")
@@ -395,7 +396,7 @@ func accessFixture(component string) error {
 		"schemas/template/template-doc.v1.schema.json": {Data: []byte(`{"$id":"` + templateSchema + `"}`)},
 		"schemas/component/x.v1.schema.json":           {Data: []byte(component)},
 	}
-	_, err := newValidator(fsys)
+	_, err := NewValidatorFS(fsys)
 	return err
 }
 
@@ -423,11 +424,12 @@ func TestAccess_ShouldResolveUnless(t *testing.T) {
 	// given
 	fsys := fstest.MapFS{
 		"schemas/template/template-doc.v1.schema.json": {Data: []byte(`{"$id":"` + templateSchema + `"}`)},
+		"schemas/bundle.json":                          {Data: []byte(`{"types":{"X":{"min":1,"current":1}}}`)},
 		"schemas/component/x.v1.schema.json": {Data: []byte(`{"$id":"https://x/x.json","properties":{
 			"closed":{"type":"boolean","default":false,"x-access":"manage"}},
 			"patternProperties":{"^v_.+$":{"x-access":{"unless":"closed"}}}}`)},
 	}
-	v, err := newValidator(fsys)
+	v, err := NewValidatorFS(fsys)
 	require.NoError(t, err)
 
 	// when
@@ -515,4 +517,264 @@ func TestNewValidator_ShouldRejectPerMemberOnExactProperty(t *testing.T) {
 
 	// then
 	assert.ErrorContains(t, err, "per-member property")
+}
+
+func versionFixtureFS(files map[string]string) fstest.MapFS {
+	fsys := fstest.MapFS{
+		"schemas/template/template-doc.v1.schema.json": {Data: []byte(`{"$id":"` + templateSchema + `"}`)},
+	}
+	for name, data := range files {
+		fsys["schemas/"+name] = &fstest.MapFile{Data: []byte(data)}
+	}
+	return fsys
+}
+
+const (
+	xV1 = `{"$id":"https://x/x.v1.json","description":"one","properties":{"a":{"type":"string","x-merge":"single","x-access":"member"}}}`
+	xV2 = `{"$id":"https://x/x.v2.json","description":"two","x-migrations":[{"to":2}],"additionalProperties":false,"properties":{"b":{"type":"string","x-merge":"single","x-access":"manage"}}}`
+)
+
+func bundleCurrent2Fixture(t *testing.T) *Validator {
+	t.Helper()
+	v, err := NewValidatorFS(versionFixtureFS(map[string]string{
+		"component/x.v1.schema.json": xV1,
+		"component/x.v2.schema.json": xV2,
+		"bundle.json":                `{"bundle":1,"types":{"X":{"min":1,"current":2}}}`,
+	}))
+	require.NoError(t, err)
+	return v
+}
+
+func TestNewValidator_ShouldUseBundleCurrentForValidation(t *testing.T) {
+	// given
+	v := bundleCurrent2Fixture(t)
+
+	// when
+	raw, _ := v.Schema("X")
+	_, aOK := v.Access("X", "a")
+	b, bOK := v.Access("X", "b")
+	_, mergeOK := v.MergeMode("X", "b")
+
+	// then
+	assert.Contains(t, string(raw), "x.v2.json")
+	assert.False(t, aOK)
+	assert.True(t, bOK)
+	assert.Equal(t, AccessManage, b.Level)
+	assert.True(t, mergeOK)
+	assert.NoError(t, v.ValidateComponentData("X", map[string]any{"b": "s"}))
+	assert.Error(t, v.ValidateComponentData("X", map[string]any{"a": "s"}))
+}
+
+func TestVersions_ShouldReportBundleRange(t *testing.T) {
+	// given
+	v := bundleCurrent2Fixture(t)
+
+	// when
+	lo, cur, ok := v.Versions("X")
+
+	// then
+	assert.True(t, ok)
+	assert.Equal(t, 1, lo)
+	assert.Equal(t, 2, cur)
+}
+
+func TestSteps_ShouldReadCurrentFileMigrations(t *testing.T) {
+	// given
+	v := bundleCurrent2Fixture(t)
+
+	// when
+	steps := v.Steps("X")
+
+	// then
+	assert.Equal(t, []any{map[string]any{"to": json.Number("2")}}, steps)
+}
+
+func TestNewValidator_ShouldRejectMissingBundle(t *testing.T) {
+	// given
+	fsys := versionFixtureFS(map[string]string{"component/x.v1.schema.json": xV1})
+
+	// when
+	_, err := NewValidatorFS(fsys)
+
+	// then
+	assert.ErrorContains(t, err, "schemas/bundle.json is missing")
+}
+
+func TestNewValidator_ShouldRejectTypeNotInBundle(t *testing.T) {
+	// given
+	fsys := versionFixtureFS(map[string]string{
+		"component/x.v1.schema.json": xV1,
+		"component/y.v1.schema.json": `{"$id":"https://x/y.v1.json"}`,
+		"bundle.json":                `{"types":{"X":{"min":1,"current":1}}}`,
+	})
+
+	// when
+	_, err := NewValidatorFS(fsys)
+
+	// then
+	assert.ErrorContains(t, err, "Y has schema files but is not listed")
+}
+
+func TestNewValidator_ShouldRejectFileAboveBundleCurrent(t *testing.T) {
+	// given
+	fsys := versionFixtureFS(map[string]string{
+		"component/x.v1.schema.json": xV1,
+		"component/x.v2.schema.json": xV2,
+		"bundle.json":                `{"types":{"X":{"min":1,"current":1}}}`,
+	})
+
+	// when
+	_, err := NewValidatorFS(fsys)
+
+	// then
+	assert.ErrorContains(t, err, "x.v2.schema.json is above current version 1 of X")
+}
+
+func TestNewValidator_ShouldReportLowestFileAboveBundleCurrent(t *testing.T) {
+	// given
+	fsys := versionFixtureFS(map[string]string{
+		"component/x.v1.schema.json": xV1,
+		"component/x.v2.schema.json": xV2,
+		"component/x.v3.schema.json": strings.ReplaceAll(xV2, "x.v2", "x.v3"),
+		"component/x.v4.schema.json": strings.ReplaceAll(xV2, "x.v2", "x.v4"),
+		"bundle.json":                `{"types":{"X":{"min":1,"current":2}}}`,
+	})
+
+	// when
+	_, err := NewValidatorFS(fsys)
+
+	// then
+	assert.ErrorContains(t, err, "x.v3.schema.json is above current version 2 of X")
+}
+
+func TestNewValidator_ShouldRejectBundleCurrentWithoutFile(t *testing.T) {
+	// given
+	fsys := versionFixtureFS(map[string]string{
+		"component/x.v1.schema.json": xV1,
+		"bundle.json":                `{"bundle":1,"types":{"X":{"min":1,"current":2}}}`,
+	})
+
+	// when
+	_, err := NewValidatorFS(fsys)
+
+	// then
+	assert.ErrorContains(t, err, "version 2 of X has no schema file")
+}
+
+func TestNewValidator_ShouldRejectMalformedSchemaFileName(t *testing.T) {
+	for _, name := range []string{"x.schema.json", "x.v0.schema.json", "X.v1.schema.json", "x.v01.schema.json", "x.v99999999999999999999.schema.json"} {
+		// given
+		fsys := versionFixtureFS(map[string]string{"component/" + name: xV1})
+
+		// when
+		_, err := NewValidatorFS(fsys)
+
+		// then
+		assert.ErrorContains(t, err, "invalid schema file name", name)
+	}
+}
+
+func TestSteps_ShouldComeFromCurrentFile(t *testing.T) {
+	// given
+	fsys := versionFixtureFS(map[string]string{
+		"component/x.v1.schema.json": xV1,
+		"component/x.v2.schema.json": xV2,
+		"component/y.v1.schema.json": `{"$id":"https://x/y.v1.json","x-migrations":[{"to":9}]}`,
+		"component/y.v2.schema.json": `{"$id":"https://x/y.v2.json"}`,
+		"bundle.json":                `{"types":{"X":{"min":1,"current":2},"Y":{"min":1,"current":2}}}`,
+	})
+	v, err := NewValidatorFS(fsys)
+	require.NoError(t, err)
+
+	// when
+	x := v.Steps("X")
+	y := v.Steps("Y")
+
+	// then
+	assert.Len(t, x, 1)
+	assert.Equal(t, []any{}, y)
+}
+
+func TestEntry_ShouldReportPerEntryFamilyAndEncoding(t *testing.T) {
+	// given
+	v, err := NewValidator()
+	require.NoError(t, err)
+	id := msgID
+
+	// when
+	chatEnc, chatOK := v.Entry("Chat", "m_"+id)
+	expEnc, expOK := v.Entry("Expenses", "e_"+id)
+	setEnc, setOK := v.Entry("Expenses", "s_"+id)
+	itemEnc, itemOK := v.Entry("Checklist", "item_i1")
+	_, voteOK := v.Entry("Poll", "vote_pk")
+	_, itemsOK := v.Entry("Checklist", "items")
+	_, titleOK := v.Entry("Chat", "_title")
+	_, unknownOK := v.Entry("Chat", "nope")
+
+	// then
+	assert.True(t, chatOK)
+	assert.True(t, chatEnc)
+	assert.True(t, expOK)
+	assert.True(t, expEnc)
+	assert.True(t, setOK)
+	assert.True(t, setEnc)
+	assert.True(t, itemOK)
+	assert.False(t, itemEnc)
+	assert.False(t, voteOK)
+	assert.False(t, itemsOK)
+	assert.False(t, titleOK)
+	assert.False(t, unknownOK)
+}
+
+func TestVersions_ShouldReadEmbeddedBundle(t *testing.T) {
+	// given
+	v, err := NewValidator()
+	require.NoError(t, err)
+
+	// when
+	types := v.Types()
+
+	// then
+	require.NotEmpty(t, types)
+	for _, ti := range types {
+		lo, cur, ok := v.Versions(ti.Type)
+		assert.True(t, ok, ti.Type)
+		assert.Equal(t, 1, lo, ti.Type)
+		assert.Equal(t, 1, cur, ti.Type)
+	}
+	_, _, ok := v.Versions("Nope")
+	assert.False(t, ok)
+}
+
+func TestNewValidator_ShouldRejectInvalidBundleRanges(t *testing.T) {
+	cases := map[string]struct {
+		files map[string]string
+		want  string
+	}{
+		"min zero": {map[string]string{
+			"component/x.v1.schema.json": xV1,
+			"bundle.json":                `{"types":{"X":{"min":0,"current":1}}}`,
+		}, "invalid version range 0..1 of X"},
+		"min above current": {map[string]string{
+			"component/x.v1.schema.json": xV1,
+			"component/x.v2.schema.json": xV2,
+			"bundle.json":                `{"types":{"X":{"min":2,"current":1}}}`,
+		}, "invalid version range 2..1 of X"},
+		"gap in range": {map[string]string{
+			"component/x.v1.schema.json": xV1,
+			"component/x.v3.schema.json": `{"$id":"https://x/x.v3.json"}`,
+			"bundle.json":                `{"types":{"X":{"min":1,"current":3}}}`,
+		}, "version 2 of X has no schema file"},
+		"type without file": {map[string]string{
+			"component/x.v1.schema.json": xV1,
+			"bundle.json":                `{"types":{"Y":{"min":1,"current":1}}}`,
+		}, "bundle lists Y but it has no schema file"},
+	}
+	for name, c := range cases {
+		// when
+		_, err := NewValidatorFS(versionFixtureFS(c.files))
+
+		// then
+		assert.ErrorContains(t, err, c.want, name)
+	}
 }
