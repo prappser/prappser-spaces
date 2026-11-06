@@ -566,7 +566,7 @@
       }
     },
     {
-      "name": "move writeback, older client removes a moved field and the emptied parent is pruned",
+      "name": "move writeback, older client removes a moved field and the diff deletes the whole parent member",
       "kind": "writeback",
       "steps": [
         {
@@ -714,6 +714,32 @@
         }
       },
       "lossy": false
+    },
+    {
+      "name": "move from a path starting with v is unsupported",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "move",
+                "from": "v",
+                "to": "a"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "b": 1
+      },
+      "to": 2,
+      "error": "unsupported"
     }
   ]
 }

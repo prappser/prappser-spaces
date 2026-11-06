@@ -1238,6 +1238,77 @@
         "priority": null
       },
       "lossy": true
+    },
+    {
+      "name": "map with fallback, absent field down is a no-op",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "map",
+                "path": "priority",
+                "pairs": [
+                  [
+                    "low",
+                    "l"
+                  ],
+                  [
+                    "high",
+                    "h"
+                  ]
+                ],
+                "fallback": "low"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 2,
+        "title": "Milk"
+      },
+      "to": 1,
+      "out": {
+        "v": 1,
+        "title": "Milk"
+      },
+      "lossy": true
+    },
+    {
+      "name": "map path starting with v is unsupported",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "map",
+                "path": "v",
+                "pairs": [
+                  [
+                    1,
+                    2
+                  ]
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "a": 1
+      },
+      "to": 2,
+      "error": "unsupported"
     }
   ]
 }

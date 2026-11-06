@@ -4318,6 +4318,363 @@
         }
       ],
       "expect": "read-only"
+    },
+    {
+      "name": "an unknown member on a crossed step is unsupported",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          },
+          "zz": 1
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "done": true
+      },
+      "to": 2,
+      "error": "unsupported"
+    },
+    {
+      "name": "a crossed step with to 2.5 is unsupported",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2.5,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "done": true
+      },
+      "to": 2,
+      "error": "unsupported"
+    },
+    {
+      "name": "a crossed step with to \"2\" is unsupported",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": "2",
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "done": true
+      },
+      "to": 2,
+      "error": "unsupported"
+    },
+    {
+      "name": "a crossed step with to true is unsupported",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": true,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "done": true
+      },
+      "to": 2,
+      "error": "unsupported"
+    },
+    {
+      "name": "bad version true",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": true,
+        "done": true
+      },
+      "to": 2,
+      "error": "bad-version"
+    },
+    {
+      "name": "bad version above 2^53-1",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 9007199254740992,
+        "done": true
+      },
+      "to": 2,
+      "error": "bad-version"
+    },
+    {
+      "name": "down: breaking at step e wins over unsupported at step e-1",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "bogus",
+                "path": "x"
+              }
+            ]
+          }
+        },
+        {
+          "to": 3,
+          "breaking": true,
+          "entries": {
+            "^item_.+$": []
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 3,
+        "text": "Mleko"
+      },
+      "to": 1,
+      "error": "breaking"
+    },
+    {
+      "name": "a step with to above 2^53-1 is malformed, so no match is unsupported",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 9007199254740992,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "done": true
+      },
+      "to": 2,
+      "error": "unsupported"
+    },
+    {
+      "name": "a step with to 1 is never found, missing-step",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 1,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "done": true
+      },
+      "to": 2,
+      "error": "missing-step"
+    },
+    {
+      "name": "a step with to 0 is never found, missing-step",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 0,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "done": true
+      },
+      "to": 2,
+      "error": "missing-step"
+    },
+    {
+      "name": "entry v 2.0 migrates like v 2",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 2.0,
+        "checked": true
+      },
+      "to": 1,
+      "out": {
+        "v": 1,
+        "done": true
+      },
+      "lossy": false,
+      "note": "integral float: numbers are judged by value"
+    },
+    {
+      "name": "a step with to 2.0 is found as step 2",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2.0,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "rename",
+                "from": "done",
+                "to": "checked"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "done": true
+      },
+      "to": 2,
+      "out": {
+        "v": 2,
+        "checked": true
+      },
+      "lossy": false,
+      "note": "integral float: numbers are judged by value"
+    },
+    {
+      "name": "steps null on a crossed walk is unsupported",
+      "kind": "migrate",
+      "steps": null,
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "done": true
+      },
+      "to": 2,
+      "error": "unsupported"
+    },
+    {
+      "name": "steps null is never read when v equals the target",
+      "kind": "migrate",
+      "steps": null,
+      "key": "item_a",
+      "in": {
+        "v": 2,
+        "done": true
+      },
+      "to": 2,
+      "out": {
+        "v": 2,
+        "done": true
+      },
+      "lossy": false
     }
   ]
 }

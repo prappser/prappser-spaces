@@ -528,6 +528,31 @@
       },
       "to": 2,
       "error": "unsupported"
+    },
+    {
+      "name": "wrap path starting with v is unsupported",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^item_.+$": [
+              {
+                "op": "wrap",
+                "path": "v"
+              }
+            ]
+          }
+        }
+      ],
+      "key": "item_a",
+      "in": {
+        "v": 1,
+        "a": 1
+      },
+      "to": 2,
+      "error": "unsupported"
     }
   ]
 }
