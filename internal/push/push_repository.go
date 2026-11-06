@@ -62,11 +62,6 @@ func (r *pushRepository) GetSpaceVapid() (*SpaceVapid, error) {
 // CreateSubscription persists a new push subscription.
 // The caller is responsible for setting s.ID before calling (use google/uuid).
 func (r *pushRepository) CreateSubscription(s *Subscription) error {
-	categoriesJSON, err := json.Marshal(s.Categories)
-	if err != nil {
-		return fmt.Errorf("failed to marshal categories: %w", err)
-	}
-
 	mutedJSON, err := json.Marshal(s.MutedApplicationIDs)
 	if err != nil {
 		return fmt.Errorf("failed to marshal muted_application_ids: %w", err)
@@ -74,8 +69,8 @@ func (r *pushRepository) CreateSubscription(s *Subscription) error {
 
 	query := `
 		INSERT INTO push_subscriptions
-		  (id, device_public_key, endpoint, p256dh, auth, device_label, categories, muted_application_ids, created_at, last_success_at, failure_count)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`
+		  (id, device_public_key, endpoint, p256dh, auth, device_label, muted_application_ids, created_at, last_success_at, failure_count)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`
 
 	_, err = r.db.Exec(query,
 		s.ID,
@@ -84,7 +79,6 @@ func (r *pushRepository) CreateSubscription(s *Subscription) error {
 		s.P256dh,
 		s.Auth,
 		s.DeviceLabel,
-		string(categoriesJSON),
 		string(mutedJSON),
 		s.CreatedAt,
 		s.LastSuccessAt,
@@ -99,11 +93,6 @@ func (r *pushRepository) CreateSubscription(s *Subscription) error {
 // UpdateSubscription updates mutable fields of a subscription.
 // The WHERE clause includes device_public_key as an ownership guard.
 func (r *pushRepository) UpdateSubscription(s *Subscription) error {
-	categoriesJSON, err := json.Marshal(s.Categories)
-	if err != nil {
-		return fmt.Errorf("failed to marshal categories: %w", err)
-	}
-
 	mutedJSON, err := json.Marshal(s.MutedApplicationIDs)
 	if err != nil {
 		return fmt.Errorf("failed to marshal muted_application_ids: %w", err)
@@ -114,15 +103,13 @@ func (r *pushRepository) UpdateSubscription(s *Subscription) error {
 		SET endpoint              = $1,
 		    p256dh                = $2,
 		    auth                  = $3,
-		    categories            = $4,
-		    muted_application_ids = $5
-		WHERE id = $6 AND device_public_key = $7`
+		    muted_application_ids = $4
+		WHERE id = $5 AND device_public_key = $6`
 
 	result, err := r.db.Exec(query,
 		s.Endpoint,
 		s.P256dh,
 		s.Auth,
-		string(categoriesJSON),
 		string(mutedJSON),
 		s.ID,
 		s.DevicePublicKey,
@@ -178,7 +165,7 @@ func (r *pushRepository) GetSubscriptionsForUsers(userPublicKeys []string) ([]*S
 
 	query := fmt.Sprintf(`
 		SELECT ps.id, ps.device_public_key, ps.endpoint, ps.p256dh, ps.auth, ps.device_label,
-		       ps.categories, ps.muted_application_ids, ps.created_at, ps.last_success_at, ps.failure_count, u.locale
+		       ps.muted_application_ids, ps.created_at, ps.last_success_at, ps.failure_count, u.locale, u.notify_mode
 		FROM push_subscriptions ps
 		JOIN user_devices ud ON ud.device_public_key = ps.device_public_key
 		JOIN users u ON u.public_key = ud.user_public_key
@@ -193,7 +180,6 @@ func (r *pushRepository) GetSubscriptionsForUsers(userPublicKeys []string) ([]*S
 	var subs []*Subscription
 	for rows.Next() {
 		s := &Subscription{}
-		var categoriesJSON string
 		var mutedJSON string
 		var deviceLabel sql.NullString
 		var lastSuccessAt sql.NullInt64
@@ -205,12 +191,12 @@ func (r *pushRepository) GetSubscriptionsForUsers(userPublicKeys []string) ([]*S
 			&s.P256dh,
 			&s.Auth,
 			&deviceLabel,
-			&categoriesJSON,
 			&mutedJSON,
 			&s.CreatedAt,
 			&lastSuccessAt,
 			&s.FailureCount,
 			&s.Locale,
+			&s.NotifyMode,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan subscription: %w", err)
@@ -221,10 +207,6 @@ func (r *pushRepository) GetSubscriptionsForUsers(userPublicKeys []string) ([]*S
 		}
 		if lastSuccessAt.Valid {
 			s.LastSuccessAt = &lastSuccessAt.Int64
-		}
-
-		if err := json.Unmarshal([]byte(categoriesJSON), &s.Categories); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal categories: %w", err)
 		}
 
 		if err := json.Unmarshal([]byte(mutedJSON), &s.MutedApplicationIDs); err != nil {
@@ -249,12 +231,11 @@ func (r *pushRepository) GetSubscriptionsForUsers(userPublicKeys []string) ([]*S
 func (r *pushRepository) GetSubscriptionByID(id, devicePublicKey string) (*Subscription, error) {
 	query := `
 		SELECT id, device_public_key, endpoint, p256dh, auth, device_label,
-		       categories, muted_application_ids, created_at, last_success_at, failure_count
+		       muted_application_ids, created_at, last_success_at, failure_count
 		FROM push_subscriptions
 		WHERE id = $1 AND device_public_key = $2`
 
 	s := &Subscription{}
-	var categoriesJSON string
 	var mutedJSON string
 	var deviceLabel sql.NullString
 	var lastSuccessAt sql.NullInt64
@@ -266,7 +247,6 @@ func (r *pushRepository) GetSubscriptionByID(id, devicePublicKey string) (*Subsc
 		&s.P256dh,
 		&s.Auth,
 		&deviceLabel,
-		&categoriesJSON,
 		&mutedJSON,
 		&s.CreatedAt,
 		&lastSuccessAt,
@@ -284,10 +264,6 @@ func (r *pushRepository) GetSubscriptionByID(id, devicePublicKey string) (*Subsc
 	}
 	if lastSuccessAt.Valid {
 		s.LastSuccessAt = &lastSuccessAt.Int64
-	}
-
-	if err := json.Unmarshal([]byte(categoriesJSON), &s.Categories); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal categories: %w", err)
 	}
 
 	if err := json.Unmarshal([]byte(mutedJSON), &s.MutedApplicationIDs); err != nil {

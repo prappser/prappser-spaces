@@ -1,0 +1,2 @@
+ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_mode TEXT NOT NULL DEFAULT 'all';
+ALTER TABLE push_subscriptions DROP COLUMN IF EXISTS categories;

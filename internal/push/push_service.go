@@ -51,7 +51,8 @@ type rendered struct {
 
 func (s *PushService) fanout(ev *event.Event, app *application.Application, creatorDisplayName string, agent bool, recipientPublicKeys []string) {
 	// An event without a rule never reaches the subscription query.
-	if _, ok := s.describe(ev, app, creatorDisplayName, agent, "en"); !ok {
+	en, ok := s.describe(ev, app, creatorDisplayName, agent, "en")
+	if !ok {
 		log.Debug().
 			Str("eventId", ev.ID).
 			Str("type", string(ev.Type)).
@@ -77,6 +78,9 @@ func (s *PushService) fanout(ev *event.Event, app *application.Application, crea
 	byLang := map[string]rendered{}
 	for _, sub := range subs {
 		if ev.ApplicationID != "" && slices.Contains(sub.MutedApplicationIDs, ev.ApplicationID) {
+			continue
+		}
+		if !en.kind.sendsIn(sub.NotifyMode) {
 			continue
 		}
 

@@ -17,6 +17,7 @@ type mockUserRepo struct {
 	users             map[string]*user.User
 	updateUsernameErr error
 	localeCalls       []string
+	notifyModeCalls   []string
 	updateCalls       []struct {
 		publicKey string
 		username  string
@@ -58,6 +59,16 @@ func (m *mockUserRepo) UpdateLocale(publicKey, locale string) error {
 		return fmt.Errorf("user not found")
 	}
 	u.Locale = locale
+	return nil
+}
+
+func (m *mockUserRepo) UpdateNotifyMode(publicKey, mode string) error {
+	m.notifyModeCalls = append(m.notifyModeCalls, mode)
+	u, ok := m.users[publicKey]
+	if !ok {
+		return fmt.Errorf("user not found")
+	}
+	u.NotifyMode = mode
 	return nil
 }
 
@@ -175,6 +186,23 @@ func TestUpdateProfile_ShouldReturn409WhenUsernameTakenForPasswordLogin(t *testi
 
 	// then
 	assert.Equal(t, fasthttp.StatusConflict, ctx.Response.StatusCode())
+}
+
+func TestUpdateProfile_ShouldNotChangeNotifyModeWhenUsernameTaken(t *testing.T) {
+	// given
+	repo := newMockUserRepo()
+	repo.updateUsernameErr = user.ErrUsernameTaken
+	repo.users["pk-1"] = &user.User{PublicKey: "pk-1", Username: "OldName"}
+	ep := NewProfileEndpoints(repo, &mockAppLister{}, &mockEventService{})
+	ctx := newTestRequestCtx("PATCH", `{"displayName":"TakenName","notifyMode":"chat"}`)
+	setAuthUser(ctx, &user.User{PublicKey: "pk-1", Username: "OldName"})
+
+	// when
+	ep.UpdateProfile(ctx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusConflict, ctx.Response.StatusCode())
+	assert.Empty(t, repo.notifyModeCalls)
 }
 
 // TestUpdateProfile_ShouldPersistTrimmedNameAndReturnUpdatedUser also
@@ -341,6 +369,7 @@ func TestUpdateProfile_ShouldReturn400WhenBothFieldsAbsent(t *testing.T) {
 	assert.Equal(t, fasthttp.StatusBadRequest, ctx.Response.StatusCode())
 	assert.Empty(t, repo.updateCalls)
 	assert.Empty(t, repo.localeCalls)
+	assert.Empty(t, repo.notifyModeCalls)
 }
 
 func TestUpdateProfile_ShouldUpdateNameAndLocaleTogether(t *testing.T) {
@@ -371,4 +400,67 @@ func TestUpdateProfile_ShouldNotWriteWhenLocaleUnchanged(t *testing.T) {
 	// then
 	assert.Equal(t, fasthttp.StatusOK, ctx.Response.StatusCode())
 	assert.Empty(t, repo.localeCalls)
+}
+
+func TestUpdateProfile_ShouldUpdateNotifyModeOnlyWithoutFanOut(t *testing.T) {
+	// when
+	ctx, repo, events := patchLocale(t, `{"notifyMode":"chat"}`, &user.User{PublicKey: "pk-1", Username: "Alice", NotifyMode: user.NotifyModeAll})
+
+	// then
+	assert.Equal(t, fasthttp.StatusOK, ctx.Response.StatusCode())
+	assert.Equal(t, []string{"chat"}, repo.notifyModeCalls)
+	assert.Empty(t, repo.localeCalls)
+	assert.Empty(t, repo.updateCalls)
+	assert.Empty(t, events.produced)
+	assert.Contains(t, string(ctx.Response.Body()), `"notifyMode":"chat"`)
+}
+
+func TestUpdateProfile_ShouldReturn400WhenNotifyModeInvalid(t *testing.T) {
+	for _, raw := range []string{`""`, `"Chat"`, `"ALL"`, `"none"`, `1`, `true`, `["chat"]`, `{}`} {
+		// when
+		ctx, repo, _ := patchLocale(t, `{"notifyMode":`+raw+`}`, &user.User{PublicKey: "pk-1", Username: "Alice"})
+
+		// then
+		assert.Equal(t, fasthttp.StatusBadRequest, ctx.Response.StatusCode(), raw)
+		assert.Empty(t, repo.notifyModeCalls, raw)
+	}
+}
+
+func TestUpdateProfile_ShouldReturn400WhenNotifyModeIsNullAlone(t *testing.T) {
+	// when
+	ctx, repo, _ := patchLocale(t, `{"notifyMode":null}`, &user.User{PublicKey: "pk-1", Username: "Alice"})
+
+	// then
+	assert.Equal(t, fasthttp.StatusBadRequest, ctx.Response.StatusCode())
+	assert.Empty(t, repo.notifyModeCalls)
+}
+
+func TestUpdateProfile_ShouldNotWriteWhenNotifyModeInvalidAlongsideValidName(t *testing.T) {
+	// when
+	ctx, repo, events := patchLocale(t, `{"displayName":"Bob","notifyMode":"x"}`, &user.User{PublicKey: "pk-1", Username: "Alice"})
+
+	// then
+	assert.Equal(t, fasthttp.StatusBadRequest, ctx.Response.StatusCode())
+	assert.Empty(t, repo.updateCalls)
+	assert.Empty(t, repo.notifyModeCalls)
+	assert.Empty(t, events.produced)
+}
+
+func TestUpdateProfile_ShouldLeaveNotifyModeUnchangedWhenKeyMissing(t *testing.T) {
+	// when
+	ctx, repo, _ := patchLocale(t, `{"locale":"pl"}`, &user.User{PublicKey: "pk-1", Username: "Alice", NotifyMode: user.NotifyModeChat})
+
+	// then
+	assert.Equal(t, fasthttp.StatusOK, ctx.Response.StatusCode())
+	assert.Empty(t, repo.notifyModeCalls)
+	assert.Contains(t, string(ctx.Response.Body()), `"notifyMode":"chat"`)
+}
+
+func TestUpdateProfile_ShouldNotWriteWhenNotifyModeUnchanged(t *testing.T) {
+	// when
+	ctx, repo, _ := patchLocale(t, `{"notifyMode":"chat"}`, &user.User{PublicKey: "pk-1", Username: "Alice", NotifyMode: user.NotifyModeChat})
+
+	// then
+	assert.Equal(t, fasthttp.StatusOK, ctx.Response.StatusCode())
+	assert.Empty(t, repo.notifyModeCalls)
 }

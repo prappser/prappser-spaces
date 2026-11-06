@@ -134,7 +134,6 @@ func TestPushRepository_CreateAndGetSubscription_Integration(t *testing.T) {
 		P256dh:              "p256dh-value",
 		Auth:                "auth-value",
 		DeviceLabel:         &label,
-		Categories:          Categories{Member: true, Edit: false},
 		MutedApplicationIDs: []string{"muted-app-1"},
 		CreatedAt:           time.Now().Unix(),
 	}
@@ -149,8 +148,6 @@ func TestPushRepository_CreateAndGetSubscription_Integration(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Len(t, subs, 1)
 	assert.Equal(t, "sub-integration-1", subs[0].ID)
-	assert.True(t, subs[0].Categories.Member)
-	assert.False(t, subs[0].Categories.Edit)
 	assert.NotNil(t, subs[0].DeviceLabel)
 	assert.Equal(t, "My Device", *subs[0].DeviceLabel)
 	assert.Equal(t, []string{"muted-app-1"}, subs[0].MutedApplicationIDs)
@@ -168,7 +165,6 @@ func TestPushRepository_UpdateSubscription_Integration(t *testing.T) {
 		Endpoint:            "https://push.example.com/integration-2",
 		P256dh:              "p256dh-old",
 		Auth:                "auth-old",
-		Categories:          Categories{Member: false, Edit: false},
 		MutedApplicationIDs: []string{},
 		CreatedAt:           time.Now().Unix(),
 	}
@@ -176,7 +172,6 @@ func TestPushRepository_UpdateSubscription_Integration(t *testing.T) {
 
 	// when: update
 	sub.P256dh = "p256dh-new"
-	sub.Categories = Categories{Member: true, Edit: true}
 	sub.MutedApplicationIDs = []string{"muted-app-2"}
 	err := repo.UpdateSubscription(sub)
 
@@ -186,8 +181,6 @@ func TestPushRepository_UpdateSubscription_Integration(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Len(t, subs, 1)
 	assert.Equal(t, "p256dh-new", subs[0].P256dh)
-	assert.True(t, subs[0].Categories.Member)
-	assert.True(t, subs[0].Categories.Edit)
 	assert.Equal(t, []string{"muted-app-2"}, subs[0].MutedApplicationIDs)
 }
 
@@ -203,7 +196,6 @@ func TestPushRepository_DeleteSubscription_Integration(t *testing.T) {
 		Endpoint:            "https://push.example.com/integration-3",
 		P256dh:              "p256dh",
 		Auth:                "auth",
-		Categories:          Categories{},
 		MutedApplicationIDs: []string{},
 		CreatedAt:           time.Now().Unix(),
 	}
@@ -231,7 +223,6 @@ func TestPushRepository_MarkSuccessAndIncrementFailure_Integration(t *testing.T)
 		Endpoint:            "https://push.example.com/integration-4",
 		P256dh:              "p256dh",
 		Auth:                "auth",
-		Categories:          Categories{},
 		MutedApplicationIDs: []string{},
 		CreatedAt:           time.Now().Unix(),
 	}
@@ -339,4 +330,72 @@ func TestPushRepository_GetSubscriptionsForUsers_ShouldIncludeAccountLocale_Inte
 	if assert.NotNil(t, got) {
 		assert.Equal(t, "pl", got.Locale)
 	}
+}
+
+func TestPushRepository_GetSubscriptionsForUsers_ShouldIncludeAccountNotifyMode_Integration(t *testing.T) {
+	// given
+	db := getTestDB(t)
+	defer db.Close()
+	repo := NewPushRepository(db)
+	if _, err := db.Exec("UPDATE users SET notify_mode = 'all' WHERE public_key = $1", "test-user-1"); err != nil {
+		t.Fatalf("Failed to reset notify_mode: %v", err)
+	}
+	sub := &Subscription{
+		ID:                  "sub-notify-mode",
+		DevicePublicKey:     "test-user-1",
+		Endpoint:            "https://push.example.com/notify-mode",
+		P256dh:              "p",
+		Auth:                "a",
+		MutedApplicationIDs: []string{},
+		CreatedAt:           time.Now().Unix(),
+	}
+	if err := repo.CreateSubscription(sub); err != nil {
+		t.Fatalf("Failed to create subscription: %v", err)
+	}
+	find := func() *Subscription {
+		subs, err := repo.GetSubscriptionsForUsers([]string{"test-user-1"})
+		assert.NoError(t, err)
+		for _, s := range subs {
+			if s.ID == "sub-notify-mode" {
+				return s
+			}
+		}
+		return nil
+	}
+
+	// when
+	before := find()
+	if _, err := db.Exec("UPDATE users SET notify_mode = 'chat' WHERE public_key = $1", "test-user-1"); err != nil {
+		t.Fatalf("Failed to set notify_mode: %v", err)
+	}
+	after := find()
+
+	// then
+	if assert.NotNil(t, before) {
+		assert.Equal(t, "all", before.NotifyMode)
+	}
+	if assert.NotNil(t, after) {
+		assert.Equal(t, "chat", after.NotifyMode)
+	}
+}
+
+func TestMigration_ShouldDropCategoriesAndDefaultNotifyModeToAll_Integration(t *testing.T) {
+	// given
+	db := getTestDB(t)
+	defer db.Close()
+	if _, err := db.Exec("INSERT INTO users (public_key, username, role, created_at) VALUES ('migration-user', 'migration-user', 'user', 1) ON CONFLICT DO NOTHING"); err != nil {
+		t.Fatalf("Failed to insert user: %v", err)
+	}
+
+	// when
+	var columns int
+	err := db.QueryRow(`SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'push_subscriptions' AND column_name = 'categories'`).Scan(&columns)
+	var mode string
+	modeErr := db.QueryRow("SELECT notify_mode FROM users WHERE public_key = 'migration-user'").Scan(&mode)
+
+	// then
+	assert.NoError(t, err)
+	assert.Equal(t, 0, columns)
+	assert.NoError(t, modeErr)
+	assert.Equal(t, "all", mode)
 }

@@ -2,6 +2,8 @@ package push
 
 import (
 	webpush "github.com/SherClockHolmes/webpush-go"
+
+	"github.com/prappser/prappser-spaces/internal/user"
 )
 
 type Kind string
@@ -32,27 +34,8 @@ type SpaceVapid struct {
 	UpdatedAt       int64
 }
 
-// Categories controls which buckets of events trigger a push for a subscription.
-// Unknown keys are treated as false (forward-compatible).
-type Categories struct {
-	Member   bool `json:"member"`
-	Edit     bool `json:"edit"`
-	Reminder bool `json:"reminder"`
-}
-
-// Has returns true if the named category is enabled.
-// Unknown names always return false.
-func (c Categories) Has(name string) bool {
-	switch name {
-	case "member":
-		return c.Member
-	case "edit":
-		return c.Edit
-	case "reminder":
-		return c.Reminder
-	default:
-		return false
-	}
+func (k Kind) sendsIn(mode string) bool {
+	return mode != user.NotifyModeChat || k == KindChat || k == KindReminder || k == KindRole
 }
 
 // Subscription represents a browser PushSubscription registered by a device.
@@ -63,13 +46,14 @@ type Subscription struct {
 	P256dh              string
 	Auth                string
 	DeviceLabel         *string
-	Categories          Categories
 	MutedApplicationIDs []string
 	CreatedAt           int64
 	LastSuccessAt       *int64
 	FailureCount        int
 	// Locale is the owning account's language, filled only by GetSubscriptionsForUsers.
 	Locale string
+	// NotifyMode is the owning account's notify mode, filled only by GetSubscriptionsForUsers.
+	NotifyMode string
 }
 
 // SendResult is the outcome of a single web push delivery attempt.

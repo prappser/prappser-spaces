@@ -25,6 +25,9 @@ const (
 	RoleOwner = "owner"
 	RoleUser  = "user"
 	RoleGuest = "guest"
+
+	NotifyModeAll  = "all"
+	NotifyModeChat = "chat"
 )
 
 type User struct {
@@ -35,6 +38,7 @@ type User struct {
 	CreatedAt       int64   `json:"createdAt"`
 	AvatarStorageID *string `json:"avatarStorageId,omitempty"`
 	Locale          string  `json:"locale"`
+	NotifyMode      string  `json:"notifyMode"`
 	BindingIat      int64   `json:"-"`
 	BindingSub      string  `json:"-"`
 	StoredBinding   string  `json:"-"`
@@ -102,6 +106,7 @@ type UserRepository interface {
 	// unique index) - non-password accounts may freely share a username.
 	UpdateUsername(publicKey, username string) error
 	UpdateLocale(publicKey, locale string) error
+	UpdateNotifyMode(publicKey, mode string) error
 	AcceptBinding(publicKey, binding string, iat int64, sub, ownKey string) (storedBinding, storedSub string, updated bool, err error)
 	// EnsureDevice registers a device for an account if it doesn't already exist (no-op otherwise).
 	EnsureDevice(devicePublicKey, userPublicKey string, deviceName *string, createdAt int64) error

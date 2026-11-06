@@ -41,8 +41,8 @@ func (e *ProfileEndpoints) UpdateProfile(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	if req.DisplayName == nil && req.Locale == nil {
-		ctx.Error("displayName or locale required", fasthttp.StatusBadRequest)
+	if req.DisplayName == nil && req.Locale == nil && req.NotifyMode == nil {
+		ctx.Error("displayName, locale or notifyMode required", fasthttp.StatusBadRequest)
 		return
 	}
 
@@ -62,10 +62,17 @@ func (e *ProfileEndpoints) UpdateProfile(ctx *fasthttp.RequestCtx) {
 		}
 	}
 
+	if req.NotifyMode != nil && *req.NotifyMode != user.NotifyModeAll && *req.NotifyMode != user.NotifyModeChat {
+		ctx.Error("notifyMode must be all or chat", fasthttp.StatusBadRequest)
+		return
+	}
+
 	nameChanged := req.DisplayName != nil && displayName != authenticatedUser.Username
 	localeChanged := req.Locale != nil && locale != authenticatedUser.Locale
 
-	if !nameChanged && !localeChanged {
+	modeChanged := req.NotifyMode != nil && *req.NotifyMode != authenticatedUser.NotifyMode
+
+	if !nameChanged && !localeChanged && !modeChanged {
 		ctx.SetStatusCode(fasthttp.StatusOK)
 		ctx.SetContentType("application/json")
 		json.NewEncoder(ctx).Encode(authenticatedUser)
@@ -92,6 +99,14 @@ func (e *ProfileEndpoints) UpdateProfile(ctx *fasthttp.RequestCtx) {
 			return
 		}
 	}
+	if modeChanged {
+		if err := e.userRepo.UpdateNotifyMode(publicKey, *req.NotifyMode); err != nil {
+			log.Error().Err(err).Str("publicKey", publicKey).Msg("[PROFILE] Failed to update notify mode")
+			ctx.Error("Failed to update profile", fasthttp.StatusInternalServerError)
+			return
+		}
+	}
+
 	updatedUser, err := e.userRepo.GetUserByPublicKey(publicKey)
 	if err != nil || updatedUser == nil {
 		log.Error().Err(err).Str("publicKey", publicKey).Msg("[PROFILE] Failed to reload user after update")
