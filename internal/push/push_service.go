@@ -9,6 +9,7 @@ import (
 
 	webpush "github.com/SherClockHolmes/webpush-go"
 	"github.com/prappser/prappser-spaces/internal/application"
+	"github.com/prappser/prappser-spaces/internal/component"
 	"github.com/prappser/prappser-spaces/internal/event"
 	"github.com/rs/zerolog/log"
 )
@@ -18,11 +19,11 @@ type PushService struct {
 	repo         PushRepository
 	sender       WebpushSender
 	vapidService *SpaceVapidService
+	validator    *component.Validator
 }
 
-// NewPushService creates a PushService with the given repository, sender, and VAPID service.
-func NewPushService(repo PushRepository, sender WebpushSender, vapidService *SpaceVapidService) *PushService {
-	return &PushService{repo: repo, sender: sender, vapidService: vapidService}
+func NewPushService(repo PushRepository, sender WebpushSender, vapidService *SpaceVapidService, validator *component.Validator) *PushService {
+	return &PushService{repo: repo, sender: sender, vapidService: vapidService, validator: validator}
 }
 
 // Push delivers a web push notification for ev to each recipient in recipientPublicKeys.
@@ -33,7 +34,14 @@ func (s *PushService) Push(ev *event.Event, app *application.Application, creato
 		return
 	}
 
-	go s.fanout(ev, app, creatorDisplayName, agent, recipientPublicKeys)
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Error().Interface("panic", r).Msg("[PUSH] fanout panicked")
+			}
+		}()
+		s.fanout(ev, app, creatorDisplayName, agent, recipientPublicKeys)
+	}()
 }
 
 type rendered struct {
@@ -43,7 +51,7 @@ type rendered struct {
 
 func (s *PushService) fanout(ev *event.Event, app *application.Application, creatorDisplayName string, agent bool, recipientPublicKeys []string) {
 	// An event without a rule never reaches the subscription query.
-	if _, ok := describe(ev, app, creatorDisplayName, agent, "en"); !ok {
+	if _, ok := s.describe(ev, app, creatorDisplayName, agent, "en"); !ok {
 		log.Debug().
 			Str("eventId", ev.ID).
 			Str("type", string(ev.Type)).
@@ -75,7 +83,7 @@ func (s *PushService) fanout(ev *event.Event, app *application.Application, crea
 		lang := langOf(sub.Locale)
 		r, ok := byLang[lang]
 		if !ok {
-			n, _ := describe(ev, app, creatorDisplayName, agent, lang)
+			n, _ := s.describe(ev, app, creatorDisplayName, agent, lang)
 			payload, err := buildPayload(ev, appName(app), n)
 			if err != nil {
 				log.Warn().Err(err).Str("eventId", ev.ID).Msg("[PUSH] Failed to build payload")

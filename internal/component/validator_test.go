@@ -794,3 +794,34 @@ func TestNewValidator_ShouldRejectInvalidBundleRanges(t *testing.T) {
 		assert.ErrorContains(t, err, c.want, name)
 	}
 }
+
+func TestNotify_ShouldResolveRawRuleAndKeepMalformedOnesLoadable(t *testing.T) {
+	// given
+	real, err := NewValidator()
+	require.NoError(t, err)
+	odd, err := NewValidatorFS(versionFixtureFS(map[string]string{
+		"component/x.v1.schema.json": `{"$id":"https://x/x.v1.json","properties":{"a":{"x-merge":"single","x-access":"member","x-notify":"not an object"},"b":{"x-merge":"single","x-access":"member"}}}`,
+		"bundle.json":                `{"bundle":1,"types":{"X":{"min":1,"current":1}}}`,
+	}))
+	require.NoError(t, err)
+
+	// when
+	chatKey, chatRaw, chatOK := real.Notify("Chat", "m_"+msgID)
+	_, _, noRuleOK := real.Notify("Chat", "_title")
+	_, _, unknownTypeOK := real.Notify("Nope", "m_"+msgID)
+	pollKey, _, pollOK := real.Notify("Poll", "closed")
+	_, oddRaw, oddOK := odd.Notify("X", "a")
+	_, _, plainOK := odd.Notify("X", "b")
+
+	// then
+	assert.True(t, chatOK)
+	assert.True(t, strings.HasPrefix(chatKey, "^m_"))
+	assert.Equal(t, "new", chatRaw.(map[string]any)["on"])
+	assert.False(t, noRuleOK)
+	assert.False(t, unknownTypeOK)
+	assert.True(t, pollOK)
+	assert.Equal(t, "closed", pollKey)
+	assert.True(t, oddOK)
+	assert.Equal(t, "not an object", oddRaw)
+	assert.False(t, plainOK)
+}

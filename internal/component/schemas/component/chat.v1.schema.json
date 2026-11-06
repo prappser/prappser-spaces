@@ -52,6 +52,36 @@
         "append": true,
         "author": "sender",
         "content": "message"
+      },
+      "x-notify": {
+        "on": "new",
+        "kind": "chat",
+        "scope": "component",
+        "view": "chat",
+        "text": [
+          {
+            "field": "body",
+            "unless": "bodyFallback"
+          },
+          {
+            "when": {
+              "field": "attachments.0.mime",
+              "startsWith": "image/"
+            },
+            "id": "photo"
+          },
+          {
+            "when": {
+              "field": "attachments.0"
+            },
+            "field": "attachments.0.name",
+            "prefix": "📎 ",
+            "empty": "file"
+          },
+          {
+            "field": "body"
+          }
+        ]
       }
     },
     "^react_m_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}_.+$": {

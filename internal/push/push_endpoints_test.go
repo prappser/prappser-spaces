@@ -36,7 +36,7 @@ func testUser(publicKey string) *user.User {
 func newTestEndpoints() (*PushEndpoints, *mockPushRepository) {
 	repo := newMockPushRepository()
 	vapidSvc := newMockSpaceVapidService("test-pub-key", "test-priv-key")
-	svc := NewPushService(repo, newMockWebpushSender(SendResult{StatusCode: 201}), vapidSvc)
+	svc := NewPushService(repo, newMockWebpushSender(SendResult{StatusCode: 201}), vapidSvc, nil)
 	ep := NewPushEndpoints(svc, repo, vapidSvc)
 	return ep, repo
 }

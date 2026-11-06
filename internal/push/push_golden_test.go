@@ -1,0 +1,323 @@
+package push
+
+import (
+	"bytes"
+	"encoding/json"
+	"flag"
+	"maps"
+	"os"
+	"sort"
+	"strings"
+	"testing"
+
+	"github.com/prappser/prappser-spaces/internal/application"
+	"github.com/prappser/prappser-spaces/internal/component"
+	"github.com/prappser/prappser-spaces/internal/event"
+	"github.com/stretchr/testify/assert"
+)
+
+var updateGolden = flag.Bool("update", false, "rewrite testdata/push_golden.json")
+
+const goldenFile = "testdata/push_golden.json"
+
+const (
+	gChatA = "m_0b7e5c1a-3f2d-4a9e-8c11-5d6e7f8a9b0c"
+	gChatB = "m_1c8f6d2b-4a3e-4b0f-9d22-6e7f8a9b0c1d"
+	gChatC = "m_2d907e3c-5b4f-4c10-8e33-7f8a9b0c1d2e"
+)
+
+type goldenCase struct {
+	name    string
+	ev      *event.Event
+	creator string
+	agent   bool
+	app     *application.Application
+	noApp   bool
+}
+
+type goldenDelivery struct {
+	Subscription string         `json:"subscription"`
+	Payload      map[string]any `json:"payload"`
+	Urgency      string         `json:"urgency"`
+	TTL          int            `json:"ttl"`
+	Topic        string         `json:"topic"`
+}
+
+// newGoldenService is the single construction point of the service under test.
+func newGoldenService(repo PushRepository, sender WebpushSender) *PushService {
+	v, err := component.NewValidator()
+	if err != nil {
+		panic(err)
+	}
+	return NewPushService(repo, sender, newMockSpaceVapidService("pub", "priv"), v)
+}
+
+func goldenApp() *application.Application {
+	return &application.Application{
+		ID:   "app-1",
+		Name: "Trip",
+		ComponentGroups: []application.ComponentGroup{{
+			ID: "g1",
+			Components: []application.Component{
+				{ID: "chat-1", Name: "Chat"},
+				{ID: "list-1", Name: "Checklist", Data: map[string]any{"items": []any{map[string]any{"id": "legacy-1", "title": "Old"}}}},
+				{ID: "poll-1", Name: "Poll", Data: map[string]any{"question": "Where do we eat?"}},
+				{ID: "poll-2", Name: "Poll"},
+				{ID: "files-1", Name: "Files"},
+				{ID: "gallery-1", Name: "Gallery"},
+				{ID: "text-1", Name: "Text"},
+				{ID: "map-1", Name: "Map"},
+				{ID: "countdown-1", Name: "Countdown"},
+				{ID: "expenses-1", Name: "Expenses"},
+			},
+		}},
+	}
+}
+
+func gChange(key string, oldV, newV any) map[string]any {
+	return map[string]any{key: map[string]any{"oldValue": oldV, "newValue": newV}}
+}
+
+func gMerge(ms ...map[string]any) map[string]any {
+	out := map[string]any{}
+	for _, m := range ms {
+		maps.Copy(out, m)
+	}
+	return out
+}
+
+func gComp(componentID string, fields map[string]any) *event.Event {
+	return &event.Event{
+		ID:               "evt-1",
+		Type:             event.EventTypeComponentDataChanged,
+		CreatorPublicKey: "creator-pk",
+		ApplicationID:    "app-1",
+		CreatedAt:        1700000000,
+		Data:             map[string]any{"applicationId": "app-1", "componentId": componentID, "changedFields": fields},
+	}
+}
+
+func gTyped(tp event.EventType, data map[string]any) *event.Event {
+	return &event.Event{
+		ID:               "evt-1",
+		Type:             tp,
+		CreatorPublicKey: "creator-pk",
+		ApplicationID:    "app-1",
+		CreatedAt:        1700000000,
+		Data:             data,
+	}
+}
+
+func gItem(title string) map[string]any { return map[string]any{"title": title} }
+
+func goldenCases() []goldenCase {
+	var cs []goldenCase
+	add := func(name string, ev *event.Event) {
+		cs = append(cs, goldenCase{name: name, ev: ev, creator: "Ann"})
+	}
+
+	// chat
+	add("chat plain text", gComp("chat-1", gChange(gChatA, nil, `{"v":1,"body":"hi there","sender":"x","ts":1}`)))
+	add("chat last key wins", gComp("chat-1", gMerge(
+		gChange(gChatA, "", `{"body":"first"}`),
+		gChange(gChatC, nil, `{"body":"third"}`),
+		gChange(gChatB, nil, `{"body":"second"}`),
+	)))
+	add("chat image attachment only", gComp("chat-1", gChange(gChatA, nil, `{"body":"","attachments":[{"id":"i","name":"a.jpg","mime":"image/jpeg"}]}`)))
+	add("chat image attachment body fallback", gComp("chat-1", gChange(gChatA, nil, `{"body":"[photo]","bodyFallback":true,"attachments":[{"id":"i","name":"a.png","mime":"image/png"}]}`)))
+	add("chat named file attachment", gComp("chat-1", gChange(gChatA, nil, `{"body":"","attachments":[{"id":"i","name":"plan.pdf","mime":"application/pdf"}]}`)))
+	add("chat blank name file attachment", gComp("chat-1", gChange(gChatA, nil, `{"body":"","attachments":[{"id":"i","name":"","mime":"application/pdf"}]}`)))
+	add("chat file attachment with real body", gComp("chat-1", gChange(gChatA, nil, `{"body":"see this","attachments":[{"id":"i","name":"plan.pdf","mime":"application/pdf"}]}`)))
+	add("chat body fallback without attachment", gComp("chat-1", gChange(gChatA, nil, `{"body":"[photo]","bodyFallback":true}`)))
+	add("chat long body truncated", gComp("chat-1", gChange(gChatA, nil, `{"body":"`+strings.Repeat("a", 121)+`"}`)))
+	add("chat body exactly 120 runes", gComp("chat-1", gChange(gChatA, nil, `{"body":"`+strings.Repeat("ą", 120)+`"}`)))
+	add("chat body whitespace collapsed", gComp("chat-1", gChange(gChatA, nil, `{"body":"a\n\n b\t c "}`)))
+	add("chat value is an object", gComp("chat-1", gChange(gChatA, nil, map[string]any{"body": "hi"})))
+	add("chat value is a number", gComp("chat-1", gChange(gChatA, nil, 42)))
+	add("chat reaction", gComp("chat-1", gChange("react_"+gChatA+"_pk", nil, "👍")))
+	add("chat edit of old message", gComp("chat-1", gChange(gChatA, `{"body":"a"}`, `{"body":"b"}`)))
+	add("chat non json value", gComp("chat-1", gChange(gChatA, nil, "not json")))
+	add("chat blank body", gComp("chat-1", gChange(gChatA, nil, `{"body":"  "}`)))
+	add("chat layout key", gComp("chat-1", gChange("_title", nil, "x")))
+
+	// checklist
+	add("checklist one item", gComp("list-1", gChange("item_a", nil, map[string]any{"title": " Milk ", "checked": false})))
+	add("checklist two items", gComp("list-1", gMerge(gChange("item_b", nil, gItem("B")), gChange("item_a", "", gItem("A")))))
+	add("checklist three items", gComp("list-1", gMerge(
+		gChange("item_a", nil, gItem("A")), gChange("item_b", nil, gItem("B")), gChange("item_c", nil, gItem("C")),
+	)))
+	add("checklist four items", gComp("list-1", gMerge(
+		gChange("item_a", nil, gItem("A")), gChange("item_b", nil, gItem("B")),
+		gChange("item_c", nil, gItem("C")), gChange("item_d", nil, gItem("D")),
+	)))
+	add("checklist blank title", gComp("list-1", gChange("item_a", nil, gItem("  "))))
+	add("checklist legacy id skipped", gComp("list-1", gChange("item_legacy-1", nil, gItem("Milk"))))
+	add("checklist legacy id beside new item", gComp("list-1", gMerge(gChange("item_legacy-1", nil, gItem("Milk")), gChange("item_a", nil, gItem("Eggs")))))
+	add("checklist tick", gComp("list-1", gChange("item_a", gItem("Milk"), map[string]any{"title": "Milk", "checked": true})))
+	add("checklist rename", gComp("list-1", gChange("item_a", gItem("Milk"), gItem("Oat milk"))))
+	add("checklist tombstone", gComp("list-1", gChange("item_a", gItem("Milk"), "")))
+	add("checklist items key", gComp("list-1", gChange("items", nil, []any{gItem("Milk")})))
+
+	// poll
+	add("poll closed with question", gComp("poll-1", gChange("closed", false, true)))
+	add("poll closed without question", gComp("poll-2", gChange("closed", nil, true)))
+	add("poll closed again", gComp("poll-1", gChange("closed", true, true)))
+	add("poll reopened", gComp("poll-1", gChange("closed", true, false)))
+	add("poll vote", gComp("poll-1", gChange("vote_pk", nil, "a")))
+
+	// files and gallery
+	old := []any{map[string]any{"id": "f1", "filename": "a.pdf"}}
+	grown := []any{old[0], map[string]any{"id": "f2", "filename": "b.pdf"}, map[string]any{"id": "f3", "filename": "c.pdf"}}
+	add("files item added", gComp("files-1", gChange("items", old, grown)))
+	add("files item added blank filename", gComp("files-1", gChange("items", nil, []any{map[string]any{"id": "f9", "filename": ""}})))
+	add("gallery item added", gComp("gallery-1", gChange("items", nil, []any{map[string]any{"id": "f9", "filename": "p.jpg"}})))
+	add("gallery item added blank filename", gComp("gallery-1", gChange("items", nil, []any{map[string]any{"id": "f9", "filename": ""}})))
+	add("files item removed", gComp("files-1", gChange("items", grown, old)))
+	add("files without new id", gComp("files-1", gChange("items", []any{map[string]any{"id": "f1"}}, []any{map[string]any{"id": "f1"}})))
+	add("files garbage", gComp("files-1", gChange("items", nil, "garbage")))
+
+	// components without a rule
+	add("text component", gComp("text-1", gChange("content", "a", "b")))
+	add("map component", gComp("map-1", gChange("pin_a", nil, map[string]any{"lat": 1.5, "lng": 2.5})))
+	add("countdown component", gComp("countdown-1", gChange("target", nil, "2030-01-01")))
+	add("expenses component", gComp("expenses-1", gChange("expense_a", nil, map[string]any{"title": "Dinner", "amount": 10})))
+	add("unknown component", gComp("nope", gChange(gChatA, nil, `{"body":"x"}`)))
+
+	// person label
+	cs = append(cs,
+		goldenCase{name: "chat by agent", ev: gComp("chat-1", gChange(gChatA, nil, `{"body":"hi"}`)), creator: "Ann", agent: true},
+		goldenCase{name: "chat by unnamed person", ev: gComp("chat-1", gChange(gChatA, nil, `{"body":"hi"}`)), creator: ""},
+		goldenCase{name: "chat by blank named person", ev: gComp("chat-1", gChange(gChatA, nil, `{"body":"hi"}`)), creator: "  "},
+		goldenCase{name: "chat by unnamed agent", ev: gComp("chat-1", gChange(gChatA, nil, `{"body":"hi"}`)), creator: "", agent: true},
+		goldenCase{name: "checklist by agent", ev: gComp("list-1", gChange("item_a", nil, gItem("Milk"))), creator: "Ann", agent: true},
+		goldenCase{name: "poll closed by unnamed person", ev: gComp("poll-1", gChange("closed", false, true)), creator: ""},
+		goldenCase{name: "files item added by agent", ev: gComp("files-1", gChange("items", nil, []any{map[string]any{"id": "f9", "filename": "b.pdf"}})), creator: "Ann", agent: true},
+		goldenCase{name: "chat in app without name", ev: gComp("chat-1", gChange(gChatA, nil, `{"body":"hi"}`)), creator: "Ann", app: &application.Application{ID: "app-1", ComponentGroups: goldenApp().ComponentGroups}},
+		goldenCase{name: "chat in app with long name", ev: gComp("chat-1", gChange(gChatA, nil, `{"body":"hi"}`)), creator: "Ann", app: &application.Application{ID: "app-1", Name: strings.Repeat("N", 121), ComponentGroups: goldenApp().ComponentGroups}},
+		goldenCase{name: "chat without application", ev: gComp("chat-1", gChange(gChatA, nil, `{"body":"x"}`)), creator: "Ann", noApp: true},
+	)
+
+	// member_added
+	for _, agent := range []bool{false, true} {
+		suffix := ""
+		if agent {
+			suffix = " by agent"
+		}
+		cs = append(cs,
+			goldenCase{name: "member added" + suffix, ev: gTyped(event.EventTypeMemberAdded, map[string]any{"userDisplayName": "Bo"}), creator: "Ann", agent: agent},
+			goldenCase{name: "member added without name" + suffix, ev: gTyped(event.EventTypeMemberAdded, map[string]any{}), creator: "Ann", agent: agent},
+			goldenCase{name: "member added long name" + suffix, ev: gTyped(event.EventTypeMemberAdded, map[string]any{"userDisplayName": strings.Repeat("B", 121)}), creator: "Ann", agent: agent},
+			goldenCase{name: "member added without application" + suffix, ev: gTyped(event.EventTypeMemberAdded, map[string]any{"userDisplayName": "Bo"}), creator: "Ann", agent: agent, noApp: true},
+		)
+		for _, role := range []string{"owner", "admin", "member", "viewer", "weird", ""} {
+			cs = append(cs, goldenCase{name: "role changed to " + role + suffix, ev: gTyped(event.EventTypeMemberRoleChanged, map[string]any{"newRole": role}), creator: "Ann", agent: agent})
+		}
+		cs = append(cs,
+			goldenCase{name: "reminder fired with text" + suffix, ev: gTyped(event.EventTypeReminderFired, map[string]any{"itemTitle": "Call mom"}), creator: "Ann", agent: agent},
+			goldenCase{name: "reminder fired without text" + suffix, ev: gTyped(event.EventTypeReminderFired, map[string]any{}), creator: "Ann", agent: agent},
+			goldenCase{name: "reminder fired long text" + suffix, ev: gTyped(event.EventTypeReminderFired, map[string]any{"itemTitle": strings.Repeat("r", 121)}), creator: "Ann", agent: agent},
+		)
+	}
+
+	// event types without a rule
+	for _, tp := range []event.EventType{
+		event.EventTypeMemberRemoved,
+		event.EventTypeInviteRevoked,
+		event.EventTypeApplicationDataChanged,
+		event.EventTypeApplicationAfterEditModeChanged,
+		event.EventTypeApplicationFileCreated,
+		event.EventTypeApplicationFileDeleted,
+		event.EventTypeApplicationCreated,
+	} {
+		add("event type "+string(tp), gTyped(tp, map[string]any{}))
+	}
+	return cs
+}
+
+func runGoldenCase(t *testing.T, c goldenCase) []goldenDelivery {
+	t.Helper()
+	repo := newMockPushRepository()
+	sender := newMockWebpushSender(SendResult{StatusCode: 201})
+	svc := newGoldenService(repo, sender)
+
+	repo.subscriptions["sub-en"] = &Subscription{ID: "sub-en", DevicePublicKey: "dk-en", Locale: "en"}
+	repo.subscriptions["sub-pl"] = &Subscription{ID: "sub-pl", DevicePublicKey: "dk-pl", Locale: "pl"}
+	repo.subscriptions["sub-pl-muted"] = &Subscription{ID: "sub-pl-muted", DevicePublicKey: "dk-pl-muted", Locale: "pl", MutedApplicationIDs: []string{"app-1"}}
+	repo.subscriptions["sub-en-muted"] = &Subscription{ID: "sub-en-muted", DevicePublicKey: "dk-en-muted", Locale: "en", MutedApplicationIDs: []string{"app-1"}}
+	repo.subscriptions["sub-de-other-muted"] = &Subscription{ID: "sub-de-other-muted", DevicePublicKey: "dk-de", Locale: "de", MutedApplicationIDs: []string{"app-2"}}
+
+	app := c.app
+	if app == nil {
+		app = goldenApp()
+	}
+	if c.noApp {
+		app = nil
+	}
+
+	svc.fanout(c.ev, app, c.creator, c.agent, []string{"dk-en", "dk-pl", "dk-pl-muted", "dk-en-muted", "dk-de"})
+
+	out := []goldenDelivery{}
+	for _, call := range sender.calls {
+		var payload map[string]any
+		if err := json.Unmarshal(call.payload, &payload); err != nil {
+			t.Fatalf("payload is not json: %v", err)
+		}
+		out = append(out, goldenDelivery{
+			Subscription: call.sub.ID,
+			Payload:      payload,
+			Urgency:      string(call.opts.Urgency),
+			TTL:          call.opts.TTL,
+			Topic:        call.opts.Topic,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Subscription < out[j].Subscription })
+	return out
+}
+
+func renderGolden(t *testing.T) []byte {
+	t.Helper()
+	all := map[string]any{}
+	for _, c := range goldenCases() {
+		if _, dup := all[c.name]; dup {
+			t.Fatalf("duplicate golden case name %q", c.name)
+		}
+		deliveries := runGoldenCase(t, c)
+		if len(deliveries) == 0 {
+			all[c.name] = "none"
+			continue
+		}
+		all[c.name] = deliveries
+	}
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetIndent("", "  ")
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(all); err != nil {
+		t.Fatalf("encode golden: %v", err)
+	}
+	return buf.Bytes()
+}
+
+func TestPushService_Fanout_ShouldMatchGoldenFile(t *testing.T) {
+	// given
+	got := renderGolden(t)
+
+	// when
+	if *updateGolden {
+		if err := os.MkdirAll("testdata", 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(goldenFile, got, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want, err := os.ReadFile(goldenFile)
+	if err != nil {
+		t.Fatalf("read golden (run with -update to create it): %v", err)
+	}
+
+	// then
+	if !bytes.Equal(want, got) {
+		assert.Equal(t, string(want), string(got), "golden mismatch, rerun with -update only if the change is intended")
+	}
+}
