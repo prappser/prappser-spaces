@@ -52,6 +52,7 @@ func (r *ownerClaimTestRepo) UpdateAvatarStorageID(publicKey string, avatarStora
 }
 func (r *ownerClaimTestRepo) UpdateLocale(string, string) error               { return nil }
 func (r *ownerClaimTestRepo) UpdateNotifyMode(string, string) error           { return nil }
+func (r *ownerClaimTestRepo) UpdateNotificationsSeenAt(string, int64) error   { return nil }
 func (r *ownerClaimTestRepo) UpdateUsername(publicKey, username string) error { return nil }
 func (r *ownerClaimTestRepo) AcceptBinding(_, _ string, _ int64, _, _ string) (string, string, bool, error) {
 	return "", "", false, nil

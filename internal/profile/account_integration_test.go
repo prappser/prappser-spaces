@@ -220,3 +220,48 @@ func TestUpdateProfile_ShouldRoundTripNotifyModeThroughGetProfile_Integration(t 
 	assert.Equal(t, fasthttp.StatusOK, patchCtx.Response.StatusCode())
 	assert.Contains(t, string(afterCtx.Response.Body()), `"notifyMode":"chat"`)
 }
+
+func TestUpdateProfile_ShouldOnlyMoveNotificationsSeenAtForward_Integration(t *testing.T) {
+	// given
+	db := testdb.Connect(t, "profile")
+	defer db.Close()
+	userRepo := user.NewUserRepository(db)
+	const pk = "seen-pk-0123456789abcdefghijk"
+	testdb.InsertTestUser(t, db, pk)
+	initial, err := userRepo.GetUserByPublicKey(pk)
+	require.NoError(t, err)
+	require.NotNil(t, initial)
+	ep := NewProfileEndpoints(userRepo, application.NewRepository(db), &mockEventService{})
+	patch := func(body string) {
+		current, err := userRepo.GetUserByPublicKey(pk)
+		require.NoError(t, err)
+		ctx := &fasthttp.RequestCtx{}
+		ctx.Request.Header.SetMethod("PATCH")
+		ctx.Request.SetBody([]byte(body))
+		ctx.SetUserValue("user", current)
+		ep.UpdateProfile(ctx)
+		require.Equal(t, fasthttp.StatusOK, ctx.Response.StatusCode())
+	}
+	seenAt := func() int64 {
+		u, err := userRepo.GetUserByPublicKey(pk)
+		require.NoError(t, err)
+		return u.NotificationsSeenAt
+	}
+
+	// when / then
+	assert.Equal(t, int64(0), initial.NotificationsSeenAt)
+	patch(`{"notificationsSeenAt":100}`)
+	assert.Equal(t, int64(100), seenAt())
+	patch(`{"notificationsSeenAt":50}`)
+	assert.Equal(t, int64(100), seenAt())
+	patch(`{"notificationsSeenAt":200}`)
+	assert.Equal(t, int64(200), seenAt())
+
+	userEndpoints := user.NewEndpoints(userRepo, user.Config{}, nil, nil, nil, nil)
+	reloaded, err := userRepo.GetUserByPublicKey(pk)
+	require.NoError(t, err)
+	getCtx := &fasthttp.RequestCtx{}
+	getCtx.SetUserValue("user", reloaded)
+	userEndpoints.GetProfile(getCtx)
+	assert.Contains(t, string(getCtx.Response.Body()), `"notificationsSeenAt":200`)
+}

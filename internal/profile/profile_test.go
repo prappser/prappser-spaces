@@ -3,7 +3,9 @@ package profile
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"testing"
+	"time"
 
 	"github.com/prappser/prappser-spaces/internal/application"
 	"github.com/prappser/prappser-spaces/internal/event"
@@ -18,6 +20,7 @@ type mockUserRepo struct {
 	updateUsernameErr error
 	localeCalls       []string
 	notifyModeCalls   []string
+	seenAtCalls       []int64
 	updateCalls       []struct {
 		publicKey string
 		username  string
@@ -69,6 +72,16 @@ func (m *mockUserRepo) UpdateNotifyMode(publicKey, mode string) error {
 		return fmt.Errorf("user not found")
 	}
 	u.NotifyMode = mode
+	return nil
+}
+
+func (m *mockUserRepo) UpdateNotificationsSeenAt(publicKey string, at int64) error {
+	m.seenAtCalls = append(m.seenAtCalls, at)
+	u, ok := m.users[publicKey]
+	if !ok {
+		return fmt.Errorf("user not found")
+	}
+	u.NotificationsSeenAt = max(u.NotificationsSeenAt, at)
 	return nil
 }
 
@@ -463,4 +476,85 @@ func TestUpdateProfile_ShouldNotWriteWhenNotifyModeUnchanged(t *testing.T) {
 	// then
 	assert.Equal(t, fasthttp.StatusOK, ctx.Response.StatusCode())
 	assert.Empty(t, repo.notifyModeCalls)
+}
+
+// ---- notificationsSeenAt ----
+
+func patchSeenAt(t *testing.T, body string) (*mockUserRepo, *fasthttp.RequestCtx) {
+	t.Helper()
+	repo := newMockUserRepo()
+	repo.users["pk-1"] = &user.User{PublicKey: "pk-1", Username: "Alice", NotificationsSeenAt: 10}
+	ep := NewProfileEndpoints(repo, &mockAppLister{}, &mockEventService{})
+	ctx := newTestRequestCtx("PATCH", body)
+	setAuthUser(ctx, &user.User{PublicKey: "pk-1", Username: "Alice", NotificationsSeenAt: 10})
+	ep.UpdateProfile(ctx)
+	return repo, ctx
+}
+
+func TestUpdateProfile_ShouldReturn400WhenNotificationsSeenAtNegative(t *testing.T) {
+	// given / when
+	repo, ctx := patchSeenAt(t, `{"notificationsSeenAt":-1}`)
+
+	// then
+	assert.Equal(t, fasthttp.StatusBadRequest, ctx.Response.StatusCode())
+	assert.Empty(t, repo.seenAtCalls)
+}
+
+func TestUpdateProfile_ShouldReturn400WhenNotificationsSeenAtMoreThanFiveMinutesAhead(t *testing.T) {
+	// given / when
+	repo, ctx := patchSeenAt(t, `{"notificationsSeenAt":`+strconv.FormatInt(time.Now().Unix()+310, 10)+`}`)
+
+	// then
+	assert.Equal(t, fasthttp.StatusBadRequest, ctx.Response.StatusCode())
+	assert.Empty(t, repo.seenAtCalls)
+}
+
+func TestUpdateProfile_ShouldAcceptNotificationsSeenAtFiveMinutesAhead(t *testing.T) {
+	// given
+	at := time.Now().Unix() + 300
+
+	// when
+	_, ctx := patchSeenAt(t, `{"notificationsSeenAt":`+strconv.FormatInt(at, 10)+`}`)
+
+	// then
+	assert.Equal(t, fasthttp.StatusOK, ctx.Response.StatusCode())
+}
+
+func TestUpdateProfile_ShouldReturn400WhenNotificationsSeenAtNotInteger(t *testing.T) {
+	// given / when
+	repo, ctx := patchSeenAt(t, `{"notificationsSeenAt":"yesterday"}`)
+
+	// then
+	assert.Equal(t, fasthttp.StatusBadRequest, ctx.Response.StatusCode())
+	assert.Empty(t, repo.seenAtCalls)
+}
+
+func TestUpdateProfile_ShouldUpdateNotificationsSeenAtWhenOnlyFieldSent(t *testing.T) {
+	// given / when
+	repo, ctx := patchSeenAt(t, `{"notificationsSeenAt":100}`)
+
+	// then
+	assert.Equal(t, fasthttp.StatusOK, ctx.Response.StatusCode())
+	assert.Equal(t, []int64{100}, repo.seenAtCalls)
+	assert.Contains(t, string(ctx.Response.Body()), `"notificationsSeenAt":100`)
+}
+
+func TestUpdateProfile_ShouldLeaveNotificationsSeenAtUntouchedWhenAbsent(t *testing.T) {
+	// given / when
+	repo, ctx := patchSeenAt(t, `{"displayName":"Bob"}`)
+
+	// then
+	assert.Equal(t, fasthttp.StatusOK, ctx.Response.StatusCode())
+	assert.Empty(t, repo.seenAtCalls)
+	assert.Contains(t, string(ctx.Response.Body()), `"notificationsSeenAt":10`)
+}
+
+func TestUpdateProfile_ShouldUpdateNotificationsSeenAtTogetherWithDisplayName(t *testing.T) {
+	// given / when
+	repo, ctx := patchSeenAt(t, `{"displayName":"Bob","notificationsSeenAt":100}`)
+
+	// then
+	assert.Equal(t, fasthttp.StatusOK, ctx.Response.StatusCode())
+	assert.Equal(t, []int64{100}, repo.seenAtCalls)
+	assert.Equal(t, "Bob", repo.users["pk-1"].Username)
 }

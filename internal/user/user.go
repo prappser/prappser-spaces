@@ -31,18 +31,19 @@ const (
 )
 
 type User struct {
-	PublicKey       string  `json:"publicKey"`
-	Username        string  `json:"username"`
-	Role            string  `json:"role"`
-	SpaceID         string  `json:"spaceId,omitempty"`
-	CreatedAt       int64   `json:"createdAt"`
-	AvatarStorageID *string `json:"avatarStorageId,omitempty"`
-	Locale          string  `json:"locale"`
-	NotifyMode      string  `json:"notifyMode"`
-	BindingIat      int64   `json:"-"`
-	BindingSub      string  `json:"-"`
-	StoredBinding   string  `json:"-"`
-	IdentityBinding string  `json:"identityBinding,omitempty"`
+	PublicKey           string  `json:"publicKey"`
+	Username            string  `json:"username"`
+	Role                string  `json:"role"`
+	SpaceID             string  `json:"spaceId,omitempty"`
+	CreatedAt           int64   `json:"createdAt"`
+	AvatarStorageID     *string `json:"avatarStorageId,omitempty"`
+	Locale              string  `json:"locale"`
+	NotifyMode          string  `json:"notifyMode"`
+	NotificationsSeenAt int64   `json:"notificationsSeenAt"`
+	BindingIat          int64   `json:"-"`
+	BindingSub          string  `json:"-"`
+	StoredBinding       string  `json:"-"`
+	IdentityBinding     string  `json:"identityBinding,omitempty"`
 	// DevicePublicKey identifies which of the account's devices authenticated
 	// the current request. Populated by UserService.ValidateJWT from the JWT's
 	// devicePublicKey claim (or the account key for legacy tokens - device #1's
@@ -107,6 +108,7 @@ type UserRepository interface {
 	UpdateUsername(publicKey, username string) error
 	UpdateLocale(publicKey, locale string) error
 	UpdateNotifyMode(publicKey, mode string) error
+	UpdateNotificationsSeenAt(publicKey string, at int64) error
 	AcceptBinding(publicKey, binding string, iat int64, sub, ownKey string) (storedBinding, storedSub string, updated bool, err error)
 	// EnsureDevice registers a device for an account if it doesn't already exist (no-op otherwise).
 	EnsureDevice(devicePublicKey, userPublicKey string, deviceName *string, createdAt int64) error

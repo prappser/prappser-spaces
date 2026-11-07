@@ -3,6 +3,7 @@ package profile
 import (
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/goccy/go-json"
 	"github.com/google/uuid"
@@ -41,8 +42,8 @@ func (e *ProfileEndpoints) UpdateProfile(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	if req.DisplayName == nil && req.Locale == nil && req.NotifyMode == nil {
-		ctx.Error("displayName, locale or notifyMode required", fasthttp.StatusBadRequest)
+	if req.DisplayName == nil && req.Locale == nil && req.NotifyMode == nil && req.NotificationsSeenAt == nil {
+		ctx.Error("displayName, locale, notifyMode or notificationsSeenAt required", fasthttp.StatusBadRequest)
 		return
 	}
 
@@ -67,12 +68,18 @@ func (e *ProfileEndpoints) UpdateProfile(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
+	if req.NotificationsSeenAt != nil && (*req.NotificationsSeenAt < 0 || *req.NotificationsSeenAt > time.Now().Unix()+300) {
+		log.Error().Int64("notificationsSeenAt", *req.NotificationsSeenAt).Msg("[PROFILE] notificationsSeenAt out of range")
+		ctx.Error("notificationsSeenAt must be between 0 and now plus 5 minutes", fasthttp.StatusBadRequest)
+		return
+	}
+
 	nameChanged := req.DisplayName != nil && displayName != authenticatedUser.Username
 	localeChanged := req.Locale != nil && locale != authenticatedUser.Locale
 
 	modeChanged := req.NotifyMode != nil && *req.NotifyMode != authenticatedUser.NotifyMode
 
-	if !nameChanged && !localeChanged && !modeChanged {
+	if !nameChanged && !localeChanged && !modeChanged && req.NotificationsSeenAt == nil {
 		ctx.SetStatusCode(fasthttp.StatusOK)
 		ctx.SetContentType("application/json")
 		json.NewEncoder(ctx).Encode(authenticatedUser)
@@ -102,6 +109,14 @@ func (e *ProfileEndpoints) UpdateProfile(ctx *fasthttp.RequestCtx) {
 	if modeChanged {
 		if err := e.userRepo.UpdateNotifyMode(publicKey, *req.NotifyMode); err != nil {
 			log.Error().Err(err).Str("publicKey", publicKey).Msg("[PROFILE] Failed to update notify mode")
+			ctx.Error("Failed to update profile", fasthttp.StatusInternalServerError)
+			return
+		}
+	}
+
+	if req.NotificationsSeenAt != nil {
+		if err := e.userRepo.UpdateNotificationsSeenAt(publicKey, *req.NotificationsSeenAt); err != nil {
+			log.Error().Err(err).Str("publicKey", publicKey).Msg("[PROFILE] Failed to update notifications seen at")
 			ctx.Error("Failed to update profile", fasthttp.StatusInternalServerError)
 			return
 		}
