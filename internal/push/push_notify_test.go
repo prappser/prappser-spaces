@@ -129,10 +129,6 @@ func TestDescribe_ShouldRejectInvalidChatRuleAndPushWithRepairedRule(t *testing.
 			r["text"] = []any{map[string]any{"field": "body", "id": "photo"}}
 			return r
 		}, func(r map[string]any) any { r["text"] = body; return r }, nil, `{"body":"hi"}`},
-		{"neither field nor id", func(r map[string]any) any {
-			r["text"] = []any{map[string]any{"prefix": "x"}, map[string]any{"field": "body"}}
-			return r
-		}, func(r map[string]any) any { r["text"] = body; return r }, nil, `{"body":"hi"}`},
 		{"join on non-new", func(r map[string]any) any {
 			r["on"] = "becomesTrue"
 			r["text"] = photo
@@ -201,7 +197,6 @@ func TestDescribe_ShouldRejectInvalidChecklistRuleAndPushWithUnchangedRule(t *te
 		"suffix without component":   set("text", title(map[string]any{"suffix": map[string]any{"sep": " "}})),
 		"unknown empty id":           set("text", title(map[string]any{"empty": "nope"})),
 		"empty without field":        set("text", []any{map[string]any{"id": "photo", "empty": "file"}}),
-		"empty text id":              set("text", []any{map[string]any{"id": ""}}),
 	}
 	ev := checklistEvent(gChange("item_abc", nil, gItem("Milk")))
 	control := validatorWith(t, "checklist.v2.schema.json", identity)
@@ -339,4 +334,81 @@ func TestDescribe_ShouldUseStoredValueWhenMigrationFails(t *testing.T) {
 	// then
 	assert.True(t, ok)
 	assert.Equal(t, "Ann: hi", n.body)
+}
+
+func TestDescribe_ShouldUseFiredValueForValueCandidateAndIncludeComponentTitle(t *testing.T) {
+	// given
+	svc := &PushService{validator: validatorWith(t, "poll.v1.schema.json", identity)}
+	ev := gComp("poll-2", gChange("question", nil, " Where? "))
+
+	// when
+	n, ok := svc.describe(ev, goldenApp(), "Ann", false, "en")
+
+	// then
+	assert.True(t, ok)
+	assert.Equal(t, "Ann: 📊 Where?", n.body)
+	assert.Equal(t, "polls", n.view)
+}
+
+func TestDescribe_ShouldAppendMinorUnitsAmountFromSuffixField(t *testing.T) {
+	// given
+	svc := &PushService{validator: validatorWith(t, "expenses.v1.schema.json", identity)}
+	key := "e_0b7e5c1a-3f2d-4a9e-8c11-5d6e7f8a9b0c"
+	dinner := gComp("expenses-2", gChange(key, nil, `{"what":"Dinner","amount":4500}`))
+	refund := gComp("expenses-2", gChange(key, nil, `{"what":"Refund","amount":-50}`))
+	noAmount := gComp("expenses-2", gChange(key, nil, `{"what":"Gift"}`))
+
+	// when
+	d, okD := svc.describe(dinner, goldenApp(), "Ann", false, "en")
+	r, okR := svc.describe(refund, goldenApp(), "Ann", false, "en")
+	g, okG := svc.describe(noAmount, goldenApp(), "Ann", false, "en")
+
+	// then
+	assert.True(t, okD && okR && okG)
+	assert.Equal(t, "Ann: Dinner · 45.00", d.body)
+	assert.Equal(t, "Ann: Refund · -0.50", r.body)
+	assert.Equal(t, "Ann: Gift", g.body)
+	assert.Equal(t, "Costs", d.componentTitle)
+	assert.Equal(t, "expenses-2", d.scope)
+}
+
+func TestParseNotifyRule_ShouldRejectBadSuffix(t *testing.T) {
+	// given
+	rule := func(suffix map[string]any) map[string]any {
+		return map[string]any{"on": "new", "kind": "item", "scope": "component", "text": []any{map[string]any{"field": "what", "suffix": suffix}}}
+	}
+	cases := map[string]map[string]any{
+		"component and field":   {"component": "_title", "field": "amount"},
+		"neither":               {"sep": " "},
+		"unknown format":        {"field": "amount", "format": "euros"},
+		"format with component": {"component": "_title", "format": "minorUnits"},
+	}
+
+	for name, suffix := range cases {
+		// when
+		_, err := parseNotifyRule(rule(suffix))
+
+		// then
+		assert.Error(t, err, name)
+	}
+}
+
+func TestDescribe_ShouldNameMemberRemovedAndLeft(t *testing.T) {
+	// given
+	svc := &PushService{}
+	removed := gMemberRemoved("Bo", "bo-pk")
+	left := gMemberRemoved("Bo", "creator-pk")
+	unnamed := gMemberRemoved("", "bo-pk")
+
+	// when
+	r, _ := svc.describe(removed, goldenApp(), "Ann", false, "pl")
+	l, _ := svc.describe(left, goldenApp(), "Bo", false, "en")
+	u, _ := svc.describe(unnamed, goldenApp(), "Ann", false, "en")
+
+	// then
+	assert.Equal(t, "Usunięto: Bo", r.body)
+	assert.Equal(t, "Left: Bo", l.body)
+	assert.Equal(t, "Removed: Someone", u.body)
+	assert.Equal(t, KindMember, r.kind)
+	assert.Equal(t, "evt-1", r.scope)
 }

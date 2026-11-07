@@ -214,6 +214,7 @@ type ReminderFiredData struct {
 	Kind          string   `json:"kind"`
 	Offset        string   `json:"offset"`
 	ItemTitle     string   `json:"itemTitle"`
+	Tz            string   `json:"tz,omitempty"`
 	Recipients    []string `json:"recipients"`
 }
 

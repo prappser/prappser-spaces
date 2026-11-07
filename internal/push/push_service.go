@@ -77,6 +77,11 @@ func (s *PushService) fanout(ev *event.Event, app *application.Application, crea
 
 	vapid := s.vapid()
 
+	bucket := DigestBucket{Key: en.componentID, Kind: en.kind, Title: en.componentTitle}
+	if bucket.Key == "" {
+		bucket.Key = string(en.kind)
+	}
+
 	// Render once per language, not once per subscription.
 	byLang := map[string]rendered{}
 	for _, sub := range subs {
@@ -85,7 +90,7 @@ func (s *PushService) fanout(ev *event.Event, app *application.Application, crea
 		}
 		if en.kind.digestsIn(sub.NotifyMode) {
 			if ev.ApplicationID != "" {
-				if err := s.repo.CountDigest(sub.ID, ev.ApplicationID, time.Now().Unix(), sub.NotificationsSeenAt); err != nil {
+				if err := s.repo.CountDigest(sub.ID, ev.ApplicationID, bucket, time.Now().Unix(), sub.NotificationsSeenAt); err != nil {
 					log.Warn().Err(err).Str("subscriptionId", sub.ID).Msg("[PUSH] Failed to count digest")
 				}
 			}
@@ -189,15 +194,17 @@ func (s *PushService) deliver(sub *Subscription, vapid *SpaceVapid, payload []by
 
 // pushPayload is payload v2. Additive fields are fine; the app only needs string title and body.
 type pushPayload struct {
-	V             int    `json:"v"`
-	ApplicationID string `json:"applicationId"`
-	EventID       string `json:"eventId"`
-	Kind          Kind   `json:"kind"`
-	Title         string `json:"title"`
-	Body          string `json:"body"`
-	Tag           string `json:"tag"`
-	View          string `json:"view,omitempty"`
-	Data          any    `json:"data,omitempty"`
+	V              int    `json:"v"`
+	ApplicationID  string `json:"applicationId"`
+	EventID        string `json:"eventId"`
+	Kind           Kind   `json:"kind"`
+	Title          string `json:"title"`
+	Body           string `json:"body"`
+	Tag            string `json:"tag"`
+	View           string `json:"view,omitempty"`
+	Data           any    `json:"data,omitempty"`
+	ComponentTitle string `json:"componentTitle,omitempty"`
+	AppName        string `json:"appName,omitempty"`
 }
 
 func appName(app *application.Application) string {
@@ -208,18 +215,25 @@ func appName(app *application.Application) string {
 }
 
 func buildPayload(ev *event.Event, name string, n notice) ([]byte, error) {
-	if name = cut(name); name == "" {
-		name = "Prappser"
+	name = cut(name)
+	title := n.title
+	if title == "" {
+		title = name
+	}
+	if title == "" {
+		title = "Prappser"
 	}
 	return json.Marshal(pushPayload{
-		V:             2,
-		ApplicationID: ev.ApplicationID,
-		EventID:       ev.ID,
-		Kind:          n.kind,
-		Title:         name,
-		Body:          n.body,
-		Tag:           ev.ApplicationID + "|" + string(n.kind) + "|" + n.scope,
-		View:          n.view,
+		V:              2,
+		ApplicationID:  ev.ApplicationID,
+		EventID:        ev.ID,
+		Kind:           n.kind,
+		Title:          title,
+		Body:           n.body,
+		Tag:            ev.ApplicationID + "|" + string(n.kind) + "|" + n.scope,
+		View:           n.view,
+		ComponentTitle: n.componentTitle,
+		AppName:        name,
 	})
 }
 

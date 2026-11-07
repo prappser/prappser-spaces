@@ -82,10 +82,19 @@ type DigestUser struct {
 	SentAt    int64
 }
 
+// DigestBucket names the component (or, without one, the kind) a pending digest count belongs to.
+type DigestBucket struct {
+	Key   string
+	Kind  Kind
+	Title string
+}
+
 type DigestRow struct {
 	SubscriptionID string
 	ApplicationID  string
 	AppName        string
+	Kind           Kind
+	Title          string
 	Count          int
 }
 
@@ -123,7 +132,7 @@ type PushRepository interface {
 	GetSubscriptionByID(id, devicePublicKey string) (*Subscription, error)
 	MarkSuccess(id string, ts int64) error
 	IncrementFailure(id string) error
-	CountDigest(subscriptionID, applicationID string, at, seenAt int64) error
+	CountDigest(subscriptionID, applicationID string, bucket DigestBucket, at, seenAt int64) error
 	GetDailyUsers() ([]DigestUser, error)
 	ClaimDigest(userPublicKey string, due, now int64) (rows []DigestRow, claimed bool, err error)
 }

@@ -38,6 +38,7 @@ type mockPushRepository struct {
 
 type digestCountCall struct {
 	subscriptionID, applicationID string
+	bucket                        DigestBucket
 	at, seenAt                    int64
 }
 
@@ -149,10 +150,10 @@ func (m *mockPushRepository) IncrementFailure(id string) error {
 	return nil
 }
 
-func (m *mockPushRepository) CountDigest(subscriptionID, applicationID string, at, seenAt int64) error {
+func (m *mockPushRepository) CountDigest(subscriptionID, applicationID string, bucket DigestBucket, at, seenAt int64) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.digestCounts = append(m.digestCounts, digestCountCall{subscriptionID, applicationID, at, seenAt})
+	m.digestCounts = append(m.digestCounts, digestCountCall{subscriptionID, applicationID, bucket, at, seenAt})
 	return nil
 }
 
@@ -451,7 +452,7 @@ func TestBuildPayload_ShouldProduceExactKeySetV2(t *testing.T) {
 	for k := range decoded {
 		keys = append(keys, k)
 	}
-	assert.ElementsMatch(t, []string{"v", "applicationId", "eventId", "kind", "title", "body", "tag", "view"}, keys)
+	assert.ElementsMatch(t, []string{"v", "applicationId", "eventId", "kind", "title", "body", "tag", "view", "appName"}, keys)
 	assert.Equal(t, float64(2), decoded["v"])
 	assert.Equal(t, "app-1", decoded["applicationId"])
 	assert.Equal(t, "evt-1", decoded["eventId"])
@@ -473,7 +474,7 @@ func TestBuildPayload_ShouldOmitViewForNonChatKinds(t *testing.T) {
 	var decoded map[string]interface{}
 	assert.NoError(t, json.Unmarshal(payloadJSON, &decoded))
 	assert.NotContains(t, decoded, "view")
-	assert.Len(t, decoded, 7)
+	assert.Len(t, decoded, 8)
 }
 
 func TestBuildPayload_ShouldFallBackToPrappserTitleWhenAppNameEmpty(t *testing.T) {
@@ -607,9 +608,9 @@ func TestPushService_Push_ShouldRenderOncePerLocaleAndFallBackToEnglish(t *testi
 		assert.NoError(t, json.Unmarshal(c.payload, &decoded))
 		bodies[c.sub.ID] = decoded["body"].(string)
 	}
-	assert.Equal(t, "Twoja rola: Obserwator", bodies["pl"])
-	assert.Equal(t, "Your role is now: Viewer", bodies["empty"])
-	assert.Equal(t, "Your role is now: Viewer", bodies["de"])
+	assert.Equal(t, "Ktoś: Twoja rola to Obserwator", bodies["pl"])
+	assert.Equal(t, "Someone: Your role is now Viewer", bodies["empty"])
+	assert.Equal(t, "Someone: Your role is now Viewer", bodies["de"])
 }
 
 func TestPushService_Push_ShouldSkipWhenEventHasNoRule(t *testing.T) {
@@ -819,17 +820,18 @@ func TestKindDigestsIn_ShouldCoverOnlyDailyModeAndSkipReminderAndRole(t *testing
 
 func TestPushService_Fanout_ShouldCountInsteadOfSendInDailyMode(t *testing.T) {
 	cases := []struct {
-		name  string
-		ev    *event.Event
-		sends bool
+		name   string
+		ev     *event.Event
+		sends  bool
+		bucket DigestBucket
 	}{
-		{"chat", gComp("chat-1", gChange(gChatA, nil, `{"body":"hi"}`)), false},
-		{"item", gComp("list-1", gChange("item_a", nil, gItem("Milk"))), false},
-		{"poll", gComp("poll-1", gChange("closed", false, true)), false},
-		{"file", gComp("files-1", gChange("items", nil, []any{map[string]any{"id": "f9", "filename": "a.pdf"}})), false},
-		{"member", gTyped(event.EventTypeMemberAdded, map[string]any{"userDisplayName": "Bo"}), false},
-		{"role", gTyped(event.EventTypeMemberRoleChanged, map[string]any{"newRole": "admin"}), true},
-		{"reminder", gTyped(event.EventTypeReminderFired, map[string]any{"itemTitle": "Call mom"}), true},
+		{"chat", gComp("chat-1", gChange(gChatA, nil, `{"body":"hi"}`)), false, DigestBucket{Key: "chat-1", Kind: KindChat}},
+		{"item", gComp("list-2", gChange("item_a", nil, gItem("Milk"))), false, DigestBucket{Key: "list-2", Kind: KindItem, Title: "Groceries"}},
+		{"poll", gComp("poll-1", gChange("closed", false, true)), false, DigestBucket{Key: "poll-1", Kind: KindPoll}},
+		{"file", gComp("files-1", gChange("items", nil, []any{map[string]any{"id": "f9", "filename": "a.pdf"}})), false, DigestBucket{Key: "files-1", Kind: KindFile}},
+		{"member", gTyped(event.EventTypeMemberAdded, map[string]any{"userDisplayName": "Bo"}), false, DigestBucket{Key: "member", Kind: KindMember}},
+		{"role", gTyped(event.EventTypeMemberRoleChanged, map[string]any{"newRole": "admin"}), true, DigestBucket{}},
+		{"reminder", gTyped(event.EventTypeReminderFired, map[string]any{"itemTitle": "Call mom"}), true, DigestBucket{}},
 	}
 	for _, tc := range cases {
 		// given
@@ -851,6 +853,7 @@ func TestPushService_Fanout_ShouldCountInsteadOfSendInDailyMode(t *testing.T) {
 			c := repo.digestCounts[0]
 			assert.Equal(t, "sub-d", c.subscriptionID, tc.name)
 			assert.Equal(t, "app-1", c.applicationID, tc.name)
+			assert.Equal(t, tc.bucket, c.bucket, tc.name)
 			assert.Equal(t, int64(42), c.seenAt, tc.name)
 			assert.NotZero(t, c.at, tc.name)
 		}

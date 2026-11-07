@@ -80,7 +80,7 @@ Rules:
 
 ## Push notifications and `x-notify`
 
-A key may carry an `x-notify` annotation. It tells the space when a change to that key sends a push notification, and with what text. It goes on a top-level `properties` or `patternProperties` entry, next to `x-merge` and `x-access`. Only these types have a rule: chat (`m_` messages), checklist (`item_` entries), poll (`closed`) and files (`items`). A type without a rule sends no push.
+A key may carry an `x-notify` annotation. It tells the space when a change to that key sends a push notification, and with what text. It goes on a top-level `properties` or `patternProperties` entry, next to `x-merge` and `x-access`. Only these types have a rule: chat (`m_` messages), checklist (`item_` entries), poll (`question`, `closed`), expenses (`e_` entries) and files (`items`). A type without a rule sends no push. The app evaluates the same rules to build its notification panel.
 
 A rule is an object:
 
@@ -89,7 +89,7 @@ A rule is an object:
 | `on` | Required. When it fires, see below. |
 | `kind` | Required. `chat`, `item`, `poll` or `file`. |
 | `scope` | Required. `component` or `event`: the push tag scope, the component id or the event id. |
-| `view` | Optional. Only `chat`. |
+| `view` | Optional. `chat` or `polls`. |
 | `text` | Required. Non-empty ordered list of candidates. The first one that gives non-blank text wins. |
 | `join` | Only with `on: new`. Folds all fired keys of the family into one push: `prefix`, `sep`, `show`, `more`. The output is `prefix` once, then the first `show` texts joined by `sep`, then, if more keys fired, a space and the localized `more` text (`itemsMore`) with the remaining count, like "+ A, B and 2 more". With fewer than `show` keys there is no "more" tail. `show` must be at least 1. |
 | `skipListed` | Only with `on: new`. `list` and `prefix`: a key is skipped when the key with `prefix` removed equals the string `id` of an element of the component data list `list` (the legacy checklist `items`). |
@@ -100,13 +100,13 @@ A rule is an object:
 - `becomesTrue`: the old value is not true and the new value is true.
 - `added`: a list value gains an element whose string `id` was not in the old list.
 
-A text candidate has exactly one of `field` (a dotted path into the value, numeric segments index arrays) or `id` (a fixed text id, see below). Optional members:
+A text candidate has at most one of `field` (a dotted path into the value, numeric segments index arrays) or `id` (a fixed text id, see below). With neither, the text is the fired value itself, which must be a string (poll `question`). Optional members:
 
 - `when`: `field` and optional `startsWith`. The candidate applies only if the path is present and, with `startsWith`, the string there starts with it.
 - `unless`: path to a bool. The candidate is skipped when it is true.
 - `prefix`: a string put in front of the text.
 - `empty`: a text id used when the field is blank. `prefix` applies to it too.
-- `suffix`: `component` and `sep`. Adds `sep` and the string value of that top-level component data key, when it is not blank.
+- `suffix`: `sep` plus exactly one of `component` and `field`. `component` adds `sep` and the string value of that top-level component data key, when it is not blank. `field` is a dotted path into the fired value, optionally with `format`: `minorUnits` renders an integer as decimal with two places (4500 is `45.00`, -50 is `-0.50`). Without `format`, the value is used as a string.
 
 Text ids are `photo`, `file`, `pollClosed` and `itemsMore`. Their wording, the "Person: " prefix, the agent label and the 120 rune cut stay in the space.
 

@@ -1,5 +1,5 @@
 {
-  "bundle": 3,
+  "bundle": 4,
   "types": {
     "Text": {
       "min": 1,
@@ -57,7 +57,7 @@
     },
     {
       "path": "component/expenses.v1.schema.json",
-      "sha256": "1eb5bf24cd334d4ae470ee11d73299c5d842fe7d1356d07170e7328ff3e963a5"
+      "sha256": "4c1ea0a969f7b9d5287ebad15b160b46e00cf902c0033f48ccd6f224b91f85be"
     },
     {
       "path": "component/files.v1.schema.json",
@@ -69,7 +69,7 @@
     },
     {
       "path": "component/poll.v1.schema.json",
-      "sha256": "182cab3551b8b9fe8f67b1202d53e198efef1c90066b0770ef116c4e03246975"
+      "sha256": "1484f12ee607671fcbf4702088aa99da4519f3d80ea92591e3d13eeb754dcd9d"
     },
     {
       "path": "component/text.v1.schema.json",

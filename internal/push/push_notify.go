@@ -5,13 +5,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/prappser/prappser-spaces/internal/application"
 	"github.com/prappser/prappser-spaces/internal/component/lens"
 	"github.com/prappser/prappser-spaces/internal/event"
+	"github.com/prappser/prappser-spaces/internal/reminder"
 	"github.com/rs/zerolog/log"
 )
 
@@ -42,6 +45,8 @@ type whenSpec struct {
 
 type suffixSpec struct {
 	Component string `json:"component"`
+	Field     string `json:"field"`
+	Format    string `json:"format"`
 	Sep       string `json:"sep"`
 }
 
@@ -88,7 +93,7 @@ func (r *notifyRule) check() error {
 	if r.Scope != "component" && r.Scope != "event" {
 		return fmt.Errorf("unknown scope %q", r.Scope)
 	}
-	if r.View != "" && r.View != "chat" {
+	if r.View != "" && r.View != "chat" && r.View != "polls" {
 		return fmt.Errorf("unknown view %q", r.View)
 	}
 	if len(r.Text) == 0 {
@@ -112,8 +117,8 @@ func (r *notifyRule) check() error {
 }
 
 func (c textCandidate) check() error {
-	if (c.Field == "") == (c.ID == "") {
-		return errors.New("needs exactly one of field and id")
+	if c.Field != "" && c.ID != "" {
+		return errors.New("takes at most one of field and id")
 	}
 	if _, ok := textsEN.textByID(c.ID); c.ID != "" && !ok {
 		return fmt.Errorf("unknown text id %q", c.ID)
@@ -129,8 +134,13 @@ func (c textCandidate) check() error {
 	if c.When != nil && c.When.Field == "" {
 		return errors.New("when needs field")
 	}
-	if c.Suffix != nil && c.Suffix.Component == "" {
-		return errors.New("suffix needs component")
+	if sx := c.Suffix; sx != nil {
+		if (sx.Component == "") == (sx.Field == "") {
+			return errors.New("suffix needs exactly one of component and field")
+		}
+		if sx.Format != "" && (sx.Field == "" || sx.Format != "minorUnits") {
+			return fmt.Errorf("invalid suffix format %q", sx.Format)
+		}
 	}
 	return nil
 }
@@ -157,24 +167,94 @@ func (s *PushService) describe(ev *event.Event, app *application.Application, cr
 		}
 		return notice{kind: KindMember, scope: ev.ID, body: fmt.Sprintf(t.newMember, name)}, true
 
+	case event.EventTypeMemberRemoved:
+		name := cut(str(ev.Data["userDisplayName"]))
+		if name == "" {
+			name = t.someone
+		}
+		format := t.memberRemoved
+		if ev.CreatorPublicKey == str(ev.Data["memberPublicKey"]) {
+			format = t.memberLeft
+		}
+		return notice{kind: KindMember, scope: ev.ID, body: fmt.Sprintf(format, name)}, true
+
 	case event.EventTypeMemberRoleChanged:
 		role := str(ev.Data["newRole"])
 		if label, ok := t.roleLabels[role]; ok {
 			role = label
 		}
-		return notice{kind: KindRole, scope: ev.ID, body: fmt.Sprintf(t.roleNow, cut(role))}, true
+		return notice{kind: KindRole, scope: ev.ID, body: t.person(creatorName, agent) + ": " + fmt.Sprintf(t.roleNow, cut(role))}, true
 
 	case event.EventTypeReminderFired:
-		title := cut(str(ev.Data["itemTitle"]))
-		if title == "" {
-			title = t.reminder
-		}
-		return notice{kind: KindReminder, scope: ev.ID, body: "⏰ " + title}, true
+		return describeReminder(ev, app, t), true
 
 	case event.EventTypeComponentDataChanged:
 		return s.describeComponent(ev, app, t, t.person(creatorName, agent))
 	}
 	return notice{}, false
+}
+
+func describeReminder(ev *event.Event, app *application.Application, t texts) notice {
+	title := cut(str(ev.Data["itemTitle"]))
+	if title == "" {
+		title = t.reminder
+	}
+	offsetSpec := str(ev.Data["offset"])
+	offset, err := reminder.ParseOffsetDuration(offsetSpec)
+	if err != nil {
+		offset = 0
+	}
+	icon := "⏰ "
+	if offset < 0 {
+		icon = "🔔 "
+	}
+	loc := time.UTC
+	if l, err := time.LoadLocation(str(ev.Data["tz"])); err == nil {
+		loc = l
+	}
+	occurrenceAt, _ := intOf(ev.Data["occurrenceAt"])
+	body := ""
+	if occurrenceAt > 0 {
+		body = t.clock(time.Unix(occurrenceAt, 0).In(loc))
+	}
+	if lead := -offset; occurrenceAt > 0 && lead > 0 {
+		switch {
+		case lead%(24*time.Hour) == 0:
+			body = t.inDays(body, int(lead/(24*time.Hour)))
+		case lead%time.Hour == 0:
+			body = t.inHours(body, int(lead/time.Hour))
+		default:
+			body = t.inMinutes(body, max(1, int(lead/time.Minute)))
+		}
+	}
+	if comp := findComponent(app, str(ev.Data["componentId"])); comp != nil {
+		if ct := cut(str(comp.Data["_title"])); ct != "" {
+			if body != "" {
+				body += " · "
+			}
+			body += ct
+		}
+	}
+	scope := ev.ID
+	if ruleID := str(ev.Data["ruleId"]); ruleID != "" {
+		scope = fmt.Sprintf("%s:%d:%s", ruleID, occurrenceAt, offsetSpec)
+	}
+	return notice{kind: KindReminder, scope: scope, title: icon + title, body: body}
+}
+
+func intOf(v any) (int64, bool) {
+	switch n := v.(type) {
+	case int64:
+		return n, true
+	case int:
+		return int64(n), true
+	case float64:
+		return int64(n), n == math.Trunc(n)
+	case json.Number:
+		i, err := n.Int64()
+		return i, err == nil
+	}
+	return 0, false
 }
 
 func findComponent(app *application.Application, id string) *application.Component {
@@ -243,6 +323,7 @@ func (s *PushService) describeComponent(ev *event.Event, app *application.Applic
 		if rule.Scope == "component" {
 			n.scope = componentID
 		}
+		n.componentTitle = cut(str(comp.Data["_title"]))
 		n.body = person + ": " + cut(what)
 		return n, true
 	}
@@ -396,7 +477,10 @@ func (c textCandidate) eval(value any, comp *application.Component, t texts) str
 	if c.ID != "" {
 		text, _ = t.textByID(c.ID)
 	} else {
-		v, _ := dotted(value, c.Field)
+		v := value
+		if c.Field != "" {
+			v, _ = dotted(value, c.Field)
+		}
 		text = strings.TrimSpace(str(v))
 		if text == "" {
 			if c.Empty == "" {
@@ -407,11 +491,25 @@ func (c textCandidate) eval(value any, comp *application.Component, t texts) str
 	}
 	text = c.Prefix + text
 	if sx := c.Suffix; sx != nil {
-		if extra := strings.TrimSpace(str(comp.Data[sx.Component])); extra != "" {
+		if extra := sx.eval(value, comp); extra != "" {
 			text += sx.Sep + extra
 		}
 	}
 	return text
+}
+
+func (sx *suffixSpec) eval(value any, comp *application.Component) string {
+	if sx.Component != "" {
+		return strings.TrimSpace(str(comp.Data[sx.Component]))
+	}
+	v, _ := dotted(value, sx.Field)
+	if sx.Format != "minorUnits" {
+		return strings.TrimSpace(str(v))
+	}
+	if n, ok := intOf(v); ok {
+		return minorUnits(n)
+	}
+	return ""
 }
 
 func dotted(v any, path string) (any, bool) {

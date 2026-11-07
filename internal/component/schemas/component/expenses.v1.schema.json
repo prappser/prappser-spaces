@@ -50,6 +50,21 @@
       "x-merge": "per-entry",
       "x-access": {
         "content": "expense"
+      },
+      "x-notify": {
+        "on": "new",
+        "kind": "item",
+        "scope": "component",
+        "text": [
+          {
+            "field": "what",
+            "suffix": {
+              "field": "amount",
+              "format": "minorUnits",
+              "sep": " · "
+            }
+          }
+        ]
       }
     },
     "^s_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$": {

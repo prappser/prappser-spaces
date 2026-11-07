@@ -21,8 +21,9 @@ func newSchedulerFixture(now time.Time, sentAt int64, tz string) (*DigestSchedul
 	repo.dailyUsers = []DigestUser{{PublicKey: schedUser, Timezone: tz, SentAt: sentAt}}
 	repo.subscriptions["sub-1"] = &Subscription{ID: "sub-1", DevicePublicKey: schedUser, Endpoint: "https://push.example.com/1", MutedApplicationIDs: []string{}, Locale: "pl"}
 	repo.claimRows = map[string][]DigestRow{schedUser: {
-		{SubscriptionID: "sub-1", ApplicationID: "a1", AppName: "Groceries", Count: 7},
-		{SubscriptionID: "sub-1", ApplicationID: "a2", AppName: "Trip", Count: 3},
+		{SubscriptionID: "sub-1", ApplicationID: "a1", AppName: "Groceries", Kind: KindChat, Count: 2},
+		{SubscriptionID: "sub-1", ApplicationID: "a1", AppName: "Groceries", Kind: KindItem, Title: "Zakupy", Count: 5},
+		{SubscriptionID: "sub-1", ApplicationID: "a2", AppName: "Trip", Kind: KindPoll, Count: 3},
 	}}
 	s := NewDigestScheduler(repo, svc, "https://space.example")
 	s.now = func() time.Time { return now }
@@ -56,7 +57,7 @@ func TestDigestScheduler_Tick_ShouldSendOneDigestAt19InSubscriptionLocale(t *tes
 		assert.NoError(t, json.Unmarshal(sender.calls[0].payload, &p))
 		assert.Equal(t, "digest", p.Kind)
 		assert.Equal(t, "10 nowych w 2 aplikacjach", p.Title)
-		assert.Equal(t, "Groceries 7, Trip 3", p.Body)
+		assert.Equal(t, "Groceries: Zakupy 5, Czat 2\nTrip: Ankiety 3", p.Body)
 		assert.Equal(t, digestSendOptions, sender.calls[0].opts)
 	}
 }
@@ -124,7 +125,7 @@ func TestDigestScheduler_Tick_ShouldSkipAppsMutedByTheSubscription(t *testing.T)
 		var p struct{ Title, Body string }
 		assert.NoError(t, json.Unmarshal(sender.calls[0].payload, &p))
 		assert.Equal(t, "3 nowe w 1 aplikacji", p.Title)
-		assert.Equal(t, "Trip", p.Body)
+		assert.Equal(t, "Trip: Ankiety 3", p.Body)
 	}
 }
 
@@ -158,7 +159,7 @@ func TestDigestScheduler_Tick_ShouldNotClaimWhenSubscriptionsQueryFails(t *testi
 	assert.NoError(t, err)
 	assert.Empty(t, repo.claimCalls)
 	assert.Equal(t, 0, sender.callCount())
-	assert.Len(t, repo.claimRows[schedUser], 2)
+	assert.Len(t, repo.claimRows[schedUser], 3)
 }
 
 func TestDigestScheduler_Tick_ShouldWarnOncePerUserAboutBadTimezone(t *testing.T) {

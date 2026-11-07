@@ -336,14 +336,16 @@ func (r *pushRepository) IncrementFailure(id string) error {
 	return nil
 }
 
-func (r *pushRepository) CountDigest(subscriptionID, applicationID string, at, seenAt int64) error {
+func (r *pushRepository) CountDigest(subscriptionID, applicationID string, bucket DigestBucket, at, seenAt int64) error {
 	_, err := r.db.Exec(`
-		INSERT INTO push_digest_pending (subscription_id, application_id, count, last_at)
-		VALUES ($1, $2, 1, $3)
-		ON CONFLICT (subscription_id, application_id) DO UPDATE
+		INSERT INTO push_digest_pending (subscription_id, application_id, component_key, kind, title, count, last_at)
+		VALUES ($1, $2, $5, $6, $7, 1, $3)
+		ON CONFLICT (subscription_id, application_id, component_key) DO UPDATE
 		  SET count   = CASE WHEN push_digest_pending.last_at <= $4 THEN 1 ELSE push_digest_pending.count + 1 END,
+		      kind    = $6,
+		      title   = $7,
 		      last_at = $3`,
-		subscriptionID, applicationID, at, seenAt)
+		subscriptionID, applicationID, at, seenAt, bucket.Key, string(bucket.Kind), bucket.Title)
 	if err != nil {
 		return fmt.Errorf("failed to count digest: %w", err)
 	}
@@ -397,8 +399,8 @@ func (r *pushRepository) ClaimDigest(userPublicKey string, due, now int64) ([]Di
 		  DELETE FROM push_digest_pending p
 		  USING push_subscriptions ps, user_devices ud
 		  WHERE p.subscription_id = ps.id AND ud.device_public_key = ps.device_public_key AND ud.user_public_key = $1
-		  RETURNING p.subscription_id, p.application_id, p.count, p.last_at)
-		SELECT g.subscription_id, g.application_id, a.name, g.count
+		  RETURNING p.subscription_id, p.application_id, p.kind, p.title, p.count, p.last_at)
+		SELECT g.subscription_id, g.application_id, a.name, g.kind, g.title, g.count
 		FROM gone g
 		JOIN applications a ON a.id = g.application_id AND a.deleted_at IS NULL
 		WHERE g.last_at > $2
@@ -412,7 +414,7 @@ func (r *pushRepository) ClaimDigest(userPublicKey string, due, now int64) ([]Di
 	var out []DigestRow
 	for rows.Next() {
 		var d DigestRow
-		if err := rows.Scan(&d.SubscriptionID, &d.ApplicationID, &d.AppName, &d.Count); err != nil {
+		if err := rows.Scan(&d.SubscriptionID, &d.ApplicationID, &d.AppName, &d.Kind, &d.Title, &d.Count); err != nil {
 			return nil, false, fmt.Errorf("failed to scan digest row: %w", err)
 		}
 		out = append(out, d)

@@ -735,3 +735,49 @@ func TestExecuteReminderChanged_DueAtOverflowingInt64_ShouldBeValidationError(t 
 	// then
 	assert.ErrorIs(t, err, ErrValidation)
 }
+
+func TestAddRemovedMemberName_ShouldStampStoredNameAndIgnoreForgedOne(t *testing.T) {
+	// given
+	appRepo := application.NewMemoryRepository()
+	if err := appRepo.RegisterApplication(&application.Application{ID: "app-1", Name: "Test App"}); err != nil {
+		t.Fatalf("Failed to create application: %v", err)
+	}
+	name := "Bo"
+	if err := appRepo.CreateMember(&application.Member{ID: "m-1", ApplicationID: "app-1", PublicKey: "bo-pk", Role: application.MemberRoleMember, UserDisplayName: &name}); err != nil {
+		t.Fatalf("Failed to create member: %v", err)
+	}
+	svc := NewEventService(nil, appRepo, nil, nil)
+	known := &Event{Type: EventTypeMemberRemoved, ApplicationID: "app-1", Data: map[string]interface{}{"memberPublicKey": "bo-pk", "userDisplayName": "Forged"}}
+	unknown := &Event{Type: EventTypeMemberRemoved, ApplicationID: "app-1", Data: map[string]interface{}{"memberPublicKey": "nobody", "userDisplayName": "Forged"}}
+
+	// when
+	svc.addRemovedMemberName(known)
+	svc.addRemovedMemberName(unknown)
+
+	// then
+	assert.Equal(t, "Bo", known.Data["userDisplayName"])
+	assert.NotContains(t, unknown.Data, "userDisplayName")
+}
+
+func TestAddRemovedMemberName_ShouldSkipNameOnAccountDeletedAndSurviveNilData(t *testing.T) {
+	// given
+	appRepo := application.NewMemoryRepository()
+	if err := appRepo.RegisterApplication(&application.Application{ID: "app-1", Name: "Test App"}); err != nil {
+		t.Fatalf("Failed to create application: %v", err)
+	}
+	name := "Bo"
+	if err := appRepo.CreateMember(&application.Member{ID: "m-1", ApplicationID: "app-1", PublicKey: "bo-pk", Role: application.MemberRoleMember, UserDisplayName: &name}); err != nil {
+		t.Fatalf("Failed to create member: %v", err)
+	}
+	svc := NewEventService(nil, appRepo, nil, nil)
+	erased := &Event{Type: EventTypeMemberRemoved, ApplicationID: "app-1", Data: map[string]interface{}{"memberPublicKey": "bo-pk", "reason": "account_deleted", "userDisplayName": "Forged"}}
+	nilData := &Event{Type: EventTypeMemberRemoved, ApplicationID: "app-1"}
+
+	// when
+	svc.addRemovedMemberName(erased)
+	svc.addRemovedMemberName(nilData)
+
+	// then
+	assert.NotContains(t, erased.Data, "userDisplayName")
+	assert.NotNil(t, nilData.Data)
+}
