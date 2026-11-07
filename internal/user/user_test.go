@@ -71,6 +71,7 @@ func (m *mockUserRepository) UpdateAvatarStorageID(publicKey string, avatarStora
 	return nil
 }
 func (m *mockUserRepository) UpdateLocale(string, string) error               { return nil }
+func (m *mockUserRepository) UpdateTimezone(string, string) error             { return nil }
 func (m *mockUserRepository) UpdateNotifyMode(string, string) error           { return nil }
 func (m *mockUserRepository) UpdateNotificationsSeenAt(string, int64) error   { return nil }
 func (m *mockUserRepository) UpdateUsername(publicKey, username string) error { return nil }

@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/lib/pq"
 )
@@ -56,9 +57,9 @@ func (r *userRepository) GetUserByPublicKey(publicKey string) (*User, error) {
 	var user User
 	var avatarStorageID, identityBinding sql.NullString
 	err := r.db.QueryRow(
-		"SELECT public_key, username, role, created_at, avatar_storage_id, identity_binding, binding_iat, binding_sub, locale, notify_mode, notifications_seen_at FROM users WHERE public_key = $1",
+		"SELECT public_key, username, role, created_at, avatar_storage_id, identity_binding, binding_iat, binding_sub, locale, notify_mode, notifications_seen_at, timezone FROM users WHERE public_key = $1",
 		publicKey,
-	).Scan(&user.PublicKey, &user.Username, &user.Role, &user.CreatedAt, &avatarStorageID, &identityBinding, &user.BindingIat, &user.BindingSub, &user.Locale, &user.NotifyMode, &user.NotificationsSeenAt)
+	).Scan(&user.PublicKey, &user.Username, &user.Role, &user.CreatedAt, &avatarStorageID, &identityBinding, &user.BindingIat, &user.BindingSub, &user.Locale, &user.NotifyMode, &user.NotificationsSeenAt, &user.Timezone)
 
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -125,9 +126,56 @@ func (r *userRepository) UpdateUsername(publicKey, username string) error {
 }
 
 func (r *userRepository) UpdateNotifyMode(publicKey, mode string) error {
-	result, err := r.db.Exec("UPDATE users SET notify_mode = $1 WHERE public_key = $2", mode, publicKey)
+	tx, err := r.db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin notify mode update: %w", err)
+	}
+	defer tx.Rollback()
+
+	var oldMode string
+	if err := tx.QueryRow("SELECT notify_mode FROM users WHERE public_key = $1 FOR UPDATE", publicKey).Scan(&oldMode); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("user with public key %s not found", publicKey)
+		}
+		return fmt.Errorf("failed to read notify mode: %w", err)
+	}
+
+	result, err := tx.Exec(
+		"UPDATE users SET notify_mode = $1, digest_sent_at = CASE WHEN $1 = 'daily' AND notify_mode <> 'daily' THEN $3 ELSE digest_sent_at END WHERE public_key = $2",
+		mode, publicKey, time.Now().Unix(),
+	)
 	if err != nil {
 		return fmt.Errorf("failed to update notify mode: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to check rows affected: %w", err)
+	}
+	if rows == 0 {
+		return fmt.Errorf("user with public key %s not found", publicKey)
+	}
+
+	if mode != NotifyModeDaily || oldMode != NotifyModeDaily {
+		if _, err := tx.Exec(
+			`DELETE FROM push_digest_pending WHERE subscription_id IN (
+			   SELECT ps.id FROM push_subscriptions ps
+			   JOIN user_devices ud ON ud.device_public_key = ps.device_public_key
+			   WHERE ud.user_public_key = $1)`,
+			publicKey,
+		); err != nil {
+			return fmt.Errorf("failed to clear pending digest: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit notify mode update: %w", err)
+	}
+	return nil
+}
+
+func (r *userRepository) UpdateTimezone(publicKey, tz string) error {
+	result, err := r.db.Exec("UPDATE users SET timezone = $1 WHERE public_key = $2", tz, publicKey)
+	if err != nil {
+		return fmt.Errorf("failed to update timezone: %w", err)
 	}
 	rows, err := result.RowsAffected()
 	if err != nil {

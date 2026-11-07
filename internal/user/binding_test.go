@@ -522,3 +522,18 @@ func TestGetProfile_ShouldAlwaysIncludeNotifyModeKey(t *testing.T) {
 	// then
 	assert.Contains(t, string(ctx.Response.Body()), `"notifyMode":""`)
 }
+
+func TestGetProfile_ShouldListNotifyModesAndTimezone(t *testing.T) {
+	// given
+	ue := UserEndpoints{userRepository: &bindingTestRepo{}}
+	ctx := &fasthttp.RequestCtx{}
+	ctx.SetUserValue("user", &User{PublicKey: "acct", Username: "alice", Timezone: "Europe/Warsaw"})
+
+	// when
+	ue.GetProfile(ctx)
+
+	// then
+	body := string(ctx.Response.Body())
+	assert.Contains(t, body, `"notifyModes":["all","chat","daily"]`)
+	assert.Contains(t, body, `"timezone":"Europe/Warsaw"`)
+}

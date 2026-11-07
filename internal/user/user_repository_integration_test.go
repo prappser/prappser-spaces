@@ -1075,3 +1075,158 @@ func TestUserRepository_UpdateLocale_ShouldPersistAndBeReturnedByGetUserByPublic
 	assert.Equal(t, "pl", got.Locale)
 	assert.Error(t, repo.UpdateLocale("no-such-user", "pl"))
 }
+
+func insertPendingDigest(t *testing.T, db *sql.DB, userKey, deviceKey, subID string) {
+	t.Helper()
+	testdb.InsertTestUser(t, db, userKey)
+	for _, q := range []string{
+		fmt.Sprintf("INSERT INTO user_devices (device_public_key, user_public_key, created_at) VALUES ('%s','%s',1)", deviceKey, userKey),
+		fmt.Sprintf("INSERT INTO push_subscriptions (id, device_public_key, endpoint, p256dh, auth, created_at) VALUES ('%s','%s','https://e/%s','p','a',1)", subID, deviceKey, subID),
+		fmt.Sprintf("INSERT INTO push_digest_pending (subscription_id, application_id, count, last_at) VALUES ('%s','app-1',3,5)", subID),
+	} {
+		if _, err := db.Exec(q); err != nil {
+			t.Fatalf("seed failed: %v: %s", err, q)
+		}
+	}
+}
+
+func countPending(t *testing.T, db *sql.DB, subID string) int {
+	t.Helper()
+	var n int
+	if err := db.QueryRow("SELECT COUNT(*) FROM push_digest_pending WHERE subscription_id = $1", subID).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
+func TestUserRepository_UpdateNotifyMode_ShouldDeletePendingDigestWhenLeavingDaily_Integration(t *testing.T) {
+	// given
+	db := getTestDB(t)
+	defer db.Close()
+	repo := NewUserRepository(db)
+	insertPendingDigest(t, db, "u1", "dev-live", "sub-live")
+	if _, err := db.Exec("INSERT INTO user_devices (device_public_key, user_public_key, created_at, revoked_at) VALUES ('dev-revoked','u1',1,2)"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("INSERT INTO push_subscriptions (id, device_public_key, endpoint, p256dh, auth, created_at) VALUES ('sub-revoked','dev-revoked','https://e/r','p','a',1)"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("INSERT INTO push_digest_pending (subscription_id, application_id, count, last_at) VALUES ('sub-revoked','app-1',1,1)"); err != nil {
+		t.Fatal(err)
+	}
+	insertPendingDigest(t, db, "u2", "dev-other", "sub-other")
+
+	// when
+	err := repo.UpdateNotifyMode("u1", NotifyModeChat)
+
+	// then
+	assert.NoError(t, err)
+	assert.Equal(t, 0, countPending(t, db, "sub-live"))
+	assert.Equal(t, 0, countPending(t, db, "sub-revoked"))
+	assert.Equal(t, 1, countPending(t, db, "sub-other"))
+}
+
+func TestUserRepository_UpdateNotifyMode_ShouldDeleteStalePendingDigestWhenEnteringDaily_Integration(t *testing.T) {
+	// given
+	db := getTestDB(t)
+	defer db.Close()
+	repo := NewUserRepository(db)
+	insertPendingDigest(t, db, "u1", "dev-1", "sub-1")
+
+	// when
+	err := repo.UpdateNotifyMode("u1", NotifyModeDaily)
+
+	// then
+	assert.NoError(t, err)
+	assert.Equal(t, 0, countPending(t, db, "sub-1"))
+}
+
+func TestUserRepository_UpdateNotifyMode_ShouldKeepPendingDigestWhenStayingDaily_Integration(t *testing.T) {
+	// given
+	db := getTestDB(t)
+	defer db.Close()
+	repo := NewUserRepository(db)
+	insertPendingDigest(t, db, "u1", "dev-1", "sub-1")
+	assert.NoError(t, repo.UpdateNotifyMode("u1", NotifyModeDaily))
+	if _, err := db.Exec("INSERT INTO push_digest_pending (subscription_id, application_id, count, last_at) VALUES ('sub-1','app-1',3,5)"); err != nil {
+		t.Fatal(err)
+	}
+
+	// when
+	err := repo.UpdateNotifyMode("u1", NotifyModeDaily)
+
+	// then
+	assert.NoError(t, err)
+	assert.Equal(t, 1, countPending(t, db, "sub-1"))
+}
+
+func TestUserRepository_UpdateNotifyMode_ShouldStampDigestSentAtOnlyWhenEnteringDaily_Integration(t *testing.T) {
+	// given
+	db := getTestDB(t)
+	defer db.Close()
+	repo := NewUserRepository(db)
+	testdb.InsertTestUser(t, db, "u1")
+	sentAt := func() int64 {
+		var v int64
+		if err := db.QueryRow("SELECT digest_sent_at FROM users WHERE public_key = 'u1'").Scan(&v); err != nil {
+			t.Fatal(err)
+		}
+		return v
+	}
+
+	// when
+	assert.NoError(t, repo.UpdateNotifyMode("u1", NotifyModeDaily))
+	entered := sentAt()
+	if _, err := db.Exec("UPDATE users SET digest_sent_at = 42 WHERE public_key = 'u1'"); err != nil {
+		t.Fatal(err)
+	}
+	assert.NoError(t, repo.UpdateNotifyMode("u1", NotifyModeDaily))
+
+	// then
+	assert.InDelta(t, time.Now().Unix(), entered, 5)
+	assert.Equal(t, int64(42), sentAt())
+}
+
+func TestUserRepository_UpdateTimezone_ShouldRoundTrip_Integration(t *testing.T) {
+	// given
+	db := getTestDB(t)
+	defer db.Close()
+	repo := NewUserRepository(db)
+	testdb.InsertTestUser(t, db, "u1")
+
+	// when
+	err := repo.UpdateTimezone("u1", "Europe/Warsaw")
+
+	// then
+	assert.NoError(t, err)
+	got, err := repo.GetUserByPublicKey("u1")
+	assert.NoError(t, err)
+	assert.Equal(t, "Europe/Warsaw", got.Timezone)
+	assert.Error(t, repo.UpdateTimezone("missing", "UTC"))
+}
+
+func TestMigration44_ShouldApplyDownThenUp_Integration(t *testing.T) {
+	// given
+	db := getTestDB(t)
+	defer db.Close()
+	read := func(name string) string {
+		b, err := os.ReadFile("../../files/migrations/" + name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
+	}
+
+	// when
+	_, downErr := db.Exec(read("000044_daily_digest.down.sql"))
+	_, upErr := db.Exec(read("000044_daily_digest.up.sql"))
+
+	// then
+	assert.NoError(t, downErr)
+	assert.NoError(t, upErr)
+	var n int
+	assert.NoError(t, db.QueryRow("SELECT COUNT(*) FROM push_digest_pending").Scan(&n))
+	testdb.InsertTestUser(t, db, "u1")
+	assert.NoError(t, NewUserRepository(db).UpdateTimezone("u1", "UTC"))
+	assert.NoError(t, NewUserRepository(db).UpdateNotifyMode("u1", NotifyModeDaily))
+}

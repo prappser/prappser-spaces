@@ -112,6 +112,7 @@ func (r *fakeUserRepo) UpdateAvatarStorageID(publicKey string, avatarStorageID *
 	return nil
 }
 func (r *fakeUserRepo) UpdateLocale(string, string) error               { return nil }
+func (r *fakeUserRepo) UpdateTimezone(string, string) error             { return nil }
 func (r *fakeUserRepo) UpdateNotifyMode(string, string) error           { return nil }
 func (r *fakeUserRepo) UpdateNotificationsSeenAt(string, int64) error   { return nil }
 func (r *fakeUserRepo) UpdateUsername(publicKey, username string) error { return nil }

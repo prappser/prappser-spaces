@@ -51,6 +51,7 @@ func (r *deviceTestRepo) UpdateAvatarStorageID(publicKey string, avatarStorageID
 	return nil
 }
 func (r *deviceTestRepo) UpdateLocale(string, string) error             { return nil }
+func (r *deviceTestRepo) UpdateTimezone(string, string) error           { return nil }
 func (r *deviceTestRepo) UpdateNotifyMode(string, string) error         { return nil }
 func (r *deviceTestRepo) UpdateNotificationsSeenAt(string, int64) error { return nil }
 func (r *deviceTestRepo) UpdateUsername(publicKey, username string) error {

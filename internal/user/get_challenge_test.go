@@ -38,6 +38,7 @@ func (r *getChallengeTestRepo) UpdateAvatarStorageID(publicKey string, avatarSto
 	return nil
 }
 func (r *getChallengeTestRepo) UpdateLocale(string, string) error               { return nil }
+func (r *getChallengeTestRepo) UpdateTimezone(string, string) error             { return nil }
 func (r *getChallengeTestRepo) UpdateNotifyMode(string, string) error           { return nil }
 func (r *getChallengeTestRepo) UpdateNotificationsSeenAt(string, int64) error   { return nil }
 func (r *getChallengeTestRepo) UpdateUsername(publicKey, username string) error { return nil }

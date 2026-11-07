@@ -2,6 +2,7 @@ package profile
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"time"
 
@@ -42,8 +43,8 @@ func (e *ProfileEndpoints) UpdateProfile(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	if req.DisplayName == nil && req.Locale == nil && req.NotifyMode == nil && req.NotificationsSeenAt == nil {
-		ctx.Error("displayName, locale, notifyMode or notificationsSeenAt required", fasthttp.StatusBadRequest)
+	if req.DisplayName == nil && req.Locale == nil && req.NotifyMode == nil && req.Timezone == nil && req.NotificationsSeenAt == nil {
+		ctx.Error("displayName, locale, notifyMode, timezone or notificationsSeenAt required", fasthttp.StatusBadRequest)
 		return
 	}
 
@@ -63,9 +64,16 @@ func (e *ProfileEndpoints) UpdateProfile(ctx *fasthttp.RequestCtx) {
 		}
 	}
 
-	if req.NotifyMode != nil && *req.NotifyMode != user.NotifyModeAll && *req.NotifyMode != user.NotifyModeChat {
-		ctx.Error("notifyMode must be all or chat", fasthttp.StatusBadRequest)
+	if req.NotifyMode != nil && !slices.Contains(user.NotifyModes, *req.NotifyMode) {
+		ctx.Error("notifyMode must be all, chat or daily", fasthttp.StatusBadRequest)
 		return
+	}
+
+	if req.Timezone != nil && *req.Timezone != "" {
+		if _, err := time.LoadLocation(*req.Timezone); err != nil || *req.Timezone == "Local" {
+			ctx.Error("timezone must be an IANA name", fasthttp.StatusBadRequest)
+			return
+		}
 	}
 
 	if req.NotificationsSeenAt != nil && (*req.NotificationsSeenAt < 0 || *req.NotificationsSeenAt > time.Now().Unix()+300) {
@@ -79,7 +87,9 @@ func (e *ProfileEndpoints) UpdateProfile(ctx *fasthttp.RequestCtx) {
 
 	modeChanged := req.NotifyMode != nil && *req.NotifyMode != authenticatedUser.NotifyMode
 
-	if !nameChanged && !localeChanged && !modeChanged && req.NotificationsSeenAt == nil {
+	tzChanged := req.Timezone != nil && *req.Timezone != authenticatedUser.Timezone
+
+	if !nameChanged && !localeChanged && !modeChanged && !tzChanged && req.NotificationsSeenAt == nil {
 		ctx.SetStatusCode(fasthttp.StatusOK)
 		ctx.SetContentType("application/json")
 		json.NewEncoder(ctx).Encode(authenticatedUser)
@@ -109,6 +119,14 @@ func (e *ProfileEndpoints) UpdateProfile(ctx *fasthttp.RequestCtx) {
 	if modeChanged {
 		if err := e.userRepo.UpdateNotifyMode(publicKey, *req.NotifyMode); err != nil {
 			log.Error().Err(err).Str("publicKey", publicKey).Msg("[PROFILE] Failed to update notify mode")
+			ctx.Error("Failed to update profile", fasthttp.StatusInternalServerError)
+			return
+		}
+	}
+
+	if tzChanged {
+		if err := e.userRepo.UpdateTimezone(publicKey, *req.Timezone); err != nil {
+			log.Error().Err(err).Str("publicKey", publicKey).Msg("[PROFILE] Failed to update timezone")
 			ctx.Error("Failed to update profile", fasthttp.StatusInternalServerError)
 			return
 		}

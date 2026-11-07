@@ -208,6 +208,9 @@ func main() {
 	reminderScheduler.Start()
 	log.Info().Msg("Reminder scheduler started")
 
+	digestScheduler := push.NewDigestScheduler(pushRepo, pushService, config.ExternalURL)
+	digestScheduler.Start()
+
 	invitationRepository := invitation.NewInvitationRepository(db)
 	invitationService := invitation.NewInvitationService(invitationRepository, privateKey, publicKey, appRepository, db, userRepository, eventService, spacePublicKeyString)
 	invitationService.SingleUseSignup = config.SignupSingleUseInvites
