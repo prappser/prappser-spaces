@@ -58,6 +58,19 @@ func (m *mockPushRepository) CreateSubscription(s *Subscription) error {
 	return nil
 }
 
+func (m *mockPushRepository) UpsertWSSubscription(s *Subscription) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, existing := range m.subscriptions {
+		if existing.Transport == TransportWS && existing.DevicePublicKey == s.DevicePublicKey {
+			existing.MutedApplicationIDs = s.MutedApplicationIDs
+			return existing.ID, nil
+		}
+	}
+	m.subscriptions[s.ID] = s
+	return s.ID, nil
+}
+
 func (m *mockPushRepository) UpdateSubscription(s *Subscription) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -621,4 +634,128 @@ func TestPushService_Fanout_ShouldFilterEveryKindByNotifyMode(t *testing.T) {
 		assert.Equal(t, tc.chatGetsIt, got["sub-chat"], tc.name)
 		assert.Len(t, sender.calls, len(got), tc.name)
 	}
+}
+
+type wsPushCall struct {
+	account, device string
+	payload         []byte
+}
+
+type mockWSPusher struct {
+	mu     sync.Mutex
+	calls  []wsPushCall
+	result bool
+}
+
+func (m *mockWSPusher) SendPush(account, device string, payload []byte) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.calls = append(m.calls, wsPushCall{account, device, payload})
+	return m.result
+}
+
+func (m *mockWSPusher) snapshot() []wsPushCall {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]wsPushCall(nil), m.calls...)
+}
+
+func newWSTestService(pusher WSPusher) (*PushService, *mockPushRepository, *mockWebpushSender) {
+	repo := newMockPushRepository()
+	sender := newMockWebpushSender(SendResult{StatusCode: 201})
+	svc := NewPushService(repo, sender, newMockSpaceVapidService("pub", "priv"), nil)
+	svc.SetWSPusher(pusher)
+	return svc, repo, sender
+}
+
+func wsSub(id, device, user string, muted ...string) *Subscription {
+	return &Subscription{ID: id, DevicePublicKey: device, UserPublicKey: user, Transport: TransportWS, MutedApplicationIDs: append([]string{}, muted...)}
+}
+
+func TestPushService_Push_ShouldSendV2PayloadToWSDevice(t *testing.T) {
+	// given
+	pusher := &mockWSPusher{result: true}
+	svc, repo, sender := newWSTestService(pusher)
+	repo.subscriptions["ws-1"] = wsSub("ws-1", "dev-1", "acct-1")
+	repo.subscriptions["ws-1"].Locale = "pl"
+	repo.subscriptions["wp-1"] = &Subscription{ID: "wp-1", DevicePublicKey: "dev-1", Transport: TransportWebpush, Endpoint: "https://push.example.com/1", P256dh: "p", Auth: "a", Locale: "pl", MutedApplicationIDs: []string{}}
+	ev := makeEvent(event.EventTypeMemberAdded, "creator-pk", "app-1")
+
+	// when
+	svc.Push(ev, nil, "", false, []string{"dev-1"})
+
+	// then: both subs of the device deliver through their own path with identical bytes
+	assert.True(t, sender.waitForCalls(1, 2*time.Second))
+	assert.Eventually(t, func() bool { return len(pusher.snapshot()) == 1 }, 2*time.Second, 5*time.Millisecond)
+	call := pusher.snapshot()[0]
+	assert.Equal(t, "acct-1", call.account)
+	assert.Equal(t, "dev-1", call.device)
+	assert.Equal(t, sender.calls[0].payload, call.payload)
+	assert.Equal(t, "wp-1", sender.calls[0].sub.ID)
+}
+
+func TestPushService_Push_ShouldSkipWSDeviceWhenApplicationMuted(t *testing.T) {
+	// given
+	pusher := &mockWSPusher{result: true}
+	svc, repo, _ := newWSTestService(pusher)
+	repo.subscriptions["ws-1"] = wsSub("ws-1", "dev-1", "acct-1", "app-1")
+	ev := makeEvent(event.EventTypeMemberAdded, "creator-pk", "app-1")
+
+	// when
+	svc.Push(ev, nil, "", false, []string{"dev-1"})
+
+	// then
+	time.Sleep(100 * time.Millisecond)
+	assert.Empty(t, pusher.snapshot())
+}
+
+func TestPushService_Push_ShouldSkipWSDeviceInChatModeForNonChatKind(t *testing.T) {
+	// given
+	pusher := &mockWSPusher{result: true}
+	svc, repo, _ := newWSTestService(pusher)
+	repo.subscriptions["ws-1"] = wsSub("ws-1", "dev-1", "acct-1")
+	repo.subscriptions["ws-1"].NotifyMode = user.NotifyModeChat
+	ev := makeEvent(event.EventTypeMemberAdded, "creator-pk", "app-1")
+
+	// when
+	svc.Push(ev, nil, "", false, []string{"dev-1"})
+
+	// then
+	time.Sleep(100 * time.Millisecond)
+	assert.Empty(t, pusher.snapshot())
+}
+
+func TestPushService_Push_ShouldNotTouchHealthWhenWSDeviceOffline(t *testing.T) {
+	// given
+	pusher := &mockWSPusher{result: false}
+	svc, repo, sender := newWSTestService(pusher)
+	repo.subscriptions["ws-1"] = wsSub("ws-1", "dev-1", "acct-1")
+	ev := makeEvent(event.EventTypeMemberAdded, "creator-pk", "app-1")
+
+	// when
+	svc.Push(ev, nil, "", false, []string{"dev-1"})
+
+	// then
+	assert.Eventually(t, func() bool { return len(pusher.snapshot()) == 1 }, 2*time.Second, 5*time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
+	repo.mu.Lock()
+	defer repo.mu.Unlock()
+	assert.Empty(t, repo.incrementFailureCalls)
+	assert.Empty(t, repo.deleteSubscriptionCalls)
+	assert.Empty(t, repo.markSuccessCalls)
+	assert.Equal(t, 0, sender.callCount())
+}
+
+func TestPushService_Push_ShouldDropWSPushWithoutPusher(t *testing.T) {
+	// given
+	svc, repo, sender := newWSTestService(nil)
+	repo.subscriptions["ws-1"] = wsSub("ws-1", "dev-1", "acct-1")
+	ev := makeEvent(event.EventTypeMemberAdded, "creator-pk", "app-1")
+
+	// when
+	svc.Push(ev, nil, "", false, []string{"dev-1"})
+
+	// then
+	time.Sleep(100 * time.Millisecond)
+	assert.Equal(t, 0, sender.callCount())
 }

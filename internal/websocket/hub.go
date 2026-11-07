@@ -241,6 +241,29 @@ func (h *Hub) broadcastToUser(msg *UserBroadcastMessage) {
 		Msg("[WS] User event broadcast complete")
 }
 
+// SendPush queues payload for the device's open connections and reports whether any accepted it.
+// The send happens under the read lock because unregisterClient closes client.send under the write lock.
+func (h *Hub) SendPush(account, device string, payload []byte) bool {
+	msg := &PushMessage{Type: MessageTypePush, Payload: payload}
+
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	delivered := false
+	for _, c := range h.byUser[account] {
+		if c.user.DevicePublicKey != device {
+			continue
+		}
+		select {
+		case c.send <- msg:
+			delivered = true
+		default:
+			log.Warn().Str("devicePublicKey", device[:min(20, len(device))]+"...").Msg("[WS] Client send buffer full, dropping push")
+		}
+	}
+	return delivered
+}
+
 func (h *Hub) Register(client *Client) {
 	h.register <- client
 }

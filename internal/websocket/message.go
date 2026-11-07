@@ -1,6 +1,10 @@
 package websocket
 
-import "github.com/prappser/prappser-spaces/internal/event"
+import (
+	"encoding/json"
+
+	"github.com/prappser/prappser-spaces/internal/event"
+)
 
 type MessageType string
 
@@ -12,6 +16,7 @@ const (
 	MessageTypePing        MessageType = "ping"
 	MessageTypePong        MessageType = "pong"
 	MessageTypeError       MessageType = "error"
+	MessageTypePush        MessageType = "push"
 )
 
 type IncomingMessage struct {
@@ -28,6 +33,11 @@ type OutgoingMessage struct {
 type EventsMessage struct {
 	Type   MessageType    `json:"type"`
 	Events []*event.Event `json:"events"`
+}
+
+type PushMessage struct {
+	Type    MessageType     `json:"type"`
+	Payload json.RawMessage `json:"payload"`
 }
 
 type BroadcastMessage struct {

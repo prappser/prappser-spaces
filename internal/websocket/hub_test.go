@@ -1,6 +1,7 @@
 package websocket
 
 import (
+	"encoding/json"
 	"errors"
 	"net"
 	"testing"
@@ -328,4 +329,58 @@ func TestDisconnect_ShouldCloseAllAccountSocketsWhenDeviceEmpty(t *testing.T) {
 	assert.False(t, readOutcome(a2, 2*time.Second))
 	assert.True(t, readOutcome(b1, 200*time.Millisecond))
 	assert.Eventually(t, func() bool { return clientCount(f.hub) == 1 }, 2*time.Second, 10*time.Millisecond)
+}
+
+func connectDevice(hub *Hub, account, device string) *Client {
+	c := NewClient(hub, nil, &user.User{PublicKey: account, DevicePublicKey: device})
+	hub.registerClient(c)
+	return c
+}
+
+func TestHub_SendPush_ShouldReachOnlyMatchingDevice(t *testing.T) {
+	// given
+	hub := NewHub(application.NewMemoryRepository())
+	target := connectDevice(hub, ownerKey, "device-1")
+	sibling := connectDevice(hub, ownerKey, "device-2")
+	stranger := connectDevice(hub, otherKey, "device-1")
+
+	// when
+	ok := hub.SendPush(ownerKey, "device-1", []byte(`{"v":2,"title":"t"}`))
+
+	// then
+	assert.True(t, ok)
+	assert.Len(t, target.send, 1)
+	assert.Empty(t, sibling.send)
+	assert.Empty(t, stranger.send)
+	raw, err := json.Marshal(<-target.send)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"type":"push","payload":{"v":2,"title":"t"}}`, string(raw))
+}
+
+func TestHub_SendPush_ShouldReturnFalseWhenDeviceOffline(t *testing.T) {
+	// given
+	hub := NewHub(application.NewMemoryRepository())
+	connectDevice(hub, ownerKey, "device-2")
+
+	// when
+	ok := hub.SendPush(ownerKey, "device-1", []byte(`{}`))
+
+	// then
+	assert.False(t, ok)
+}
+
+func TestHub_SendPush_ShouldReturnFalseWhenBufferFull(t *testing.T) {
+	// given
+	hub := NewHub(application.NewMemoryRepository())
+	c := connectDevice(hub, ownerKey, "device-1")
+	for i := 0; i < cap(c.send); i++ {
+		c.send <- &PushMessage{}
+	}
+
+	// when
+	ok := hub.SendPush(ownerKey, "device-1", []byte(`{}`))
+
+	// then
+	assert.False(t, ok)
+	assert.Len(t, c.send, cap(c.send))
 }

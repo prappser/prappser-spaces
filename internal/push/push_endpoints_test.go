@@ -246,3 +246,123 @@ func TestDeleteSubscription_ShouldReturn401WhenNoUser(t *testing.T) {
 	// then
 	assert.Equal(t, fasthttp.StatusUnauthorized, ctx.Response.StatusCode())
 }
+
+func postJSON(ep *PushEndpoints, body string) *fasthttp.RequestCtx {
+	ctx := newTestRequestCtx("POST", body)
+	setAuthUser(ctx, testUser("user-pk-1"))
+	ep.CreateSubscription(ctx)
+	return ctx
+}
+
+func TestCreateSubscription_ShouldReturn201ForWSWithoutEndpoint(t *testing.T) {
+	// given
+	ep, repo := newTestEndpoints()
+
+	// when
+	ctx := postJSON(ep, `{"transport":"ws","mutedApplicationIds":["app-x"]}`)
+
+	// then
+	assert.Equal(t, fasthttp.StatusCreated, ctx.Response.StatusCode())
+	var resp map[string]string
+	assert.NoError(t, json.Unmarshal(ctx.Response.Body(), &resp))
+	sub := repo.subscriptions[resp["id"]]
+	assert.NotNil(t, sub)
+	assert.Equal(t, TransportWS, sub.Transport)
+	assert.Equal(t, "user-pk-1", sub.DevicePublicKey)
+	assert.Equal(t, []string{"app-x"}, sub.MutedApplicationIDs)
+}
+
+func TestCreateSubscription_ShouldReturn400ForWSWithEndpoint(t *testing.T) {
+	// given
+	ep, _ := newTestEndpoints()
+
+	// when
+	ctx := postJSON(ep, `{"transport":"ws","endpoint":"https://push.example.com/1"}`)
+
+	// then
+	assert.Equal(t, fasthttp.StatusBadRequest, ctx.Response.StatusCode())
+}
+
+func TestCreateSubscription_ShouldReturn400ForWSWithKeys(t *testing.T) {
+	// given
+	ep, _ := newTestEndpoints()
+
+	// when
+	ctx := postJSON(ep, `{"transport":"ws","p256dh":"p","auth":"a"}`)
+
+	// then
+	assert.Equal(t, fasthttp.StatusBadRequest, ctx.Response.StatusCode())
+}
+
+func TestCreateSubscription_ShouldReturn400ForUnknownTransport(t *testing.T) {
+	// given
+	ep, _ := newTestEndpoints()
+
+	// when
+	ctx := postJSON(ep, `{"transport":"carrier-pigeon"}`)
+
+	// then
+	assert.Equal(t, fasthttp.StatusBadRequest, ctx.Response.StatusCode())
+}
+
+func TestCreateSubscription_ShouldReturn400ForExplicitWebpushWithoutEndpoint(t *testing.T) {
+	// given
+	ep, _ := newTestEndpoints()
+
+	// when
+	ctx := postJSON(ep, `{"transport":"webpush","p256dh":"p","auth":"a"}`)
+
+	// then
+	assert.Equal(t, fasthttp.StatusBadRequest, ctx.Response.StatusCode())
+}
+
+func TestCreateSubscription_ShouldReturnSameIDWhenWSReRegisters(t *testing.T) {
+	// given
+	ep, repo := newTestEndpoints()
+	first := postJSON(ep, `{"transport":"ws"}`)
+	var firstResp map[string]string
+	assert.NoError(t, json.Unmarshal(first.Response.Body(), &firstResp))
+
+	// when
+	second := postJSON(ep, `{"transport":"ws","mutedApplicationIds":["app-y"]}`)
+
+	// then
+	assert.Equal(t, fasthttp.StatusCreated, second.Response.StatusCode())
+	var secondResp map[string]string
+	assert.NoError(t, json.Unmarshal(second.Response.Body(), &secondResp))
+	assert.Equal(t, firstResp["id"], secondResp["id"])
+	assert.Len(t, repo.subscriptions, 1)
+	assert.Equal(t, []string{"app-y"}, repo.subscriptions[firstResp["id"]].MutedApplicationIDs)
+}
+
+func TestUpdateSubscription_ShouldReturn400WhenWSGetsEndpoint(t *testing.T) {
+	// given
+	ep, repo := newTestEndpoints()
+	repo.subscriptions["ws-1"] = &Subscription{ID: "ws-1", DevicePublicKey: "user-pk-1", Transport: TransportWS, MutedApplicationIDs: []string{}}
+	ctx := newTestRequestCtx("PATCH", `{"endpoint":"https://push.example.com/1"}`)
+	setAuthUser(ctx, testUser("user-pk-1"))
+	ctx.SetUserValue("subscriptionId", "ws-1")
+
+	// when
+	ep.UpdateSubscription(ctx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusBadRequest, ctx.Response.StatusCode())
+	assert.Empty(t, repo.subscriptions["ws-1"].Endpoint)
+}
+
+func TestUpdateSubscription_ShouldUpdateMutedApplicationIDsOnWS(t *testing.T) {
+	// given
+	ep, repo := newTestEndpoints()
+	repo.subscriptions["ws-1"] = &Subscription{ID: "ws-1", DevicePublicKey: "user-pk-1", Transport: TransportWS, MutedApplicationIDs: []string{}}
+	ctx := newTestRequestCtx("PATCH", `{"mutedApplicationIds":["app-z"]}`)
+	setAuthUser(ctx, testUser("user-pk-1"))
+	ctx.SetUserValue("subscriptionId", "ws-1")
+
+	// when
+	ep.UpdateSubscription(ctx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusOK, ctx.Response.StatusCode())
+	assert.Equal(t, []string{"app-z"}, repo.subscriptions["ws-1"].MutedApplicationIDs)
+}

@@ -186,6 +186,7 @@ func main() {
 		log.Fatal().Err(err).Msg("Failed to load component schemas")
 	}
 	pushService := push.NewPushService(pushRepo, pushSender, pushVapidService, componentValidator)
+	pushService.SetWSPusher(wsHub)
 	pushEndpoints := push.NewPushEndpoints(pushService, pushRepo, pushVapidService)
 
 	eventService := event.NewEventService(eventRepository, appRepository, wsHub, pushService)

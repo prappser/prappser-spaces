@@ -18,6 +18,17 @@ const (
 	KindReminder Kind = "reminder"
 )
 
+const (
+	TransportWebpush = "webpush"
+	TransportWS      = "ws"
+)
+
+// WSPusher delivers a push payload to a device's open WebSocket connections.
+// It reports false when the device has no open connection or none accepted it.
+type WSPusher interface {
+	SendPush(account, device string, payload []byte) bool
+}
+
 // SendOptions are the per-message push service headers.
 type SendOptions struct {
 	Urgency webpush.Urgency
@@ -42,6 +53,7 @@ func (k Kind) sendsIn(mode string) bool {
 type Subscription struct {
 	ID                  string
 	DevicePublicKey     string
+	Transport           string
 	Endpoint            string
 	P256dh              string
 	Auth                string
@@ -52,6 +64,8 @@ type Subscription struct {
 	FailureCount        int
 	// Locale is the owning account's language, filled only by GetSubscriptionsForUsers.
 	Locale string
+	// UserPublicKey is the owning account's key, filled only by GetSubscriptionsForUsers.
+	UserPublicKey string
 	// NotifyMode is the owning account's notify mode, filled only by GetSubscriptionsForUsers.
 	NotifyMode string
 }
@@ -79,6 +93,9 @@ type PushRepository interface {
 	UpsertSpaceVapid(v *SpaceVapid) error
 	GetSpaceVapid() (*SpaceVapid, error)
 	CreateSubscription(s *Subscription) error
+	// UpsertWSSubscription registers the device's single ws subscription and returns its id;
+	// registering again keeps the existing row and id.
+	UpsertWSSubscription(s *Subscription) (string, error)
 	UpdateSubscription(s *Subscription) error
 	DeleteSubscription(id, devicePublicKey string) error
 	// GetSubscriptionsForUsers takes ACCOUNT keys (not device keys) and joins
