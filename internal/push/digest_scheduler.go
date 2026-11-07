@@ -18,10 +18,12 @@ type DigestScheduler struct {
 	now      func() time.Time
 	ticker   *time.Ticker
 	done     chan bool
+	// Tick runs on a single goroutine, so no mutex.
+	warnedTZ map[string]struct{}
 }
 
 func NewDigestScheduler(repo PushRepository, svc *PushService, spaceURL string) *DigestScheduler {
-	return &DigestScheduler{repo: repo, svc: svc, spaceURL: spaceURL, now: time.Now, done: make(chan bool)}
+	return &DigestScheduler{repo: repo, svc: svc, spaceURL: spaceURL, now: time.Now, done: make(chan bool), warnedTZ: map[string]struct{}{}}
 }
 
 func (s *DigestScheduler) Start() {
@@ -59,7 +61,7 @@ func (s *DigestScheduler) Tick(ctx context.Context) error {
 	now := s.now()
 	for _, u := range users {
 		if err := s.digestFor(u, now); err != nil {
-			log.Error().Err(err).Msg("[DIGEST] Failed to send digest, continuing with remaining accounts")
+			log.Error().Err(err).Str("user", shortKey(u.PublicKey)).Msg("[DIGEST] Failed to send digest, continuing with remaining accounts")
 		}
 	}
 	return nil
@@ -70,7 +72,10 @@ func (s *DigestScheduler) digestFor(u DigestUser, now time.Time) error {
 	if u.Timezone != "" {
 		l, err := time.LoadLocation(u.Timezone)
 		if err != nil {
-			log.Warn().Err(err).Str("timezone", u.Timezone).Msg("[DIGEST] Unknown timezone, using UTC")
+			if _, seen := s.warnedTZ[u.PublicKey]; !seen {
+				s.warnedTZ[u.PublicKey] = struct{}{}
+				log.Warn().Err(err).Str("user", shortKey(u.PublicKey)).Str("timezone", u.Timezone).Msg("[DIGEST] Unknown timezone, using UTC")
+			}
 		} else {
 			loc = l
 		}
@@ -80,16 +85,16 @@ func (s *DigestScheduler) digestFor(u DigestUser, now time.Time) error {
 		return nil
 	}
 
+	subs, err := s.repo.GetSubscriptionsForUsers([]string{u.PublicKey})
+	if err != nil {
+		return fmt.Errorf("get subscriptions: %w", err)
+	}
 	rows, claimed, err := s.repo.ClaimDigest(u.PublicKey, due, now.Unix())
 	if err != nil {
 		return fmt.Errorf("claim digest: %w", err)
 	}
 	if !claimed || len(rows) == 0 {
 		return nil
-	}
-	subs, err := s.repo.GetSubscriptionsForUsers([]string{u.PublicKey})
-	if err != nil {
-		return fmt.Errorf("get subscriptions: %w", err)
 	}
 
 	vapid := s.svc.vapid()
@@ -111,4 +116,11 @@ func (s *DigestScheduler) digestFor(u DigestUser, now time.Time) error {
 		s.svc.send(sub, vapid, payload, digestSendOptions)
 	}
 	return nil
+}
+
+func shortKey(k string) string {
+	if len(k) > 8 {
+		return k[:8]
+	}
+	return k
 }

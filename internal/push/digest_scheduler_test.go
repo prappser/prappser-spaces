@@ -3,6 +3,7 @@ package push
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -137,4 +138,46 @@ func TestDigestScheduler_Tick_ShouldNotSendWhenEveryAppIsMuted(t *testing.T) {
 
 	// then
 	assert.Equal(t, 0, sender.callCount())
+}
+
+type failingSubsRepository struct{ *mockPushRepository }
+
+func (failingSubsRepository) GetSubscriptionsForUsers([]string) ([]*Subscription, error) {
+	return nil, errors.New("db down")
+}
+
+func TestDigestScheduler_Tick_ShouldNotClaimWhenSubscriptionsQueryFails(t *testing.T) {
+	// given
+	s, repo, sender := newSchedulerFixture(utcAt(19, 0), 0, "")
+	s.repo = failingSubsRepository{repo}
+
+	// when
+	err := s.Tick(context.Background())
+
+	// then
+	assert.NoError(t, err)
+	assert.Empty(t, repo.claimCalls)
+	assert.Equal(t, 0, sender.callCount())
+	assert.Len(t, repo.claimRows[schedUser], 2)
+}
+
+func TestDigestScheduler_Tick_ShouldWarnOncePerUserAboutBadTimezone(t *testing.T) {
+	// given
+	s, repo, sender := newSchedulerFixture(utcAt(19, 0), 0, "Mars/Base")
+
+	// when
+	assert.NoError(t, s.Tick(context.Background()))
+	repo.dailyUsers[0].SentAt = 0
+	repo.claimRows = map[string][]DigestRow{schedUser: {{SubscriptionID: "sub-1", ApplicationID: "a1", AppName: "Groceries", Count: 1}}}
+	assert.NoError(t, s.Tick(context.Background()))
+
+	// then
+	assert.Equal(t, 2, sender.callCount())
+	assert.Equal(t, utcAt(19, 0).Unix(), repo.dailyUsers[0].SentAt)
+	assert.Len(t, s.warnedTZ, 1)
+}
+
+func TestShortKey_ShouldCutToEightChars(t *testing.T) {
+	assert.Equal(t, "abcdefgh", shortKey("abcdefghijkl"))
+	assert.Equal(t, "pk-1", shortKey("pk-1"))
 }
