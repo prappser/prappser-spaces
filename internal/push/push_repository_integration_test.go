@@ -497,3 +497,185 @@ func TestPushRepository_GetSubscriptionsForUsers_ShouldDropRevokedWSDevice_Integ
 	assert.NoError(t, err)
 	assert.Empty(t, subs)
 }
+
+type digestFixture struct {
+	db   *sql.DB
+	repo PushRepository
+	user string
+	sub  string
+}
+
+func newDigestFixture(t *testing.T, name string, seenAt int64) *digestFixture {
+	t.Helper()
+	db := getTestDB(t)
+	t.Cleanup(func() { db.Close() })
+	user, sub := "dg-user-"+name, "dg-sub-"+name
+	now := time.Now().Unix()
+	for _, q := range []struct {
+		sql  string
+		args []any
+	}{
+		{"INSERT INTO users (public_key, username, role, created_at, notify_mode, notifications_seen_at) VALUES ($1,$1,'user',$2,'daily',$3) ON CONFLICT DO NOTHING", []any{user, now, seenAt}},
+		{"INSERT INTO user_devices (device_public_key, user_public_key, created_at) VALUES ($1,$1,$2) ON CONFLICT DO NOTHING", []any{user, now}},
+		{"INSERT INTO push_subscriptions (id, device_public_key, endpoint, p256dh, auth, created_at) VALUES ($1,$2,'https://push.example.com/'||$1,'p','a',$3) ON CONFLICT DO NOTHING", []any{sub, user, now}},
+	} {
+		if _, err := db.Exec(q.sql, q.args...); err != nil {
+			t.Fatalf("fixture: %v", err)
+		}
+	}
+	return &digestFixture{db: db, repo: NewPushRepository(db), user: user, sub: sub}
+}
+
+func (f *digestFixture) app(t *testing.T, id, name string, member, deleted bool) {
+	t.Helper()
+	var deletedAt any
+	if deleted {
+		deletedAt = int64(1)
+	}
+	if _, err := f.db.Exec("INSERT INTO applications (id, name, created_at, updated_at, deleted_at) VALUES ($1,$2,1,1,$3) ON CONFLICT DO NOTHING", id, name, deletedAt); err != nil {
+		t.Fatalf("app: %v", err)
+	}
+	if member {
+		if _, err := f.db.Exec("INSERT INTO members (id, application_id, role, public_key) VALUES ($1,$2,'member',$3) ON CONFLICT DO NOTHING", id+"-"+f.user, id, f.user); err != nil {
+			t.Fatalf("member: %v", err)
+		}
+	}
+}
+
+func (f *digestFixture) pending(t *testing.T, app string, count int, lastAt int64) {
+	t.Helper()
+	if _, err := f.db.Exec("INSERT INTO push_digest_pending (subscription_id, application_id, count, last_at) VALUES ($1,$2,$3,$4)", f.sub, app, count, lastAt); err != nil {
+		t.Fatalf("pending: %v", err)
+	}
+}
+
+func (f *digestFixture) pendingRows(t *testing.T) int {
+	t.Helper()
+	var n int
+	if err := f.db.QueryRow("SELECT COUNT(*) FROM push_digest_pending WHERE subscription_id = $1", f.sub).Scan(&n); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	return n
+}
+
+func TestPushRepository_CountDigest_ShouldIncrementAndResetOnceRead_Integration(t *testing.T) {
+	// given
+	f := newDigestFixture(t, "count", 0)
+	f.app(t, "dg-app-count", "A", true, false)
+	read := func() (n int, last int64) {
+		if err := f.db.QueryRow("SELECT count, last_at FROM push_digest_pending WHERE subscription_id=$1 AND application_id='dg-app-count'", f.sub).Scan(&n, &last); err != nil {
+			t.Fatalf("read: %v", err)
+		}
+		return
+	}
+
+	// when
+	assert.NoError(t, f.repo.CountDigest(f.sub, "dg-app-count", 100, 0))
+	assert.NoError(t, f.repo.CountDigest(f.sub, "dg-app-count", 110, 0))
+	assert.NoError(t, f.repo.CountDigest(f.sub, "dg-app-count", 120, 0))
+	n, last := read()
+
+	// then
+	assert.Equal(t, 3, n)
+	assert.Equal(t, int64(120), last)
+
+	// when: the account read everything up to 130, the next event starts over
+	assert.NoError(t, f.repo.CountDigest(f.sub, "dg-app-count", 140, 130))
+	n, last = read()
+
+	// then
+	assert.Equal(t, 1, n)
+	assert.Equal(t, int64(140), last)
+}
+
+func TestPushRepository_ClaimDigest_ShouldReturnLiveUnreadRowsDeleteAllAndClaimOncePerDue_Integration(t *testing.T) {
+	// given
+	f := newDigestFixture(t, "claim", 100)
+	f.app(t, "dg-live", "Live", true, false)
+	f.app(t, "dg-read", "Read", true, false)
+	f.app(t, "dg-gone", "Gone", true, true)
+	f.app(t, "dg-left", "Left", false, false)
+	f.pending(t, "dg-live", 3, 200)
+	f.pending(t, "dg-read", 5, 50)
+	f.pending(t, "dg-gone", 4, 200)
+	f.pending(t, "dg-left", 2, 200)
+
+	// when
+	rows, claimed, err := f.repo.ClaimDigest(f.user, 1000, 2000)
+	again, claimedAgain, errAgain := f.repo.ClaimDigest(f.user, 1000, 2001)
+
+	// then
+	assert.NoError(t, err)
+	assert.True(t, claimed)
+	assert.Equal(t, []DigestRow{{SubscriptionID: f.sub, ApplicationID: "dg-live", AppName: "Live", Count: 3}}, rows)
+	assert.Equal(t, 0, f.pendingRows(t))
+	assert.NoError(t, errAgain)
+	assert.False(t, claimedAgain)
+	assert.Empty(t, again)
+	var sentAt int64
+	assert.NoError(t, f.db.QueryRow("SELECT digest_sent_at FROM users WHERE public_key=$1", f.user).Scan(&sentAt))
+	assert.Equal(t, int64(2000), sentAt)
+}
+
+func TestPushRepository_ClaimDigest_ShouldNotClaimOutsideDailyMode_Integration(t *testing.T) {
+	// given
+	f := newDigestFixture(t, "mode", 0)
+	f.app(t, "dg-mode", "A", true, false)
+	f.pending(t, "dg-mode", 1, 10)
+	if _, err := f.db.Exec("UPDATE users SET notify_mode='all' WHERE public_key=$1", f.user); err != nil {
+		t.Fatal(err)
+	}
+
+	// when
+	rows, claimed, err := f.repo.ClaimDigest(f.user, 1000, 2000)
+
+	// then
+	assert.NoError(t, err)
+	assert.False(t, claimed)
+	assert.Empty(t, rows)
+	assert.Equal(t, 1, f.pendingRows(t))
+}
+
+func TestPushRepository_GetDailyUsers_ShouldReturnOnlyDailyAccountsWithTimezoneAndStamp_Integration(t *testing.T) {
+	// given
+	f := newDigestFixture(t, "daily", 0)
+	if _, err := f.db.Exec("UPDATE users SET timezone='Europe/Warsaw', digest_sent_at=77 WHERE public_key=$1", f.user); err != nil {
+		t.Fatal(err)
+	}
+
+	// when
+	users, err := f.repo.GetDailyUsers()
+
+	// then
+	assert.NoError(t, err)
+	assert.Contains(t, users, DigestUser{PublicKey: f.user, Timezone: "Europe/Warsaw", SentAt: 77})
+	assert.NotContains(t, users, DigestUser{PublicKey: "test-user-1", Timezone: "", SentAt: 0})
+}
+
+func TestPushRepository_DeleteSubscription_ShouldCascadePendingDigestRows_Integration(t *testing.T) {
+	// given
+	f := newDigestFixture(t, "cascade", 0)
+	f.app(t, "dg-cascade", "A", true, false)
+	f.pending(t, "dg-cascade", 1, 10)
+
+	// when
+	err := f.repo.DeleteSubscription(f.sub, f.user)
+
+	// then
+	assert.NoError(t, err)
+	assert.Equal(t, 0, f.pendingRows(t))
+}
+
+func TestPushRepository_GetSubscriptionsForUsers_ShouldIncludeNotificationsSeenAt_Integration(t *testing.T) {
+	// given
+	f := newDigestFixture(t, "seen", 321)
+
+	// when
+	subs, err := f.repo.GetSubscriptionsForUsers([]string{f.user})
+
+	// then
+	assert.NoError(t, err)
+	if assert.Len(t, subs, 1) {
+		assert.Equal(t, int64(321), subs[0].NotificationsSeenAt)
+	}
+}

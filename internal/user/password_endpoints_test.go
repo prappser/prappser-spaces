@@ -50,6 +50,7 @@ func (r *passwordTestRepo) UpdateAvatarStorageID(publicKey string, avatarStorage
 	return nil
 }
 func (r *passwordTestRepo) UpdateLocale(string, string) error             { return nil }
+func (r *passwordTestRepo) UpdateTimezone(string, string) error           { return nil }
 func (r *passwordTestRepo) UpdateNotifyMode(string, string) error         { return nil }
 func (r *passwordTestRepo) UpdateNotificationsSeenAt(string, int64) error { return nil }
 func (r *passwordTestRepo) UpdateUsername(publicKey, username string) error {

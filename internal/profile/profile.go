@@ -13,6 +13,7 @@ type UpdateProfileRequest struct {
 	DisplayName         *string `json:"displayName"`
 	Locale              *string `json:"locale"`
 	NotifyMode          *string `json:"notifyMode"`
+	Timezone            *string `json:"timezone"`
 	NotificationsSeenAt *int64  `json:"notificationsSeenAt"`
 }
 
@@ -32,5 +33,6 @@ type userRepository interface {
 	UpdateUsername(publicKey, username string) error
 	UpdateLocale(publicKey, locale string) error
 	UpdateNotifyMode(publicKey, mode string) error
+	UpdateTimezone(publicKey, tz string) error
 	UpdateNotificationsSeenAt(publicKey string, at int64) error
 }

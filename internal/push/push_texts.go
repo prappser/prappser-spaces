@@ -1,6 +1,7 @@
 package push
 
 import (
+	"fmt"
 	"strings"
 )
 
@@ -25,6 +26,7 @@ type texts struct {
 	roleNow     string
 	reminder    string
 	roleLabels  map[string]string
+	digestTitle func(total, apps int) string
 }
 
 var textsEN = texts{
@@ -38,6 +40,12 @@ var textsEN = texts{
 	roleNow:     "Your role is now: %s",
 	reminder:    "Reminder",
 	roleLabels:  map[string]string{"owner": "Owner", "admin": "Admin", "member": "Member", "viewer": "Viewer"},
+	digestTitle: func(total, apps int) string {
+		if apps == 1 {
+			return fmt.Sprintf("%d new in 1 app", total)
+		}
+		return fmt.Sprintf("%d new in %d apps", total, apps)
+	},
 }
 
 var textsPL = texts{
@@ -51,6 +59,16 @@ var textsPL = texts{
 	roleNow:     "Twoja rola: %s",
 	reminder:    "Przypomnienie",
 	roleLabels:  map[string]string{"owner": "Właściciel", "admin": "Administrator", "member": "Członek", "viewer": "Obserwator"},
+	digestTitle: func(total, apps int) string {
+		word := "nowych"
+		if total == 1 || (total%10 >= 2 && total%10 <= 4 && (total%100 < 12 || total%100 > 14)) {
+			word = "nowe"
+		}
+		if apps == 1 {
+			return fmt.Sprintf("%d %s w 1 aplikacji", total, word)
+		}
+		return fmt.Sprintf("%d %s w %d aplikacjach", total, word, apps)
+	},
 }
 
 func textsFor(lang string) texts {

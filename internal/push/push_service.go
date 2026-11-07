@@ -75,15 +75,20 @@ func (s *PushService) fanout(ev *event.Event, app *application.Application, crea
 		return
 	}
 
-	vapid := &SpaceVapid{
-		VapidPublicKey:  s.vapidService.PublicKey(),
-		VapidPrivateKey: s.vapidService.PrivateKey(),
-	}
+	vapid := s.vapid()
 
 	// Render once per language, not once per subscription.
 	byLang := map[string]rendered{}
 	for _, sub := range subs {
 		if ev.ApplicationID != "" && slices.Contains(sub.MutedApplicationIDs, ev.ApplicationID) {
+			continue
+		}
+		if en.kind.digestsIn(sub.NotifyMode) {
+			if ev.ApplicationID != "" {
+				if err := s.repo.CountDigest(sub.ID, ev.ApplicationID, time.Now().Unix(), sub.NotificationsSeenAt); err != nil {
+					log.Warn().Err(err).Str("subscriptionId", sub.ID).Msg("[PUSH] Failed to count digest")
+				}
+			}
 			continue
 		}
 		if !en.kind.sendsIn(sub.NotifyMode) {
@@ -103,13 +108,23 @@ func (s *PushService) fanout(ev *event.Event, app *application.Application, crea
 			byLang[lang] = r
 		}
 
-		if sub.Transport == TransportWS {
-			s.deliverWS(sub, r.payload)
-			continue
-		}
-
-		s.deliver(sub, vapid, r.payload, r.opts)
+		s.send(sub, vapid, r.payload, r.opts)
 	}
+}
+
+func (s *PushService) vapid() *SpaceVapid {
+	return &SpaceVapid{
+		VapidPublicKey:  s.vapidService.PublicKey(),
+		VapidPrivateKey: s.vapidService.PrivateKey(),
+	}
+}
+
+func (s *PushService) send(sub *Subscription, vapid *SpaceVapid, payload []byte, opts SendOptions) {
+	if sub.Transport == TransportWS {
+		s.deliverWS(sub, payload)
+		return
+	}
+	s.deliver(sub, vapid, payload, opts)
 }
 
 // deliverWS is fire-and-forget: an offline device drops the push, no health bookkeeping.
@@ -182,6 +197,7 @@ type pushPayload struct {
 	Body          string `json:"body"`
 	Tag           string `json:"tag"`
 	View          string `json:"view,omitempty"`
+	Data          any    `json:"data,omitempty"`
 }
 
 func appName(app *application.Application) string {

@@ -20,6 +20,7 @@ type mockUserRepo struct {
 	updateUsernameErr error
 	localeCalls       []string
 	notifyModeCalls   []string
+	timezoneCalls     []string
 	seenAtCalls       []int64
 	updateCalls       []struct {
 		publicKey string
@@ -62,6 +63,16 @@ func (m *mockUserRepo) UpdateLocale(publicKey, locale string) error {
 		return fmt.Errorf("user not found")
 	}
 	u.Locale = locale
+	return nil
+}
+
+func (m *mockUserRepo) UpdateTimezone(publicKey, tz string) error {
+	m.timezoneCalls = append(m.timezoneCalls, tz)
+	u, ok := m.users[publicKey]
+	if !ok {
+		return fmt.Errorf("user not found")
+	}
+	u.Timezone = tz
 	return nil
 }
 
@@ -476,6 +487,48 @@ func TestUpdateProfile_ShouldNotWriteWhenNotifyModeUnchanged(t *testing.T) {
 	// then
 	assert.Equal(t, fasthttp.StatusOK, ctx.Response.StatusCode())
 	assert.Empty(t, repo.notifyModeCalls)
+}
+
+func TestUpdateProfile_ShouldAcceptDailyNotifyMode(t *testing.T) {
+	// when
+	ctx, repo, _ := patchLocale(t, `{"notifyMode":"daily"}`, &user.User{PublicKey: "pk-1", Username: "Alice", NotifyMode: user.NotifyModeAll})
+
+	// then
+	assert.Equal(t, fasthttp.StatusOK, ctx.Response.StatusCode())
+	assert.Equal(t, []string{"daily"}, repo.notifyModeCalls)
+}
+
+func TestUpdateProfile_ShouldSaveTimezone(t *testing.T) {
+	for _, tz := range []string{"Europe/Warsaw", ""} {
+		// when
+		ctx, repo, events := patchLocale(t, `{"timezone":"`+tz+`"}`, &user.User{PublicKey: "pk-1", Username: "Alice", Timezone: "America/New_York"})
+
+		// then
+		assert.Equal(t, fasthttp.StatusOK, ctx.Response.StatusCode(), tz)
+		assert.Equal(t, []string{tz}, repo.timezoneCalls, tz)
+		assert.Empty(t, events.produced, tz)
+		assert.Contains(t, string(ctx.Response.Body()), `"timezone":"`+tz+`"`, tz)
+	}
+}
+
+func TestUpdateProfile_ShouldReturn400WhenTimezoneInvalid(t *testing.T) {
+	for _, tz := range []string{"Mars/Base", "Local", "../etc/passwd"} {
+		// when
+		ctx, repo, _ := patchLocale(t, `{"timezone":"`+tz+`"}`, &user.User{PublicKey: "pk-1", Username: "Alice"})
+
+		// then
+		assert.Equal(t, fasthttp.StatusBadRequest, ctx.Response.StatusCode(), tz)
+		assert.Empty(t, repo.timezoneCalls, tz)
+	}
+}
+
+func TestUpdateProfile_ShouldNotWriteWhenTimezoneUnchanged(t *testing.T) {
+	// when
+	ctx, repo, _ := patchLocale(t, `{"timezone":"Europe/Warsaw"}`, &user.User{PublicKey: "pk-1", Username: "Alice", Timezone: "Europe/Warsaw"})
+
+	// then
+	assert.Equal(t, fasthttp.StatusOK, ctx.Response.StatusCode())
+	assert.Empty(t, repo.timezoneCalls)
 }
 
 // ---- notificationsSeenAt ----

@@ -30,6 +30,15 @@ type mockPushRepository struct {
 		id              string
 		devicePublicKey string
 	}
+	digestCounts []digestCountCall
+	dailyUsers   []DigestUser
+	claimRows    map[string][]DigestRow
+	claimCalls   []string
+}
+
+type digestCountCall struct {
+	subscriptionID, applicationID string
+	at, seenAt                    int64
 }
 
 func newMockPushRepository() *mockPushRepository {
@@ -138,6 +147,40 @@ func (m *mockPushRepository) IncrementFailure(id string) error {
 	defer m.mu.Unlock()
 	m.incrementFailureCalls = append(m.incrementFailureCalls, id)
 	return nil
+}
+
+func (m *mockPushRepository) CountDigest(subscriptionID, applicationID string, at, seenAt int64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.digestCounts = append(m.digestCounts, digestCountCall{subscriptionID, applicationID, at, seenAt})
+	return nil
+}
+
+func (m *mockPushRepository) GetDailyUsers() ([]DigestUser, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]DigestUser(nil), m.dailyUsers...), nil
+}
+
+// ClaimDigest mirrors the real compare-and-set: it stamps the user and hands the rows out once.
+func (m *mockPushRepository) ClaimDigest(userPublicKey string, due, now int64) ([]DigestRow, bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.claimCalls = append(m.claimCalls, userPublicKey)
+	for i := range m.dailyUsers {
+		u := &m.dailyUsers[i]
+		if u.PublicKey != userPublicKey {
+			continue
+		}
+		if u.SentAt >= due {
+			return nil, false, nil
+		}
+		u.SentAt = now
+		rows := m.claimRows[userPublicKey]
+		delete(m.claimRows, userPublicKey)
+		return rows, true, nil
+	}
+	return nil, false, nil
 }
 
 func newMockSpaceVapidService(pub, priv string) *SpaceVapidService {
@@ -758,4 +801,78 @@ func TestPushService_Push_ShouldDropWSPushWithoutPusher(t *testing.T) {
 	// then
 	time.Sleep(100 * time.Millisecond)
 	assert.Equal(t, 0, sender.callCount())
+}
+
+func TestKindDigestsIn_ShouldCoverOnlyDailyModeAndSkipReminderAndRole(t *testing.T) {
+	for _, kind := range []Kind{KindChat, KindItem, KindPoll, KindFile, KindMember, KindRole, KindReminder} {
+		// when
+		inDaily := kind.digestsIn(user.NotifyModeDaily)
+		inAll := kind.digestsIn(user.NotifyModeAll)
+		inChat := kind.digestsIn(user.NotifyModeChat)
+
+		// then
+		assert.Equal(t, kind != KindRole && kind != KindReminder, inDaily, kind)
+		assert.False(t, inAll, kind)
+		assert.False(t, inChat, kind)
+	}
+}
+
+func TestPushService_Fanout_ShouldCountInsteadOfSendInDailyMode(t *testing.T) {
+	cases := []struct {
+		name  string
+		ev    *event.Event
+		sends bool
+	}{
+		{"chat", gComp("chat-1", gChange(gChatA, nil, `{"body":"hi"}`)), false},
+		{"item", gComp("list-1", gChange("item_a", nil, gItem("Milk"))), false},
+		{"poll", gComp("poll-1", gChange("closed", false, true)), false},
+		{"file", gComp("files-1", gChange("items", nil, []any{map[string]any{"id": "f9", "filename": "a.pdf"}})), false},
+		{"member", gTyped(event.EventTypeMemberAdded, map[string]any{"userDisplayName": "Bo"}), false},
+		{"role", gTyped(event.EventTypeMemberRoleChanged, map[string]any{"newRole": "admin"}), true},
+		{"reminder", gTyped(event.EventTypeReminderFired, map[string]any{"itemTitle": "Call mom"}), true},
+	}
+	for _, tc := range cases {
+		// given
+		repo := newMockPushRepository()
+		sender := newMockWebpushSender(SendResult{StatusCode: 201})
+		svc := newGoldenService(repo, sender)
+		repo.subscriptions["sub-d"] = &Subscription{ID: "sub-d", DevicePublicKey: "pk-d", NotifyMode: user.NotifyModeDaily, NotificationsSeenAt: 42, MutedApplicationIDs: []string{}}
+
+		// when
+		svc.fanout(tc.ev, goldenApp(), "Ann", false, []string{"pk-d"})
+
+		// then
+		assert.Equal(t, tc.sends, len(sender.calls) == 1, tc.name)
+		if tc.sends {
+			assert.Empty(t, repo.digestCounts, tc.name)
+			continue
+		}
+		if assert.Len(t, repo.digestCounts, 1, tc.name) {
+			c := repo.digestCounts[0]
+			assert.Equal(t, "sub-d", c.subscriptionID, tc.name)
+			assert.Equal(t, "app-1", c.applicationID, tc.name)
+			assert.Equal(t, int64(42), c.seenAt, tc.name)
+			assert.NotZero(t, c.at, tc.name)
+		}
+	}
+}
+
+func TestPushService_Fanout_ShouldNotCountMutedAppOrEmptyApplicationID(t *testing.T) {
+	// given
+	repo := newMockPushRepository()
+	sender := newMockWebpushSender(SendResult{StatusCode: 201})
+	svc := newGoldenService(repo, sender)
+	repo.subscriptions["sub-d"] = &Subscription{ID: "sub-d", DevicePublicKey: "pk-d", NotifyMode: user.NotifyModeDaily, MutedApplicationIDs: []string{"app-1"}}
+	repo.subscriptions["sub-e"] = &Subscription{ID: "sub-e", DevicePublicKey: "pk-e", NotifyMode: user.NotifyModeDaily, MutedApplicationIDs: []string{}}
+	muted := gTyped(event.EventTypeMemberAdded, map[string]any{"userDisplayName": "Bo"})
+	noApp := gTyped(event.EventTypeMemberAdded, map[string]any{"userDisplayName": "Bo"})
+	noApp.ApplicationID = ""
+
+	// when
+	svc.fanout(muted, goldenApp(), "Ann", false, []string{"pk-d"})
+	svc.fanout(noApp, goldenApp(), "Ann", false, []string{"pk-e"})
+
+	// then
+	assert.Empty(t, repo.digestCounts)
+	assert.Empty(t, sender.calls)
 }

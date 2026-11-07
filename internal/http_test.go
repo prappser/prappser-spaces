@@ -24,6 +24,7 @@ func (noopUserRepository) UpdateAvatarStorageID(publicKey string, avatarStorageI
 	return nil
 }
 func (noopUserRepository) UpdateLocale(string, string) error               { return nil }
+func (noopUserRepository) UpdateTimezone(string, string) error             { return nil }
 func (noopUserRepository) UpdateNotifyMode(string, string) error           { return nil }
 func (noopUserRepository) UpdateNotificationsSeenAt(string, int64) error   { return nil }
 func (noopUserRepository) UpdateUsername(publicKey, username string) error { return nil }

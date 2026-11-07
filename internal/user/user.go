@@ -26,9 +26,12 @@ const (
 	RoleUser  = "user"
 	RoleGuest = "guest"
 
-	NotifyModeAll  = "all"
-	NotifyModeChat = "chat"
+	NotifyModeAll   = "all"
+	NotifyModeChat  = "chat"
+	NotifyModeDaily = "daily"
 )
+
+var NotifyModes = []string{NotifyModeAll, NotifyModeChat, NotifyModeDaily}
 
 type User struct {
 	PublicKey           string  `json:"publicKey"`
@@ -39,6 +42,7 @@ type User struct {
 	AvatarStorageID     *string `json:"avatarStorageId,omitempty"`
 	Locale              string  `json:"locale"`
 	NotifyMode          string  `json:"notifyMode"`
+	Timezone            string  `json:"timezone"`
 	NotificationsSeenAt int64   `json:"notificationsSeenAt"`
 	BindingIat          int64   `json:"-"`
 	BindingSub          string  `json:"-"`
@@ -56,6 +60,7 @@ type User struct {
 	// the account record) - omitempty so every other endpoint that serializes
 	// a User keeps emitting byte-identical payloads.
 	HasPassword bool `json:"hasPassword,omitempty"`
+	NotifyModes []string `json:"notifyModes,omitempty"`
 	// UserStateBlob is the account's escrowed user-state blob (see GetEscrow),
 	// exposed so a device can union it with local state after another
 	// device's PasswordEndpoints.UpdateUserState call refreshes it (#137).
@@ -108,6 +113,7 @@ type UserRepository interface {
 	UpdateUsername(publicKey, username string) error
 	UpdateLocale(publicKey, locale string) error
 	UpdateNotifyMode(publicKey, mode string) error
+	UpdateTimezone(publicKey, tz string) error
 	UpdateNotificationsSeenAt(publicKey string, at int64) error
 	AcceptBinding(publicKey, binding string, iat int64, sub, ownKey string) (storedBinding, storedSub string, updated bool, err error)
 	// EnsureDevice registers a device for an account if it doesn't already exist (no-op otherwise).
@@ -711,6 +717,7 @@ func (ue UserEndpoints) GetProfile(ctx *fasthttp.RequestCtx) {
 	// Copy so the shared authenticatedUser pointer (held by other request
 	// middleware) is never mutated by this handler.
 	profile := *authenticatedUser
+	profile.NotifyModes = NotifyModes
 	credPublicKey, _, err := ue.userRepository.GetPasswordCredential(authenticatedUser.Username)
 	if err != nil {
 		log.Debug().Err(err).Str("username", authenticatedUser.Username).Msg("[PROFILE] Failed to look up password credential")

@@ -16,6 +16,7 @@ const (
 	KindMember   Kind = "member"
 	KindRole     Kind = "role"
 	KindReminder Kind = "reminder"
+	KindDigest   Kind = "digest"
 )
 
 const (
@@ -49,6 +50,10 @@ func (k Kind) sendsIn(mode string) bool {
 	return mode != user.NotifyModeChat || k == KindChat || k == KindReminder || k == KindRole
 }
 
+func (k Kind) digestsIn(mode string) bool {
+	return mode == user.NotifyModeDaily && k != KindReminder && k != KindRole
+}
+
 // Subscription represents a browser PushSubscription registered by a device.
 type Subscription struct {
 	ID                  string
@@ -67,7 +72,21 @@ type Subscription struct {
 	// UserPublicKey is the owning account's key, filled only by GetSubscriptionsForUsers.
 	UserPublicKey string
 	// NotifyMode is the owning account's notify mode, filled only by GetSubscriptionsForUsers.
-	NotifyMode string
+	NotifyMode          string
+	NotificationsSeenAt int64
+}
+
+type DigestUser struct {
+	PublicKey string
+	Timezone  string
+	SentAt    int64
+}
+
+type DigestRow struct {
+	SubscriptionID string
+	ApplicationID  string
+	AppName        string
+	Count          int
 }
 
 // SendResult is the outcome of a single web push delivery attempt.
@@ -104,4 +123,7 @@ type PushRepository interface {
 	GetSubscriptionByID(id, devicePublicKey string) (*Subscription, error)
 	MarkSuccess(id string, ts int64) error
 	IncrementFailure(id string) error
+	CountDigest(subscriptionID, applicationID string, at, seenAt int64) error
+	GetDailyUsers() ([]DigestUser, error)
+	ClaimDigest(userPublicKey string, due, now int64) (rows []DigestRow, claimed bool, err error)
 }

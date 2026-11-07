@@ -197,7 +197,7 @@ func (r *pushRepository) GetSubscriptionsForUsers(userPublicKeys []string) ([]*S
 
 	query := fmt.Sprintf(`
 		SELECT ps.id, ps.device_public_key, ps.transport, ps.endpoint, ps.p256dh, ps.auth, ps.device_label,
-		       ps.muted_application_ids, ps.created_at, ps.last_success_at, ps.failure_count, u.locale, u.notify_mode, ud.user_public_key
+		       ps.muted_application_ids, ps.created_at, ps.last_success_at, ps.failure_count, u.locale, u.notify_mode, u.notifications_seen_at, ud.user_public_key
 		FROM push_subscriptions ps
 		JOIN user_devices ud ON ud.device_public_key = ps.device_public_key
 		JOIN users u ON u.public_key = ud.user_public_key
@@ -230,6 +230,7 @@ func (r *pushRepository) GetSubscriptionsForUsers(userPublicKeys []string) ([]*S
 			&s.FailureCount,
 			&s.Locale,
 			&s.NotifyMode,
+			&s.NotificationsSeenAt,
 			&s.UserPublicKey,
 		)
 		if err != nil {
@@ -333,4 +334,96 @@ func (r *pushRepository) IncrementFailure(id string) error {
 		return fmt.Errorf("failed to increment failure: %w", err)
 	}
 	return nil
+}
+
+func (r *pushRepository) CountDigest(subscriptionID, applicationID string, at, seenAt int64) error {
+	_, err := r.db.Exec(`
+		INSERT INTO push_digest_pending (subscription_id, application_id, count, last_at)
+		VALUES ($1, $2, 1, $3)
+		ON CONFLICT (subscription_id, application_id) DO UPDATE
+		  SET count   = CASE WHEN push_digest_pending.last_at <= $4 THEN 1 ELSE push_digest_pending.count + 1 END,
+		      last_at = $3`,
+		subscriptionID, applicationID, at, seenAt)
+	if err != nil {
+		return fmt.Errorf("failed to count digest: %w", err)
+	}
+	return nil
+}
+
+// ponytail: full scan each tick, move the due check into SQL if daily users grow.
+func (r *pushRepository) GetDailyUsers() ([]DigestUser, error) {
+	rows, err := r.db.Query(`SELECT public_key, timezone, digest_sent_at FROM users WHERE notify_mode = 'daily'`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query daily users: %w", err)
+	}
+	defer rows.Close()
+
+	var users []DigestUser
+	for rows.Next() {
+		var u DigestUser
+		if err := rows.Scan(&u.PublicKey, &u.Timezone, &u.SentAt); err != nil {
+			return nil, fmt.Errorf("failed to scan daily user: %w", err)
+		}
+		users = append(users, u)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating daily users: %w", err)
+	}
+	return users, nil
+}
+
+// ClaimDigest stamps and deletes before any send: a crash or failed send loses one digest instead of repeating it.
+func (r *pushRepository) ClaimDigest(userPublicKey string, due, now int64) ([]DigestRow, bool, error) {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to begin digest claim: %w", err)
+	}
+	defer tx.Rollback()
+
+	var seenAt int64
+	err = tx.QueryRow(`
+		UPDATE users SET digest_sent_at = $2
+		WHERE public_key = $1 AND notify_mode = 'daily' AND digest_sent_at < $3
+		RETURNING notifications_seen_at`, userPublicKey, now, due).Scan(&seenAt)
+	if err == sql.ErrNoRows {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to stamp digest: %w", err)
+	}
+
+	rows, err := tx.Query(`
+		WITH gone AS (
+		  DELETE FROM push_digest_pending p
+		  USING push_subscriptions ps, user_devices ud
+		  WHERE p.subscription_id = ps.id AND ud.device_public_key = ps.device_public_key AND ud.user_public_key = $1
+		  RETURNING p.subscription_id, p.application_id, p.count, p.last_at)
+		SELECT g.subscription_id, g.application_id, a.name, g.count
+		FROM gone g
+		JOIN applications a ON a.id = g.application_id AND a.deleted_at IS NULL
+		WHERE g.last_at > $2
+		  AND EXISTS (SELECT 1 FROM members m WHERE m.application_id = g.application_id AND m.public_key = $1)
+		ORDER BY g.count DESC`, userPublicKey, seenAt)
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to take pending digest rows: %w", err)
+	}
+	defer rows.Close()
+
+	var out []DigestRow
+	for rows.Next() {
+		var d DigestRow
+		if err := rows.Scan(&d.SubscriptionID, &d.ApplicationID, &d.AppName, &d.Count); err != nil {
+			return nil, false, fmt.Errorf("failed to scan digest row: %w", err)
+		}
+		out = append(out, d)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, false, fmt.Errorf("error iterating digest rows: %w", err)
+	}
+	rows.Close()
+
+	if err := tx.Commit(); err != nil {
+		return nil, false, fmt.Errorf("failed to commit digest claim: %w", err)
+	}
+	return out, true, nil
 }
