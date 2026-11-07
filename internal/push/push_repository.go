@@ -69,12 +69,13 @@ func (r *pushRepository) CreateSubscription(s *Subscription) error {
 
 	query := `
 		INSERT INTO push_subscriptions
-		  (id, device_public_key, endpoint, p256dh, auth, device_label, muted_application_ids, created_at, last_success_at, failure_count)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`
+		  (id, device_public_key, transport, endpoint, p256dh, auth, device_label, muted_application_ids, created_at, last_success_at, failure_count)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`
 
 	_, err = r.db.Exec(query,
 		s.ID,
 		s.DevicePublicKey,
+		transportOrDefault(s.Transport),
 		s.Endpoint,
 		s.P256dh,
 		s.Auth,
@@ -88,6 +89,37 @@ func (r *pushRepository) CreateSubscription(s *Subscription) error {
 		return fmt.Errorf("failed to create subscription: %w", err)
 	}
 	return nil
+}
+
+func transportOrDefault(t string) string {
+	if t == "" {
+		return TransportWebpush
+	}
+	return t
+}
+
+// UpsertWSSubscription inserts the device's ws subscription or, when one exists, updates its
+// muted apps and label. endpoint, p256dh and auth are empty for ws.
+func (r *pushRepository) UpsertWSSubscription(s *Subscription) (string, error) {
+	mutedJSON, err := json.Marshal(s.MutedApplicationIDs)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal muted_application_ids: %w", err)
+	}
+
+	query := `
+		INSERT INTO push_subscriptions
+		  (id, device_public_key, transport, endpoint, p256dh, auth, device_label, muted_application_ids, created_at, failure_count)
+		VALUES ($1, $2, 'ws', '', '', '', $3, $4, $5, 0)
+		ON CONFLICT (device_public_key) WHERE transport = 'ws' DO UPDATE
+		  SET muted_application_ids = EXCLUDED.muted_application_ids,
+		      device_label          = EXCLUDED.device_label
+		RETURNING id`
+
+	var id string
+	if err := r.db.QueryRow(query, s.ID, s.DevicePublicKey, s.DeviceLabel, string(mutedJSON), s.CreatedAt).Scan(&id); err != nil {
+		return "", fmt.Errorf("failed to upsert ws subscription: %w", err)
+	}
+	return id, nil
 }
 
 // UpdateSubscription updates mutable fields of a subscription.
@@ -164,8 +196,8 @@ func (r *pushRepository) GetSubscriptionsForUsers(userPublicKeys []string) ([]*S
 	}
 
 	query := fmt.Sprintf(`
-		SELECT ps.id, ps.device_public_key, ps.endpoint, ps.p256dh, ps.auth, ps.device_label,
-		       ps.muted_application_ids, ps.created_at, ps.last_success_at, ps.failure_count, u.locale, u.notify_mode
+		SELECT ps.id, ps.device_public_key, ps.transport, ps.endpoint, ps.p256dh, ps.auth, ps.device_label,
+		       ps.muted_application_ids, ps.created_at, ps.last_success_at, ps.failure_count, u.locale, u.notify_mode, ud.user_public_key
 		FROM push_subscriptions ps
 		JOIN user_devices ud ON ud.device_public_key = ps.device_public_key
 		JOIN users u ON u.public_key = ud.user_public_key
@@ -187,6 +219,7 @@ func (r *pushRepository) GetSubscriptionsForUsers(userPublicKeys []string) ([]*S
 		err := rows.Scan(
 			&s.ID,
 			&s.DevicePublicKey,
+			&s.Transport,
 			&s.Endpoint,
 			&s.P256dh,
 			&s.Auth,
@@ -197,6 +230,7 @@ func (r *pushRepository) GetSubscriptionsForUsers(userPublicKeys []string) ([]*S
 			&s.FailureCount,
 			&s.Locale,
 			&s.NotifyMode,
+			&s.UserPublicKey,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan subscription: %w", err)
@@ -230,7 +264,7 @@ func (r *pushRepository) GetSubscriptionsForUsers(userPublicKeys []string) ([]*S
 // Returns nil, nil when not found or not owned by devicePublicKey.
 func (r *pushRepository) GetSubscriptionByID(id, devicePublicKey string) (*Subscription, error) {
 	query := `
-		SELECT id, device_public_key, endpoint, p256dh, auth, device_label,
+		SELECT id, device_public_key, transport, endpoint, p256dh, auth, device_label,
 		       muted_application_ids, created_at, last_success_at, failure_count
 		FROM push_subscriptions
 		WHERE id = $1 AND device_public_key = $2`
@@ -243,6 +277,7 @@ func (r *pushRepository) GetSubscriptionByID(id, devicePublicKey string) (*Subsc
 	err := r.db.QueryRow(query, id, devicePublicKey).Scan(
 		&s.ID,
 		&s.DevicePublicKey,
+		&s.Transport,
 		&s.Endpoint,
 		&s.P256dh,
 		&s.Auth,

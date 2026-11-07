@@ -20,6 +20,12 @@ type PushService struct {
 	sender       WebpushSender
 	vapidService *SpaceVapidService
 	validator    *component.Validator
+	wsPusher     WSPusher
+}
+
+// SetWSPusher wires delivery to open WebSocket connections; without it ws subscriptions are dropped.
+func (s *PushService) SetWSPusher(p WSPusher) {
+	s.wsPusher = p
 }
 
 func NewPushService(repo PushRepository, sender WebpushSender, vapidService *SpaceVapidService, validator *component.Validator) *PushService {
@@ -97,7 +103,19 @@ func (s *PushService) fanout(ev *event.Event, app *application.Application, crea
 			byLang[lang] = r
 		}
 
+		if sub.Transport == TransportWS {
+			s.deliverWS(sub, r.payload)
+			continue
+		}
+
 		s.deliver(sub, vapid, r.payload, r.opts)
+	}
+}
+
+// deliverWS is fire-and-forget: an offline device drops the push, no health bookkeeping.
+func (s *PushService) deliverWS(sub *Subscription, payload []byte) {
+	if s.wsPusher == nil || !s.wsPusher.SendPush(sub.UserPublicKey, sub.DevicePublicKey, payload) {
+		log.Debug().Str("subscriptionId", sub.ID).Msg("[PUSH] ws device offline, push dropped")
 	}
 }
 

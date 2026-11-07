@@ -399,3 +399,101 @@ func TestMigration_ShouldDropCategoriesAndDefaultNotifyModeToAll_Integration(t *
 	assert.NoError(t, modeErr)
 	assert.Equal(t, "all", mode)
 }
+
+func insertDevice(t *testing.T, db *sql.DB, device string) {
+	t.Helper()
+	if _, err := db.Exec(
+		"INSERT INTO user_devices (device_public_key, user_public_key, created_at) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING",
+		device, "test-user-1", time.Now().Unix(),
+	); err != nil {
+		t.Fatalf("Failed to insert device %s: %v", device, err)
+	}
+}
+
+func TestPushRepository_WSSubscriptions_ShouldCoexistAcrossDevicesWithEmptyEndpoint_Integration(t *testing.T) {
+	// given
+	db := getTestDB(t)
+	defer db.Close()
+	repo := NewPushRepository(db)
+	insertDevice(t, db, "ws-device-2")
+	now := time.Now().Unix()
+
+	// when
+	_, err1 := repo.UpsertWSSubscription(&Subscription{ID: "ws-a", DevicePublicKey: "test-user-1", MutedApplicationIDs: []string{}, CreatedAt: now})
+	_, err2 := repo.UpsertWSSubscription(&Subscription{ID: "ws-b", DevicePublicKey: "ws-device-2", MutedApplicationIDs: []string{}, CreatedAt: now})
+
+	// then
+	assert.NoError(t, err1)
+	assert.NoError(t, err2)
+	subs, err := repo.GetSubscriptionsForUsers([]string{"test-user-1"})
+	assert.NoError(t, err)
+	assert.Len(t, subs, 2)
+	for _, s := range subs {
+		assert.Equal(t, TransportWS, s.Transport)
+		assert.Equal(t, "test-user-1", s.UserPublicKey)
+		assert.Empty(t, s.Endpoint)
+	}
+}
+
+func TestPushRepository_UpsertWSSubscription_ShouldKeepOneRowAndID_Integration(t *testing.T) {
+	// given
+	db := getTestDB(t)
+	defer db.Close()
+	repo := NewPushRepository(db)
+	now := time.Now().Unix()
+	first, err := repo.UpsertWSSubscription(&Subscription{ID: "ws-first", DevicePublicKey: "test-user-1", MutedApplicationIDs: []string{}, CreatedAt: now})
+	assert.NoError(t, err)
+
+	// when
+	second, err := repo.UpsertWSSubscription(&Subscription{ID: "ws-second", DevicePublicKey: "test-user-1", MutedApplicationIDs: []string{"app-1"}, CreatedAt: now})
+
+	// then
+	assert.NoError(t, err)
+	assert.Equal(t, first, second)
+	var count int
+	assert.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM push_subscriptions WHERE transport = 'ws'`).Scan(&count))
+	assert.Equal(t, 1, count)
+	got, err := repo.GetSubscriptionByID(first, "test-user-1")
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"app-1"}, got.MutedApplicationIDs)
+}
+
+func TestPushRepository_WebpushAndWS_ShouldCoexistForOneDeviceAndKeepEndpointUnique_Integration(t *testing.T) {
+	// given
+	db := getTestDB(t)
+	defer db.Close()
+	repo := NewPushRepository(db)
+	now := time.Now().Unix()
+	_, err := repo.UpsertWSSubscription(&Subscription{ID: "ws-x", DevicePublicKey: "test-user-1", MutedApplicationIDs: []string{}, CreatedAt: now})
+	assert.NoError(t, err)
+
+	// when
+	err = repo.CreateSubscription(&Subscription{ID: "wp-x", DevicePublicKey: "test-user-1", Endpoint: "https://push.example.com/dup", P256dh: "p", Auth: "a", CreatedAt: now})
+	dup := repo.CreateSubscription(&Subscription{ID: "wp-y", DevicePublicKey: "test-user-1", Endpoint: "https://push.example.com/dup", P256dh: "p", Auth: "a", CreatedAt: now})
+
+	// then
+	assert.NoError(t, err)
+	assert.Error(t, dup)
+	subs, err := repo.GetSubscriptionsForUsers([]string{"test-user-1"})
+	assert.NoError(t, err)
+	assert.Len(t, subs, 2)
+}
+
+func TestPushRepository_GetSubscriptionsForUsers_ShouldDropRevokedWSDevice_Integration(t *testing.T) {
+	// given
+	db := getTestDB(t)
+	defer db.Close()
+	repo := NewPushRepository(db)
+	insertDevice(t, db, "ws-revoked")
+	_, err := repo.UpsertWSSubscription(&Subscription{ID: "ws-r", DevicePublicKey: "ws-revoked", MutedApplicationIDs: []string{}, CreatedAt: time.Now().Unix()})
+	assert.NoError(t, err)
+
+	// when
+	_, err = db.Exec(`UPDATE user_devices SET revoked_at = $1 WHERE device_public_key = $2`, time.Now().Unix(), "ws-revoked")
+	assert.NoError(t, err)
+	subs, err := repo.GetSubscriptionsForUsers([]string{"test-user-1"})
+
+	// then
+	assert.NoError(t, err)
+	assert.Empty(t, subs)
+}

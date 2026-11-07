@@ -31,8 +31,15 @@ func (pe *PushEndpoints) GetVapidPublicKey(ctx *fasthttp.RequestCtx) {
 	json.NewEncoder(ctx).Encode(map[string]string{"publicKey": pe.vapidService.PublicKey()})
 }
 
+func writeBadRequest(ctx *fasthttp.RequestCtx, msg string) {
+	ctx.SetStatusCode(fasthttp.StatusBadRequest)
+	ctx.SetContentType("application/json")
+	json.NewEncoder(ctx).Encode(map[string]string{"error": msg})
+}
+
 // createSubscriptionRequest is the request body for POST /push/subscriptions.
 type createSubscriptionRequest struct {
+	Transport           string   `json:"transport"`
 	Endpoint            string   `json:"endpoint"`
 	P256dh              string   `json:"p256dh"`
 	Auth                string   `json:"auth"`
@@ -59,19 +66,30 @@ func (pe *PushEndpoints) CreateSubscription(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	if req.Endpoint == "" || req.P256dh == "" || req.Auth == "" {
-		log.Error().Msg("[PUSH] Missing required fields in create subscription request")
-		ctx.SetStatusCode(fasthttp.StatusBadRequest)
-		ctx.SetContentType("application/json")
-		json.NewEncoder(ctx).Encode(map[string]string{"error": "endpoint, p256dh, and auth are required"})
-		return
+	if req.Transport == "" {
+		req.Transport = TransportWebpush
 	}
-
-	if err := validateEndpoint(req.Endpoint); err != nil {
-		log.Error().Err(err).Msg("[PUSH] Invalid create subscription endpoint")
-		ctx.SetStatusCode(fasthttp.StatusBadRequest)
-		ctx.SetContentType("application/json")
-		json.NewEncoder(ctx).Encode(map[string]string{"error": err.Error()})
+	switch req.Transport {
+	case TransportWebpush:
+		if req.Endpoint == "" || req.P256dh == "" || req.Auth == "" {
+			log.Error().Msg("[PUSH] Missing required fields in create subscription request")
+			writeBadRequest(ctx, "endpoint, p256dh, and auth are required")
+			return
+		}
+		if err := validateEndpoint(req.Endpoint); err != nil {
+			log.Error().Err(err).Msg("[PUSH] Invalid create subscription endpoint")
+			writeBadRequest(ctx, err.Error())
+			return
+		}
+	case TransportWS:
+		if req.Endpoint != "" || req.P256dh != "" || req.Auth != "" {
+			log.Error().Msg("[PUSH] ws subscription must not carry endpoint, p256dh or auth")
+			writeBadRequest(ctx, "ws subscriptions take no endpoint, p256dh or auth")
+			return
+		}
+	default:
+		log.Error().Str("transport", req.Transport).Msg("[PUSH] Unknown subscription transport")
+		writeBadRequest(ctx, "unknown transport")
 		return
 	}
 
@@ -82,6 +100,7 @@ func (pe *PushEndpoints) CreateSubscription(ctx *fasthttp.RequestCtx) {
 	sub := &Subscription{
 		ID:                  uuid.NewString(),
 		DevicePublicKey:     authenticatedUser.DevicePublicKey,
+		Transport:           req.Transport,
 		Endpoint:            req.Endpoint,
 		P256dh:              req.P256dh,
 		Auth:                req.Auth,
@@ -90,7 +109,15 @@ func (pe *PushEndpoints) CreateSubscription(ctx *fasthttp.RequestCtx) {
 		CreatedAt:           time.Now().Unix(),
 	}
 
-	if err := pe.repo.CreateSubscription(sub); err != nil {
+	if sub.Transport == TransportWS {
+		id, err := pe.repo.UpsertWSSubscription(sub)
+		if err != nil {
+			log.Error().Err(err).Msg("[PUSH] Failed to upsert ws subscription")
+			ctx.Error("Failed to create subscription", fasthttp.StatusInternalServerError)
+			return
+		}
+		sub.ID = id
+	} else if err := pe.repo.CreateSubscription(sub); err != nil {
 		log.Error().Err(err).Msg("[PUSH] Failed to create subscription")
 		ctx.Error("Failed to create subscription", fasthttp.StatusInternalServerError)
 		return
@@ -144,6 +171,12 @@ func (pe *PushEndpoints) UpdateSubscription(ctx *fasthttp.RequestCtx) {
 		ctx.SetStatusCode(fasthttp.StatusBadRequest)
 		ctx.SetContentType("application/json")
 		json.NewEncoder(ctx).Encode(map[string]string{"error": "invalid request body"})
+		return
+	}
+
+	if existing.Transport == TransportWS && (req.Endpoint != "" || req.P256dh != "" || req.Auth != "") {
+		log.Error().Str("subscriptionId", subscriptionID).Msg("[PUSH] ws subscription only accepts mutedApplicationIds")
+		writeBadRequest(ctx, "ws subscriptions only accept mutedApplicationIds")
 		return
 	}
 
