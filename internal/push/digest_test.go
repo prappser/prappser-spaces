@@ -93,9 +93,9 @@ func TestDigestTitle_ShouldPluralizeApps(t *testing.T) {
 func TestDigestPayload_ShouldBuildGoldenPayloadForSeveralApps(t *testing.T) {
 	// given
 	apps := []digestApp{
-		{ApplicationID: "a1", Name: "Groceries", Count: 7},
-		{ApplicationID: "a2", Name: "Trip", Count: 3},
-		{ApplicationID: "a3", Name: "Chat", Count: 2},
+		{ApplicationID: "a1", Name: "Groceries", Count: 7, Labels: []digestLabel{{Kind: KindItem, Title: "Costs", Count: 4}, {Kind: KindItem, Title: "Costs", Count: 1}, {Kind: KindChat, Count: 2}}},
+		{ApplicationID: "a2", Name: "Trip", Count: 3, Labels: []digestLabel{{Kind: KindPoll, Count: 3}}},
+		{ApplicationID: "a3", Name: "Home", Count: 2, Labels: []digestLabel{{Kind: KindFile, Count: 2}}},
 	}
 
 	// when
@@ -105,17 +105,41 @@ func TestDigestPayload_ShouldBuildGoldenPayloadForSeveralApps(t *testing.T) {
 	assert.NoError(t, err)
 	assert.JSONEq(t, `{
 		"v": 2, "applicationId": "", "eventId": "", "kind": "digest",
-		"title": "12 new in 3 apps", "body": "Groceries 7, Trip 3, Chat 2", "tag": "digest",
+		"title": "12 new in 3 apps", "body": "Groceries: Costs 5, Chat 2\nTrip: Polls 3\nHome: Files 2", "tag": "digest",
 		"data": {"digest": {"spaceUrl": "https://space.example", "total": 12, "apps": [
 			{"applicationId": "a1", "name": "Groceries", "count": 7},
 			{"applicationId": "a2", "name": "Trip", "count": 3},
-			{"applicationId": "a3", "name": "Chat", "count": 2}]}}
+			{"applicationId": "a3", "name": "Home", "count": 2}]}}
 	}`, string(got))
 }
 
-func TestDigestPayload_ShouldUseAppNameAsBodyForOneAppAndPolishTitle(t *testing.T) {
+func TestDigestPayload_ShouldKeepTopThreeLabelsAndCapAppLines(t *testing.T) {
 	// given
-	apps := []digestApp{{ApplicationID: "a1", Name: "Groceries", Count: 5}}
+	apps := []digestApp{
+		{ApplicationID: "a1", Name: "A", Count: 10, Labels: []digestLabel{{Title: "x", Count: 1}, {Title: "y", Count: 4}, {Kind: KindChat, Count: 3}, {Title: "z", Count: 2}}},
+		{ApplicationID: "a2", Name: "B", Count: 1, Labels: []digestLabel{{Kind: KindMember, Count: 1}}},
+		{ApplicationID: "a3", Name: "C", Count: 1, Labels: []digestLabel{{Count: 1}}},
+		{ApplicationID: "a4", Name: "D", Count: 1, Labels: []digestLabel{{Count: 1}}},
+		{ApplicationID: "a5", Name: "E", Count: 1, Labels: []digestLabel{{Count: 1}}},
+	}
+
+	// when
+	en, errEN := digestPayload("en", "", apps)
+	pl, errPL := digestPayload("pl", "", apps)
+
+	// then
+	assert.NoError(t, errEN)
+	assert.NoError(t, errPL)
+	var decEN, decPL struct{ Body string }
+	assert.NoError(t, json.Unmarshal(en, &decEN))
+	assert.NoError(t, json.Unmarshal(pl, &decPL))
+	assert.Equal(t, "A: y 4, Chat 3, z 2\nB: Members 1\nC: Activity 1\n+2 more apps", decEN.Body)
+	assert.Equal(t, "A: y 4, Czat 3, z 2\nB: Osoby 1\nC: Aktywność 1\n+2 aplikacji więcej", decPL.Body)
+}
+
+func TestDigestPayload_ShouldRenderOneAppLineAndPolishTitle(t *testing.T) {
+	// given
+	apps := []digestApp{{ApplicationID: "a1", Name: "Groceries", Count: 5, Labels: []digestLabel{{Kind: KindChat, Count: 5}}}}
 
 	// when
 	got, err := digestPayload("pl", "", apps)
@@ -132,7 +156,7 @@ func TestDigestPayload_ShouldUseAppNameAsBodyForOneAppAndPolishTitle(t *testing.
 	}
 	assert.NoError(t, json.Unmarshal(got, &decoded))
 	assert.Equal(t, "5 nowych w 1 aplikacji", decoded.Title)
-	assert.Equal(t, "Groceries", decoded.Body)
+	assert.Equal(t, "Groceries: Czat 5", decoded.Body)
 	assert.Equal(t, "", decoded.Data.Digest.SpaceURL)
 }
 
@@ -142,7 +166,7 @@ func TestDigestPayload_ShouldCutLongBody(t *testing.T) {
 	for i := range long {
 		long[i] = 'x'
 	}
-	apps := []digestApp{{ApplicationID: "a1", Name: string(long), Count: 1}, {ApplicationID: "a2", Name: "B", Count: 1}}
+	apps := []digestApp{{ApplicationID: "a1", Name: string(long), Count: 1, Labels: []digestLabel{{Kind: KindChat, Count: 1}}}}
 
 	// when
 	got, err := digestPayload("en", "", apps)

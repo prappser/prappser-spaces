@@ -109,6 +109,9 @@ func TestFire_BuildsReminderFiredEvent(t *testing.T) {
 	if evt.Data["ruleId"] != "rule-1" {
 		t.Errorf("expected ruleId rule-1, got %v", evt.Data["ruleId"])
 	}
+	if evt.Data["tz"] != "Europe/Warsaw" {
+		t.Errorf("expected tz Europe/Warsaw, got %v", evt.Data["tz"])
+	}
 }
 
 func TestFire_DueKindForZeroOffset(t *testing.T) {

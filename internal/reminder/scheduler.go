@@ -288,6 +288,7 @@ func (s *Scheduler) fire(ctx context.Context, row dueRow) error {
 		Kind:          kind,
 		Offset:        row.offsetSpec,
 		ItemTitle:     row.title,
+		Tz:            row.tz,
 		Recipients:    row.recipients,
 	}
 	data, err := event.MarshalData(firedData)

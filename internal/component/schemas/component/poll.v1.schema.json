@@ -15,7 +15,18 @@
       "type": "string",
       "description": "The poll question. Example: \"Where do we eat?\".",
       "x-merge": "single",
-      "x-access": "manage"
+      "x-access": "manage",
+      "x-notify": {
+        "on": "new",
+        "kind": "poll",
+        "scope": "event",
+        "view": "polls",
+        "text": [
+          {
+            "prefix": "📊 "
+          }
+        ]
+      }
     },
     "options": {
       "type": "array",
@@ -36,6 +47,7 @@
         "on": "becomesTrue",
         "kind": "poll",
         "scope": "event",
+        "view": "polls",
         "text": [
           {
             "id": "pollClosed",

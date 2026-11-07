@@ -544,7 +544,7 @@ func (f *digestFixture) app(t *testing.T, id, name string, member, deleted bool)
 
 func (f *digestFixture) pending(t *testing.T, app string, count int, lastAt int64) {
 	t.Helper()
-	if _, err := f.db.Exec("INSERT INTO push_digest_pending (subscription_id, application_id, count, last_at) VALUES ($1,$2,$3,$4)", f.sub, app, count, lastAt); err != nil {
+	if _, err := f.db.Exec("INSERT INTO push_digest_pending (subscription_id, application_id, component_key, kind, title, count, last_at) VALUES ($1,$2,'list-1','item','Groceries',$3,$4)", f.sub, app, count, lastAt); err != nil {
 		t.Fatalf("pending: %v", err)
 	}
 }
@@ -562,17 +562,18 @@ func TestPushRepository_CountDigest_ShouldIncrementAndResetOnceRead_Integration(
 	// given
 	f := newDigestFixture(t, "count", 0)
 	f.app(t, "dg-app-count", "A", true, false)
+	bucket := DigestBucket{Key: "list-1", Kind: KindItem, Title: "Groceries"}
 	read := func() (n int, last int64) {
-		if err := f.db.QueryRow("SELECT count, last_at FROM push_digest_pending WHERE subscription_id=$1 AND application_id='dg-app-count'", f.sub).Scan(&n, &last); err != nil {
+		if err := f.db.QueryRow("SELECT count, last_at FROM push_digest_pending WHERE subscription_id=$1 AND application_id='dg-app-count' AND component_key='list-1'", f.sub).Scan(&n, &last); err != nil {
 			t.Fatalf("read: %v", err)
 		}
 		return
 	}
 
 	// when
-	assert.NoError(t, f.repo.CountDigest(f.sub, "dg-app-count", 100, 0))
-	assert.NoError(t, f.repo.CountDigest(f.sub, "dg-app-count", 110, 0))
-	assert.NoError(t, f.repo.CountDigest(f.sub, "dg-app-count", 120, 0))
+	assert.NoError(t, f.repo.CountDigest(f.sub, "dg-app-count", bucket, 100, 0))
+	assert.NoError(t, f.repo.CountDigest(f.sub, "dg-app-count", bucket, 110, 0))
+	assert.NoError(t, f.repo.CountDigest(f.sub, "dg-app-count", bucket, 120, 0))
 	n, last := read()
 
 	// then
@@ -580,12 +581,32 @@ func TestPushRepository_CountDigest_ShouldIncrementAndResetOnceRead_Integration(
 	assert.Equal(t, int64(120), last)
 
 	// when: the account read everything up to 130, the next event starts over
-	assert.NoError(t, f.repo.CountDigest(f.sub, "dg-app-count", 140, 130))
+	assert.NoError(t, f.repo.CountDigest(f.sub, "dg-app-count", bucket, 140, 130))
 	n, last = read()
 
 	// then
 	assert.Equal(t, 1, n)
 	assert.Equal(t, int64(140), last)
+}
+
+func TestPushRepository_CountDigest_ShouldKeepSeparateRowPerComponent_Integration(t *testing.T) {
+	// given
+	f := newDigestFixture(t, "bucket", 0)
+	f.app(t, "dg-app-bucket", "A", true, false)
+
+	// when
+	assert.NoError(t, f.repo.CountDigest(f.sub, "dg-app-bucket", DigestBucket{Key: "list-1", Kind: KindItem, Title: "Old"}, 100, 0))
+	assert.NoError(t, f.repo.CountDigest(f.sub, "dg-app-bucket", DigestBucket{Key: "list-1", Kind: KindItem, Title: "New"}, 110, 0))
+	assert.NoError(t, f.repo.CountDigest(f.sub, "dg-app-bucket", DigestBucket{Key: "chat", Kind: KindChat}, 120, 0))
+	rows, claimed, err := f.repo.ClaimDigest(f.user, 1000, 2000)
+
+	// then
+	assert.NoError(t, err)
+	assert.True(t, claimed)
+	assert.ElementsMatch(t, []DigestRow{
+		{SubscriptionID: f.sub, ApplicationID: "dg-app-bucket", AppName: "A", Kind: KindItem, Title: "New", Count: 2},
+		{SubscriptionID: f.sub, ApplicationID: "dg-app-bucket", AppName: "A", Kind: KindChat, Count: 1},
+	}, rows)
 }
 
 func TestPushRepository_ClaimDigest_ShouldReturnLiveUnreadRowsDeleteAllAndClaimOncePerDue_Integration(t *testing.T) {
@@ -607,7 +628,7 @@ func TestPushRepository_ClaimDigest_ShouldReturnLiveUnreadRowsDeleteAllAndClaimO
 	// then
 	assert.NoError(t, err)
 	assert.True(t, claimed)
-	assert.Equal(t, []DigestRow{{SubscriptionID: f.sub, ApplicationID: "dg-live", AppName: "Live", Count: 3}}, rows)
+	assert.Equal(t, []DigestRow{{SubscriptionID: f.sub, ApplicationID: "dg-live", AppName: "Live", Kind: KindItem, Title: "Groceries", Count: 3}}, rows)
 	assert.Equal(t, 0, f.pendingRows(t))
 	assert.NoError(t, errAgain)
 	assert.False(t, claimedAgain)

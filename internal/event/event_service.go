@@ -374,6 +374,8 @@ func (s *EventService) persistAndApply(ctx context.Context, event *Event, sequen
 		return nil, false, fmt.Errorf("%w: event id %s is already used by another event", ErrUnappliable, event.ID)
 	}
 
+	txs.addRemovedMemberName(event)
+
 	event.SequenceNumber = 0
 	if sequenced {
 		seq, err := txs.repo.GetNextSequence(event.ApplicationID)
@@ -413,6 +415,32 @@ func (s *EventService) persistAndApply(ctx context.Context, event *Event, sequen
 		return nil, false, fmt.Errorf("failed to commit event: %w", err)
 	}
 	return event, false, nil
+}
+
+// addRemovedMemberName stamps the member's display name onto member_removed before the member row is deleted.
+func (s *EventService) addRemovedMemberName(event *Event) {
+	if event.Type != EventTypeMemberRemoved || s.appRepo == nil {
+		return
+	}
+	if event.Data == nil {
+		event.Data = map[string]interface{}{}
+	}
+	delete(event.Data, "userDisplayName")
+	if event.Data["reason"] == "account_deleted" {
+		return
+	}
+	key, _ := event.Data["memberPublicKey"].(string)
+	members, err := s.appRepo.GetMembersByApplicationID(event.ApplicationID)
+	if err != nil {
+		log.Warn().Err(err).Str("eventId", event.ID).Msg("[EVENT] Failed to load members for member_removed name")
+		return
+	}
+	for _, m := range members {
+		if m.PublicKey == key && m.UserDisplayName != nil && *m.UserDisplayName != "" {
+			event.Data["userDisplayName"] = *m.UserDisplayName
+			return
+		}
+	}
 }
 
 // explicitRecipientEventTypes is the allowlist of event types whose

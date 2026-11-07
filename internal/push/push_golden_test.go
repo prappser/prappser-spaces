@@ -69,6 +69,8 @@ func goldenApp() *application.Application {
 				{ID: "map-1", Name: "Map"},
 				{ID: "countdown-1", Name: "Countdown"},
 				{ID: "expenses-1", Name: "Expenses"},
+				{ID: "list-2", Name: "Checklist", Data: map[string]any{"_title": "Groceries"}},
+				{ID: "expenses-2", Name: "Expenses", Data: map[string]any{"_title": "Costs"}},
 			},
 		}},
 	}
@@ -106,6 +108,14 @@ func gTyped(tp event.EventType, data map[string]any) *event.Event {
 		CreatedAt:        1700000000,
 		Data:             data,
 	}
+}
+
+func gMemberRemoved(name, memberPublicKey string) *event.Event {
+	data := map[string]any{"memberPublicKey": memberPublicKey}
+	if name != "" {
+		data["userDisplayName"] = name
+	}
+	return gTyped(event.EventTypeMemberRemoved, data)
 }
 
 func gItem(title string) map[string]any { return map[string]any{"title": title} }
@@ -156,6 +166,10 @@ func goldenCases() []goldenCase {
 	add("checklist tick", gComp("list-1", gChange("item_a", gItem("Milk"), map[string]any{"title": "Milk", "checked": true})))
 	add("checklist rename", gComp("list-1", gChange("item_a", gItem("Milk"), gItem("Oat milk"))))
 	add("checklist tombstone", gComp("list-1", gChange("item_a", gItem("Milk"), "")))
+	add("checklist one item with component title", gComp("list-2", gChange("item_a", nil, gItem("Milk"))))
+	add("checklist three items with component title", gComp("list-2", gMerge(
+		gChange("item_a", nil, gItem("Milk")), gChange("item_b", nil, gItem("Eggs")), gChange("item_c", nil, gItem("Bread")),
+	)))
 	add("checklist items key", gComp("list-1", gChange("items", nil, []any{gItem("Milk")})))
 
 	// poll
@@ -163,6 +177,7 @@ func goldenCases() []goldenCase {
 	add("poll closed without question", gComp("poll-2", gChange("closed", nil, true)))
 	add("poll closed again", gComp("poll-1", gChange("closed", true, true)))
 	add("poll reopened", gComp("poll-1", gChange("closed", true, false)))
+	add("poll created", gComp("poll-1", gMerge(gChange("v", nil, 1), gChange("question", nil, "Where do we eat?"))))
 	add("poll vote", gComp("poll-1", gChange("vote_pk", nil, "a")))
 
 	// files and gallery
@@ -181,6 +196,8 @@ func goldenCases() []goldenCase {
 	add("map component", gComp("map-1", gChange("pin_a", nil, map[string]any{"lat": 1.5, "lng": 2.5})))
 	add("countdown component", gComp("countdown-1", gChange("target", nil, "2030-01-01")))
 	add("expenses component", gComp("expenses-1", gChange("expense_a", nil, map[string]any{"title": "Dinner", "amount": 10})))
+	add("expense with component title", gComp("expenses-2", gChange("e_0b7e5c1a-3f2d-4a9e-8c11-5d6e7f8a9b0c", nil, `{"what":"Dinner","payer":"pk","amount":4500}`)))
+	add("expense refund", gComp("expenses-2", gChange("e_0b7e5c1a-3f2d-4a9e-8c11-5d6e7f8a9b0c", nil, `{"what":"Refund","payer":"pk","amount":-50}`)))
 	add("unknown component", gComp("nope", gChange(gChatA, nil, `{"body":"x"}`)))
 
 	// person label
@@ -212,7 +229,18 @@ func goldenCases() []goldenCase {
 		for _, role := range []string{"owner", "admin", "member", "viewer", "weird", ""} {
 			cs = append(cs, goldenCase{name: "role changed to " + role + suffix, ev: gTyped(event.EventTypeMemberRoleChanged, map[string]any{"newRole": role}), creator: "Ann", agent: agent})
 		}
+		reminder := func(offset string) map[string]any {
+			return map[string]any{"itemTitle": "Call mom", "componentId": "list-2", "ruleId": "rule-1", "occurrenceAt": int64(1794070800), "offset": offset, "tz": "Europe/Warsaw"}
+		}
 		cs = append(cs,
+			goldenCase{name: "member removed by owner" + suffix, ev: gMemberRemoved("Bo", "bo-pk"), creator: "Ann", agent: agent},
+			goldenCase{name: "member left" + suffix, ev: gMemberRemoved("Bo", "creator-pk"), creator: "Bo", agent: agent},
+			goldenCase{name: "member removed without name" + suffix, ev: gMemberRemoved("", "bo-pk"), creator: "Ann", agent: agent},
+			goldenCase{name: "reminder 15 minutes before" + suffix, ev: gTyped(event.EventTypeReminderFired, reminder("-PT15M")), creator: "Ann", agent: agent},
+			goldenCase{name: "reminder due now" + suffix, ev: gTyped(event.EventTypeReminderFired, reminder("PT0S")), creator: "Ann", agent: agent},
+			goldenCase{name: "reminder 2 hours before" + suffix, ev: gTyped(event.EventTypeReminderFired, reminder("-PT2H")), creator: "Ann", agent: agent},
+			goldenCase{name: "reminder 1 day before" + suffix, ev: gTyped(event.EventTypeReminderFired, reminder("-P1D")), creator: "Ann", agent: agent},
+			goldenCase{name: "reminder without tz" + suffix, ev: gTyped(event.EventTypeReminderFired, gMerge(reminder("-PT15M"), map[string]any{"tz": ""})), creator: "Ann", agent: agent},
 			goldenCase{name: "reminder fired with text" + suffix, ev: gTyped(event.EventTypeReminderFired, map[string]any{"itemTitle": "Call mom"}), creator: "Ann", agent: agent},
 			goldenCase{name: "reminder fired without text" + suffix, ev: gTyped(event.EventTypeReminderFired, map[string]any{}), creator: "Ann", agent: agent},
 			goldenCase{name: "reminder fired long text" + suffix, ev: gTyped(event.EventTypeReminderFired, map[string]any{"itemTitle": strings.Repeat("r", 121)}), creator: "Ann", agent: agent},
@@ -221,7 +249,6 @@ func goldenCases() []goldenCase {
 
 	// event types without a rule
 	for _, tp := range []event.EventType{
-		event.EventTypeMemberRemoved,
 		event.EventTypeInviteRevoked,
 		event.EventTypeApplicationDataChanged,
 		event.EventTypeApplicationAfterEditModeChanged,
@@ -276,18 +303,27 @@ func runGoldenCase(t *testing.T, c goldenCase) []goldenDelivery {
 
 func renderGolden(t *testing.T) []byte {
 	t.Helper()
-	all := map[string]any{}
+	cases := map[string]any{}
 	for _, c := range goldenCases() {
-		if _, dup := all[c.name]; dup {
+		if _, dup := cases[c.name]; dup {
 			t.Fatalf("duplicate golden case name %q", c.name)
 		}
-		deliveries := runGoldenCase(t, c)
-		if len(deliveries) == 0 {
-			all[c.name] = "none"
-			continue
+		var deliveries any = "none"
+		if d := runGoldenCase(t, c); len(d) > 0 {
+			deliveries = d
 		}
-		all[c.name] = deliveries
+		cases[c.name] = map[string]any{
+			"input": map[string]any{
+				"event": map[string]any{
+					"id": c.ev.ID, "type": c.ev.Type, "creatorPublicKey": c.ev.CreatorPublicKey, "data": c.ev.Data,
+				},
+				"creatorName": c.creator,
+				"agent":       c.agent,
+			},
+			"deliveries": deliveries,
+		}
 	}
+	all := map[string]any{"app": goldenApp(), "cases": cases}
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
 	enc.SetIndent("", "  ")

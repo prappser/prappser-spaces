@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"sort"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -101,10 +102,18 @@ func (s *DigestScheduler) digestFor(u DigestUser, now time.Time) error {
 	for _, sub := range subs {
 		var apps []digestApp
 		for _, r := range rows {
-			if r.SubscriptionID == sub.ID && !slices.Contains(sub.MutedApplicationIDs, r.ApplicationID) {
-				apps = append(apps, digestApp{ApplicationID: r.ApplicationID, Name: r.AppName, Count: r.Count})
+			if r.SubscriptionID != sub.ID || slices.Contains(sub.MutedApplicationIDs, r.ApplicationID) {
+				continue
 			}
+			i := slices.IndexFunc(apps, func(a digestApp) bool { return a.ApplicationID == r.ApplicationID })
+			if i < 0 {
+				apps = append(apps, digestApp{ApplicationID: r.ApplicationID, Name: r.AppName})
+				i = len(apps) - 1
+			}
+			apps[i].Count += r.Count
+			apps[i].Labels = append(apps[i].Labels, digestLabel{Kind: r.Kind, Title: r.Title, Count: r.Count})
 		}
+		sort.SliceStable(apps, func(i, j int) bool { return apps[i].Count > apps[j].Count })
 		if len(apps) == 0 {
 			continue
 		}
