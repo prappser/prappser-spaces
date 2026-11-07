@@ -39,6 +39,7 @@ func (r *getChallengeTestRepo) UpdateAvatarStorageID(publicKey string, avatarSto
 }
 func (r *getChallengeTestRepo) UpdateLocale(string, string) error               { return nil }
 func (r *getChallengeTestRepo) UpdateNotifyMode(string, string) error           { return nil }
+func (r *getChallengeTestRepo) UpdateNotificationsSeenAt(string, int64) error   { return nil }
 func (r *getChallengeTestRepo) UpdateUsername(publicKey, username string) error { return nil }
 func (r *getChallengeTestRepo) AcceptBinding(_, _ string, _ int64, _, _ string) (string, string, bool, error) {
 	return "", "", false, nil

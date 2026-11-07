@@ -10,9 +10,10 @@ import (
 
 // UpdateProfileRequest is the PATCH /users/me request body.
 type UpdateProfileRequest struct {
-	DisplayName *string `json:"displayName"`
-	Locale      *string `json:"locale"`
-	NotifyMode  *string `json:"notifyMode"`
+	DisplayName         *string `json:"displayName"`
+	Locale              *string `json:"locale"`
+	NotifyMode          *string `json:"notifyMode"`
+	NotificationsSeenAt *int64  `json:"notificationsSeenAt"`
 }
 
 // EventService is the interface for producing space-generated events.
@@ -31,4 +32,5 @@ type userRepository interface {
 	UpdateUsername(publicKey, username string) error
 	UpdateLocale(publicKey, locale string) error
 	UpdateNotifyMode(publicKey, mode string) error
+	UpdateNotificationsSeenAt(publicKey string, at int64) error
 }

@@ -256,6 +256,7 @@ func (m *mockUserRepoStorage) UpdateUserRole(_, _ string) error                {
 func (m *mockUserRepoStorage) UpdateAvatarStorageID(_ string, _ *string) error { return nil }
 func (m *mockUserRepoStorage) UpdateLocale(string, string) error               { return nil }
 func (m *mockUserRepoStorage) UpdateNotifyMode(string, string) error           { return nil }
+func (m *mockUserRepoStorage) UpdateNotificationsSeenAt(string, int64) error   { return nil }
 func (m *mockUserRepoStorage) UpdateUsername(_, _ string) error                { return nil }
 func (m *mockUserRepoStorage) AcceptBinding(_, _ string, _ int64, _, _ string) (string, string, bool, error) {
 	return "", "", false, nil

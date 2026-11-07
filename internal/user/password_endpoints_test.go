@@ -49,8 +49,9 @@ func (r *passwordTestRepo) UpdateUserRole(publicKey, role string) error { return
 func (r *passwordTestRepo) UpdateAvatarStorageID(publicKey string, avatarStorageID *string) error {
 	return nil
 }
-func (r *passwordTestRepo) UpdateLocale(string, string) error     { return nil }
-func (r *passwordTestRepo) UpdateNotifyMode(string, string) error { return nil }
+func (r *passwordTestRepo) UpdateLocale(string, string) error             { return nil }
+func (r *passwordTestRepo) UpdateNotifyMode(string, string) error         { return nil }
+func (r *passwordTestRepo) UpdateNotificationsSeenAt(string, int64) error { return nil }
 func (r *passwordTestRepo) UpdateUsername(publicKey, username string) error {
 	if account, ok := r.accounts[publicKey]; ok {
 		account.Username = username
