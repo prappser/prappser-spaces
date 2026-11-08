@@ -247,6 +247,8 @@ type pushPayload struct {
 	Data           any    `json:"data,omitempty"`
 	ComponentTitle string `json:"componentTitle,omitempty"`
 	AppName        string `json:"appName,omitempty"`
+	ComponentID    string `json:"componentId,omitempty"`
+	Target         string `json:"target,omitempty"`
 }
 
 func appName(app *application.Application) string {
@@ -276,6 +278,8 @@ func buildPayload(ev *event.Event, name string, n notice) ([]byte, error) {
 		View:           n.view,
 		ComponentTitle: n.componentTitle,
 		AppName:        name,
+		ComponentID:    n.openComponent,
+		Target:         n.target,
 	})
 }
 

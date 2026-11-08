@@ -237,7 +237,7 @@ func goldenCases() []goldenCase {
 			cs = append(cs, goldenCase{name: "role changed to " + role + suffix, ev: gTyped(event.EventTypeMemberRoleChanged, map[string]any{"newRole": role}), creator: "Ann", agent: agent})
 		}
 		reminder := func(offset string) map[string]any {
-			return map[string]any{"itemTitle": "Call mom", "componentId": "list-2", "ruleId": "rule-1", "occurrenceAt": int64(1794070800), "offset": offset, "tz": "Europe/Warsaw"}
+			return map[string]any{"itemTitle": "Call mom", "componentId": "list-2", "targetKey": "place_1", "ruleId": "rule-1", "occurrenceAt": int64(1794070800), "offset": offset, "tz": "Europe/Warsaw"}
 		}
 		cs = append(cs,
 			goldenCase{name: "member removed by owner" + suffix, ev: gMemberRemoved("Bo", "bo-pk"), creator: "Ann", agent: agent},
@@ -247,6 +247,7 @@ func goldenCases() []goldenCase {
 			goldenCase{name: "reminder due now" + suffix, ev: gTyped(event.EventTypeReminderFired, reminder("PT0S")), creator: "Ann", agent: agent},
 			goldenCase{name: "reminder 2 hours before" + suffix, ev: gTyped(event.EventTypeReminderFired, reminder("-PT2H")), creator: "Ann", agent: agent},
 			goldenCase{name: "reminder 1 day before" + suffix, ev: gTyped(event.EventTypeReminderFired, reminder("-P1D")), creator: "Ann", agent: agent},
+			goldenCase{name: "reminder without target" + suffix, ev: gTyped(event.EventTypeReminderFired, gMerge(reminder("-PT15M"), map[string]any{"targetKey": ""})), creator: "Ann", agent: agent},
 			goldenCase{name: "reminder without tz" + suffix, ev: gTyped(event.EventTypeReminderFired, gMerge(reminder("-PT15M"), map[string]any{"tz": ""})), creator: "Ann", agent: agent},
 			goldenCase{name: "reminder fired with text" + suffix, ev: gTyped(event.EventTypeReminderFired, map[string]any{"itemTitle": "Call mom"}), creator: "Ann", agent: agent},
 			goldenCase{name: "reminder fired without text" + suffix, ev: gTyped(event.EventTypeReminderFired, map[string]any{}), creator: "Ann", agent: agent},
