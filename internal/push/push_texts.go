@@ -9,13 +9,14 @@ import (
 const maxWhatRunes = 120
 
 type notice struct {
-	kind           Kind
-	scope          string
-	componentID    string
-	body           string
-	view           string
-	title          string
-	componentTitle string
+	kind                   Kind
+	scope                  string
+	componentID            string
+	body                   string
+	view                   string
+	title                  string
+	componentTitle         string
+	revertKey, revertField string
 }
 
 type texts struct {

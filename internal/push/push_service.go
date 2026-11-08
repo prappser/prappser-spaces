@@ -82,6 +82,9 @@ func (s *PushService) fanout(ev *event.Event, app *application.Application, crea
 		bucket.Key = string(en.kind)
 	}
 
+	var cancelAt int64
+	cancelLooked := false
+
 	// Render once per language, not once per subscription.
 	byLang := map[string]rendered{}
 	for _, sub := range subs {
@@ -90,6 +93,18 @@ func (s *PushService) fanout(ev *event.Event, app *application.Application, crea
 		}
 		if en.kind.digestsIn(sub.NotifyMode) {
 			if ev.ApplicationID != "" {
+				if !cancelLooked {
+					cancelAt, cancelLooked = s.checkedAtBefore(ev, app, en), true
+				}
+				if cancelAt > 0 {
+					took, err := s.repo.UncountDigest(sub.ID, ev.ApplicationID, bucket.Key, cancelAt, sub.NotificationsSeenAt)
+					if err != nil {
+						log.Warn().Err(err).Str("subscriptionId", sub.ID).Msg("[PUSH] Failed to uncount digest")
+					}
+					if took {
+						continue
+					}
+				}
 				if err := s.repo.CountDigest(sub.ID, ev.ApplicationID, bucket, time.Now().Unix(), sub.NotificationsSeenAt); err != nil {
 					log.Warn().Err(err).Str("subscriptionId", sub.ID).Msg("[PUSH] Failed to count digest")
 				}
@@ -115,6 +130,33 @@ func (s *PushService) fanout(ev *event.Event, app *application.Application, crea
 
 		s.send(sub, vapid, r.payload, r.opts)
 	}
+}
+
+func (s *PushService) checkedAtBefore(ev *event.Event, app *application.Application, n notice) int64 {
+	comp := findComponent(app, n.componentID)
+	if n.revertKey == "" || comp == nil || s.validator == nil {
+		return 0
+	}
+	prev, err := s.repo.PreviousChange(ev.ApplicationID, n.componentID, n.revertKey, ev.SequenceNumber, time.Now().Add(-48*time.Hour).Unix())
+	if err != nil {
+		log.Warn().Err(err).Str("eventId", ev.ID).Msg("[PUSH] Failed to read previous change")
+		return 0
+	}
+	if prev == nil || prev.Keys != 1 || ev.CreatorPublicKey == "" || prev.CreatorPublicKey != ev.CreatorPublicKey || isEmpty(prev.OldValue) || isEmpty(prev.NewValue) {
+		return 0
+	}
+	typ := schemaType(comp.Name)
+	dold, okO := s.newValue(typ, n.revertKey, prev.OldValue)
+	dnew, okN := s.newValue(typ, n.revertKey, prev.NewValue)
+	if !okO || !okN {
+		return 0
+	}
+	o, _ := dotted(dold, n.revertField)
+	c, _ := dotted(dnew, n.revertField)
+	if o == true || c != true {
+		return 0
+	}
+	return prev.CreatedAt
 }
 
 func (s *PushService) vapid() *SpaceVapid {

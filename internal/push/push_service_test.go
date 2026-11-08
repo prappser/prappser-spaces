@@ -31,9 +31,17 @@ type mockPushRepository struct {
 		devicePublicKey string
 	}
 	digestCounts []digestCountCall
+	uncounts     []uncountCall
+	uncountTakes bool
+	prior        *PriorChange
 	dailyUsers   []DigestUser
 	claimRows    map[string][]DigestRow
 	claimCalls   []string
+}
+
+type uncountCall struct {
+	subscriptionID, applicationID, componentKey string
+	countedAt, seenAt                           int64
 }
 
 type digestCountCall struct {
@@ -155,6 +163,19 @@ func (m *mockPushRepository) CountDigest(subscriptionID, applicationID string, b
 	defer m.mu.Unlock()
 	m.digestCounts = append(m.digestCounts, digestCountCall{subscriptionID, applicationID, bucket, at, seenAt})
 	return nil
+}
+
+func (m *mockPushRepository) UncountDigest(subscriptionID, applicationID, componentKey string, countedAt, seenAt int64) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.uncounts = append(m.uncounts, uncountCall{subscriptionID, applicationID, componentKey, countedAt, seenAt})
+	return m.uncountTakes, nil
+}
+
+func (m *mockPushRepository) PreviousChange(applicationID, componentID, key string, sequence, since int64) (*PriorChange, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.prior, nil
 }
 
 func (m *mockPushRepository) GetDailyUsers() ([]DigestUser, error) {
@@ -878,4 +899,59 @@ func TestPushService_Fanout_ShouldNotCountMutedAppOrEmptyApplicationID(t *testin
 	// then
 	assert.Empty(t, repo.digestCounts)
 	assert.Empty(t, sender.calls)
+}
+
+func TestPushService_Fanout_ShouldCancelDigestCountOfOwnCheckWhenUnchecking(t *testing.T) {
+	// given
+	checked := map[string]any{"title": "Milk", "checked": true}
+	uncheck := func(extra ...map[string]any) *event.Event {
+		return gComp("list-1", gMerge(append([]map[string]any{gChange("item_a", checked, map[string]any{"title": "Milk", "checked": false})}, extra...)...))
+	}
+	prior := func(mutate func(*PriorChange)) *PriorChange {
+		p := &PriorChange{CreatorPublicKey: "creator-pk", CreatedAt: 1700000000, OldValue: gItem("Milk"), NewValue: checked, Keys: 1}
+		mutate(p)
+		return p
+	}
+	cases := []struct {
+		name      string
+		prior     *PriorChange
+		takes     bool
+		wantUndo  bool
+		wantCount bool
+		extra     map[string]any
+		noCreator bool
+	}{
+		{"own check cancels", prior(func(*PriorChange) {}), true, true, false, nil, false},
+		{"nothing to take off falls back to counting", prior(func(*PriorChange) {}), false, true, true, nil, false},
+		{"no previous change counts", nil, true, false, true, nil, false},
+		{"other person's check counts", prior(func(p *PriorChange) { p.CreatorPublicKey = "someone-else" }), true, false, true, nil, false},
+		{"check inside a multi-entry event counts", prior(func(p *PriorChange) { p.Keys = 2 }), true, false, true, nil, false},
+		{"previous change was not a check counts", prior(func(p *PriorChange) { p.NewValue = gItem("Milk") }), true, false, true, nil, false},
+		{"previous change created the item counts", prior(func(p *PriorChange) { p.OldValue = nil }), true, false, true, nil, false},
+		{"uncheck inside a multi-entry event counts", prior(func(*PriorChange) {}), true, false, true, gChange("item_b", nil, gItem("Bread")), false},
+		{"empty creator is never the same person", prior(func(p *PriorChange) { p.CreatorPublicKey = "" }), true, false, true, nil, true},
+	}
+	for _, c := range cases {
+		repo := newMockPushRepository()
+		svc := newGoldenService(repo, newMockWebpushSender(SendResult{StatusCode: 201}))
+		repo.subscriptions["sub-d"] = &Subscription{ID: "sub-d", DevicePublicKey: "pk-d", NotifyMode: user.NotifyModeDaily, NotificationsSeenAt: 42, MutedApplicationIDs: []string{}}
+		repo.prior, repo.uncountTakes = c.prior, c.takes
+
+		// when
+		ev := uncheck()
+		if c.extra != nil {
+			ev = uncheck(c.extra)
+		}
+		if c.noCreator {
+			ev.CreatorPublicKey = ""
+		}
+		svc.fanout(ev, goldenApp(), "Ann", false, []string{"pk-d"})
+
+		// then
+		assert.Equal(t, c.wantUndo, len(repo.uncounts) == 1, c.name)
+		assert.Equal(t, c.wantCount, len(repo.digestCounts) == 1, c.name)
+		if c.wantUndo {
+			assert.Equal(t, uncountCall{"sub-d", "app-1", "list-1", 1700000000, 42}, repo.uncounts[0], c.name)
+		}
+	}
 }

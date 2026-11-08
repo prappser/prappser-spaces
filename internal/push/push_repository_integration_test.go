@@ -700,3 +700,97 @@ func TestPushRepository_GetSubscriptionsForUsers_ShouldIncludeNotificationsSeenA
 		assert.Equal(t, int64(321), subs[0].NotificationsSeenAt)
 	}
 }
+
+func TestPushRepository_UncountDigest_ShouldDecrementOnlyUnreadUnsentRow_Integration(t *testing.T) {
+	// given
+	f := newDigestFixture(t, "uncount", 100)
+	f.app(t, "dg-app-uncount", "A", true, false)
+	f.pending(t, "dg-app-uncount", 2, 200)
+	count := func() int {
+		var n int
+		if err := f.db.QueryRow("SELECT count FROM push_digest_pending WHERE subscription_id=$1 AND application_id='dg-app-uncount'", f.sub).Scan(&n); err != nil {
+			t.Fatalf("read: %v", err)
+		}
+		return n
+	}
+
+	// when
+	ok, err := f.repo.UncountDigest(f.sub, "dg-app-uncount", "list-1", 150, 100)
+
+	// then
+	assert.NoError(t, err)
+	assert.True(t, ok)
+	assert.Equal(t, 1, count())
+
+	// when: the account read past the pending row meanwhile
+	ok, err = f.repo.UncountDigest(f.sub, "dg-app-uncount", "list-1", 150, 250)
+
+	// then
+	assert.NoError(t, err)
+	assert.False(t, ok)
+	assert.Equal(t, 1, count())
+
+	// when: no row for the component
+	ok, err = f.repo.UncountDigest(f.sub, "dg-app-uncount", "other", 150, 100)
+
+	// then
+	assert.NoError(t, err)
+	assert.False(t, ok)
+}
+
+func TestPushRepository_PreviousChange_ShouldReturnLatestEarlierChangeOfKey_Integration(t *testing.T) {
+	// given
+	db := getTestDB(t)
+	defer db.Close()
+	repo := NewPushRepository(db)
+	_, err := db.Exec("INSERT INTO applications (id, name, created_at, updated_at) VALUES ('pc-app','A',1,1) ON CONFLICT DO NOTHING")
+	assert.NoError(t, err)
+	for i, d := range []string{
+		`{"componentId":"c1","changedFields":{"k1":{"oldValue":null,"newValue":{"checked":false}}}}`,
+		`{"componentId":"c1","changedFields":{"k1":{"oldValue":{"checked":false},"newValue":{"checked":true}},"k2":{"oldValue":1,"newValue":2}}}`,
+		`{"componentId":"c1","changedFields":{"k1":{"oldValue":{"checked":true},"newValue":{"checked":false}}}}`,
+	} {
+		_, err := db.Exec(`INSERT INTO events (id, created_at, application_id, sequence_number, type, creator_public_key, version, data) VALUES ($1,$2,'pc-app',$3,'component_data_changed','pc-user',1,$4) ON CONFLICT DO NOTHING`,
+			"pc-ev-"+string(rune('a'+i)), int64(100+i), int64(i+1), d)
+		assert.NoError(t, err)
+	}
+
+	// when
+	got, err := repo.PreviousChange("pc-app", "c1", "k1", 3, 0)
+
+	// then
+	assert.NoError(t, err)
+	if assert.NotNil(t, got) {
+		assert.Equal(t, "pc-user", got.CreatorPublicKey)
+		assert.Equal(t, int64(101), got.CreatedAt)
+		assert.Equal(t, 2, got.Keys)
+		assert.Equal(t, map[string]any{"checked": true}, got.NewValue)
+	}
+
+	// when
+	none, err := repo.PreviousChange("pc-app", "c1", "k1", 3, 101)
+
+	// then
+	assert.NoError(t, err)
+	assert.Nil(t, none)
+}
+
+func TestPushRepository_ClaimDigest_ShouldIgnoreRowsCancelledToZero_Integration(t *testing.T) {
+	// given
+	f := newDigestFixture(t, "zero", 100)
+	f.app(t, "dg-app-zero", "A", true, false)
+	bucket := DigestBucket{Key: "list-1", Kind: KindItem, Title: "Groceries"}
+	assert.NoError(t, f.repo.CountDigest(f.sub, "dg-app-zero", bucket, 200, 100))
+	ok, err := f.repo.UncountDigest(f.sub, "dg-app-zero", "list-1", 150, 100)
+	assert.NoError(t, err)
+	assert.True(t, ok)
+
+	// when
+	rows, claimed, err := f.repo.ClaimDigest(f.user, 1000, 2000)
+
+	// then
+	assert.NoError(t, err)
+	assert.True(t, claimed)
+	assert.Empty(t, rows)
+	assert.Equal(t, 0, f.pendingRows(t))
+}

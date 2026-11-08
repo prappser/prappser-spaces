@@ -1877,6 +1877,80 @@
         }
       }
     },
+    "checklist new item already checked": {
+      "deliveries": [
+        {
+          "subscription": "sub-de-other-muted",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: + Milk",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|list-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "KMM6m-IuqSy7Crn8hYrs9WlSJ4ME1-OD"
+        },
+        {
+          "subscription": "sub-en",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: + Milk",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|list-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "KMM6m-IuqSy7Crn8hYrs9WlSJ4ME1-OD"
+        },
+        {
+          "subscription": "sub-pl",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: + Milk",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|list-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "KMM6m-IuqSy7Crn8hYrs9WlSJ4ME1-OD"
+        }
+      ],
+      "input": {
+        "agent": false,
+        "creatorName": "Ann",
+        "event": {
+          "creatorPublicKey": "creator-pk",
+          "data": {
+            "applicationId": "app-1",
+            "changedFields": {
+              "item_a": {
+                "newValue": {
+                  "checked": true,
+                  "title": "Milk"
+                },
+                "oldValue": null
+              }
+            },
+            "componentId": "list-1"
+          },
+          "id": "evt-1",
+          "type": "component_data_changed"
+        }
+      }
+    },
     "checklist one item": {
       "deliveries": [
         {
@@ -2043,6 +2117,91 @@
                 },
                 "oldValue": {
                   "title": "Milk"
+                }
+              }
+            },
+            "componentId": "list-1"
+          },
+          "id": "evt-1",
+          "type": "component_data_changed"
+        }
+      }
+    },
+    "checklist three deletes": {
+      "deliveries": [
+        {
+          "subscription": "sub-de-other-muted",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: − A, B and 1 more",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|list-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "KMM6m-IuqSy7Crn8hYrs9WlSJ4ME1-OD"
+        },
+        {
+          "subscription": "sub-en",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: − A, B and 1 more",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|list-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "KMM6m-IuqSy7Crn8hYrs9WlSJ4ME1-OD"
+        },
+        {
+          "subscription": "sub-pl",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: − A, B i jeszcze 1",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|list-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "KMM6m-IuqSy7Crn8hYrs9WlSJ4ME1-OD"
+        }
+      ],
+      "input": {
+        "agent": false,
+        "creatorName": "Ann",
+        "event": {
+          "creatorPublicKey": "creator-pk",
+          "data": {
+            "applicationId": "app-1",
+            "changedFields": {
+              "item_a": {
+                "newValue": "",
+                "oldValue": {
+                  "title": "A"
+                }
+              },
+              "item_b": {
+                "newValue": "",
+                "oldValue": {
+                  "title": "B"
+                }
+              },
+              "item_c": {
+                "newValue": "",
+                "oldValue": {
+                  "title": "C"
                 }
               }
             },
@@ -2227,7 +2386,56 @@
       }
     },
     "checklist tick": {
-      "deliveries": "none",
+      "deliveries": [
+        {
+          "subscription": "sub-de-other-muted",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: ✓ Milk",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|list-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "KMM6m-IuqSy7Crn8hYrs9WlSJ4ME1-OD"
+        },
+        {
+          "subscription": "sub-en",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: ✓ Milk",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|list-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "KMM6m-IuqSy7Crn8hYrs9WlSJ4ME1-OD"
+        },
+        {
+          "subscription": "sub-pl",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: ✓ Milk",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|list-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "KMM6m-IuqSy7Crn8hYrs9WlSJ4ME1-OD"
+        }
+      ],
       "input": {
         "agent": false,
         "creatorName": "Ann",
@@ -2254,7 +2462,56 @@
       }
     },
     "checklist tombstone": {
-      "deliveries": "none",
+      "deliveries": [
+        {
+          "subscription": "sub-de-other-muted",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: − Milk",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|list-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "KMM6m-IuqSy7Crn8hYrs9WlSJ4ME1-OD"
+        },
+        {
+          "subscription": "sub-en",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: − Milk",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|list-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "KMM6m-IuqSy7Crn8hYrs9WlSJ4ME1-OD"
+        },
+        {
+          "subscription": "sub-pl",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: − Milk",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|list-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "KMM6m-IuqSy7Crn8hYrs9WlSJ4ME1-OD"
+        }
+      ],
       "input": {
         "agent": false,
         "creatorName": "Ann",
@@ -2266,6 +2523,102 @@
               "item_a": {
                 "newValue": "",
                 "oldValue": {
+                  "title": "Milk"
+                }
+              }
+            },
+            "componentId": "list-1"
+          },
+          "id": "evt-1",
+          "type": "component_data_changed"
+        }
+      }
+    },
+    "checklist tombstone of absent key": {
+      "deliveries": "none",
+      "input": {
+        "agent": false,
+        "creatorName": "Ann",
+        "event": {
+          "creatorPublicKey": "creator-pk",
+          "data": {
+            "applicationId": "app-1",
+            "changedFields": {
+              "item_a": {
+                "newValue": "",
+                "oldValue": null
+              }
+            },
+            "componentId": "list-1"
+          },
+          "id": "evt-1",
+          "type": "component_data_changed"
+        }
+      }
+    },
+    "checklist tombstone of checked item": {
+      "deliveries": [
+        {
+          "subscription": "sub-de-other-muted",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: − Milk",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|list-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "KMM6m-IuqSy7Crn8hYrs9WlSJ4ME1-OD"
+        },
+        {
+          "subscription": "sub-en",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: − Milk",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|list-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "KMM6m-IuqSy7Crn8hYrs9WlSJ4ME1-OD"
+        },
+        {
+          "subscription": "sub-pl",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: − Milk",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|list-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "KMM6m-IuqSy7Crn8hYrs9WlSJ4ME1-OD"
+        }
+      ],
+      "input": {
+        "agent": false,
+        "creatorName": "Ann",
+        "event": {
+          "creatorPublicKey": "creator-pk",
+          "data": {
+            "applicationId": "app-1",
+            "changedFields": {
+              "item_a": {
+                "newValue": "",
+                "oldValue": {
+                  "checked": true,
                   "title": "Milk"
                 }
               }
@@ -2347,6 +2700,168 @@
                   "title": "B"
                 },
                 "oldValue": null
+              }
+            },
+            "componentId": "list-1"
+          },
+          "id": "evt-1",
+          "type": "component_data_changed"
+        }
+      }
+    },
+    "checklist two ticks": {
+      "deliveries": [
+        {
+          "subscription": "sub-de-other-muted",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: ✓ A, B",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|list-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "KMM6m-IuqSy7Crn8hYrs9WlSJ4ME1-OD"
+        },
+        {
+          "subscription": "sub-en",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: ✓ A, B",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|list-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "KMM6m-IuqSy7Crn8hYrs9WlSJ4ME1-OD"
+        },
+        {
+          "subscription": "sub-pl",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: ✓ A, B",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|list-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "KMM6m-IuqSy7Crn8hYrs9WlSJ4ME1-OD"
+        }
+      ],
+      "input": {
+        "agent": false,
+        "creatorName": "Ann",
+        "event": {
+          "creatorPublicKey": "creator-pk",
+          "data": {
+            "applicationId": "app-1",
+            "changedFields": {
+              "item_a": {
+                "newValue": {
+                  "checked": true,
+                  "title": "A"
+                },
+                "oldValue": {
+                  "title": "A"
+                }
+              },
+              "item_b": {
+                "newValue": {
+                  "checked": true,
+                  "title": "B"
+                },
+                "oldValue": {
+                  "title": "B"
+                }
+              }
+            },
+            "componentId": "list-1"
+          },
+          "id": "evt-1",
+          "type": "component_data_changed"
+        }
+      }
+    },
+    "checklist untick": {
+      "deliveries": [
+        {
+          "subscription": "sub-de-other-muted",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: ☐ Milk",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|list-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "KMM6m-IuqSy7Crn8hYrs9WlSJ4ME1-OD"
+        },
+        {
+          "subscription": "sub-en",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: ☐ Milk",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|list-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "KMM6m-IuqSy7Crn8hYrs9WlSJ4ME1-OD"
+        },
+        {
+          "subscription": "sub-pl",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: ☐ Milk",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|list-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "KMM6m-IuqSy7Crn8hYrs9WlSJ4ME1-OD"
+        }
+      ],
+      "input": {
+        "agent": false,
+        "creatorName": "Ann",
+        "event": {
+          "creatorPublicKey": "creator-pk",
+          "data": {
+            "applicationId": "app-1",
+            "changedFields": {
+              "item_a": {
+                "newValue": {
+                  "checked": false,
+                  "title": "Milk"
+                },
+                "oldValue": {
+                  "checked": true,
+                  "title": "Milk"
+                }
               }
             },
             "componentId": "list-1"

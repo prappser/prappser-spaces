@@ -89,6 +89,14 @@ type DigestBucket struct {
 	Title string
 }
 
+type PriorChange struct {
+	CreatorPublicKey string
+	CreatedAt        int64
+	OldValue         any
+	NewValue         any
+	Keys             int
+}
+
 type DigestRow struct {
 	SubscriptionID string
 	ApplicationID  string
@@ -133,6 +141,8 @@ type PushRepository interface {
 	MarkSuccess(id string, ts int64) error
 	IncrementFailure(id string) error
 	CountDigest(subscriptionID, applicationID string, bucket DigestBucket, at, seenAt int64) error
+	UncountDigest(subscriptionID, applicationID, componentKey string, countedAt, seenAt int64) (bool, error)
+	PreviousChange(applicationID, componentID, key string, sequence, since int64) (*PriorChange, error)
 	GetDailyUsers() ([]DigestUser, error)
 	ClaimDigest(userPublicKey string, due, now int64) (rows []DigestRow, claimed bool, err error)
 }

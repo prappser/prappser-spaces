@@ -20,6 +20,7 @@ import (
 
 type notifyRule struct {
 	On         string          `json:"on"`
+	Field      string          `json:"field"`
 	Kind       string          `json:"kind"`
 	Scope      string          `json:"scope"`
 	View       string          `json:"view"`
@@ -64,6 +65,22 @@ type skipListedSpec struct {
 
 var ruleKinds = map[string]Kind{"chat": KindChat, "item": KindItem, "poll": KindPoll, "file": KindFile}
 
+func parseNotifyRules(raw any) ([]*notifyRule, error) {
+	list, isList := raw.([]any)
+	if !isList {
+		list = []any{raw}
+	}
+	rules := make([]*notifyRule, 0, len(list))
+	for i, r := range list {
+		rule, err := parseNotifyRule(r)
+		if err != nil {
+			return nil, fmt.Errorf("rule %d: %w", i, err)
+		}
+		rules = append(rules, rule)
+	}
+	return rules, nil
+}
+
 func parseNotifyRule(raw any) (*notifyRule, error) {
 	b, err := json.Marshal(raw)
 	if err != nil {
@@ -83,7 +100,7 @@ func parseNotifyRule(raw any) (*notifyRule, error) {
 
 func (r *notifyRule) check() error {
 	switch r.On {
-	case "new", "becomesTrue", "added":
+	case "new", "becomesTrue", "becomesFalse", "added", "removed":
 	default:
 		return fmt.Errorf("unknown on %q", r.On)
 	}
@@ -104,8 +121,8 @@ func (r *notifyRule) check() error {
 			return fmt.Errorf("text[%d]: %w", i, err)
 		}
 	}
-	if r.On != "new" && (r.Join != nil || r.SkipListed != nil) {
-		return errors.New("join and skipListed need on new")
+	if r.On != "new" && r.SkipListed != nil {
+		return errors.New("skipListed needs on new")
 	}
 	if j := r.Join; j != nil && (j.Show < 1 || j.More != "itemsMore") {
 		return errors.New("invalid join")
@@ -309,23 +326,28 @@ func (s *PushService) describeComponent(ev *event.Event, app *application.Applic
 
 	for _, rk := range ruleKeys {
 		g := groups[rk]
-		rule, err := parseNotifyRule(g.raw)
+		rules, err := parseNotifyRules(g.raw)
 		if err != nil {
 			log.Warn().Err(err).Str("type", typ).Str("rule", rk).Msg("[PUSH] Ignoring invalid x-notify rule")
 			continue
 		}
 		sort.Strings(g.keys)
-		what, ok := s.evalRule(rule, typ, comp, fields, g.keys, t)
-		if !ok {
-			continue
+		for _, rule := range rules {
+			what, hits, ok := s.evalRule(rule, typ, comp, fields, g.keys, t)
+			if !ok {
+				continue
+			}
+			n := notice{kind: ruleKinds[rule.Kind], scope: ev.ID, componentID: componentID, view: rule.View}
+			if rule.Scope == "component" {
+				n.scope = componentID
+			}
+			n.componentTitle = cut(str(comp.Data["_title"]))
+			n.body = person + ": " + cut(what)
+			if rule.On == "becomesFalse" && rule.Field != "" && len(hits) == 1 && len(fields) == 1 {
+				n.revertKey, n.revertField = hits[0].key, rule.Field
+			}
+			return n, true
 		}
-		n := notice{kind: ruleKinds[rule.Kind], scope: ev.ID, componentID: componentID, view: rule.View}
-		if rule.Scope == "component" {
-			n.scope = componentID
-		}
-		n.componentTitle = cut(str(comp.Data["_title"]))
-		n.body = person + ": " + cut(what)
-		return n, true
 	}
 	return notice{}, false
 }
@@ -341,6 +363,20 @@ func (s *PushService) firedKeys(r *notifyRule, typ string, fields map[string]any
 	var out []fired
 	for _, k := range keys {
 		o, n := change(fields, k)
+		entryOld, entryNew := o, n
+		if r.Field != "" {
+			if isEmpty(o) || isEmpty(n) {
+				continue
+			}
+			dn, okN := s.newValue(typ, k, n)
+			dold, okO := s.newValue(typ, k, o)
+			if !okN || !okO {
+				continue
+			}
+			entryOld, entryNew = dold, dn
+			o, _ = dotted(dold, r.Field)
+			n, _ = dotted(dn, r.Field)
+		}
 		switch r.On {
 		case "new":
 			if !isEmpty(o) || isEmpty(n) {
@@ -350,7 +386,19 @@ func (s *PushService) firedKeys(r *notifyRule, typ string, fields map[string]any
 			out = append(out, fired{k, v, ok})
 		case "becomesTrue":
 			if n == true && o != true {
-				out = append(out, fired{k, n, true})
+				out = append(out, fired{k, entryNew, true})
+			}
+		case "becomesFalse":
+			if o == true && n != true {
+				out = append(out, fired{k, entryNew, true})
+			}
+		case "removed":
+			if !isEmpty(o) && isEmpty(n) {
+				v, ok := entryOld, true
+				if r.Field == "" {
+					v, ok = s.newValue(typ, k, o)
+				}
+				out = append(out, fired{k, v, ok})
 			}
 		case "added":
 			if el := lastAdded(o, n); el != nil {
@@ -400,14 +448,14 @@ func lastAdded(o, n any) map[string]any {
 	return added
 }
 
-func (s *PushService) evalRule(r *notifyRule, typ string, comp *application.Component, fields map[string]any, keys []string, t texts) (string, bool) {
+func (s *PushService) evalRule(r *notifyRule, typ string, comp *application.Component, fields map[string]any, keys []string, t texts) (string, []fired, bool) {
 	hits := r.dropListed(s.firedKeys(r, typ, fields, keys), comp)
 	if r.Join == nil {
 		if len(hits) == 0 || !hits[len(hits)-1].hasValue {
-			return "", false
+			return "", nil, false
 		}
 		what := r.evalText(hits[len(hits)-1].value, comp, t)
-		return what, what != ""
+		return what, hits, what != ""
 	}
 
 	var parts []string
@@ -420,7 +468,7 @@ func (s *PushService) evalRule(r *notifyRule, typ string, comp *application.Comp
 		}
 	}
 	if len(parts) == 0 {
-		return "", false
+		return "", nil, false
 	}
 	j := r.Join
 	shown := parts[:min(len(parts), j.Show)]
@@ -428,7 +476,7 @@ func (s *PushService) evalRule(r *notifyRule, typ string, comp *application.Comp
 	if more := len(parts) - len(shown); more > 0 {
 		out += " " + fmt.Sprintf(t.itemsMore, more)
 	}
-	return out, true
+	return out, hits, true
 }
 
 func (r *notifyRule) dropListed(hits []fired, comp *application.Component) []fired {

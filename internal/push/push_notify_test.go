@@ -15,7 +15,7 @@ import (
 )
 
 // validatorWith loads the embedded schemas with the x-notify rule of one schema file rewritten.
-// mutate gets the rule as a map and returns the replacement; nil removes the annotation.
+// mutate gets the rule (the first one of a list) as a map and returns the replacement; nil removes the annotation.
 func validatorWith(t *testing.T, file string, mutate func(rule map[string]any) any) *component.Validator {
 	t.Helper()
 	fsys := fstest.MapFS{}
@@ -49,14 +49,22 @@ func rewriteNotify(t *testing.T, data []byte, mutate func(map[string]any) any) [
 		entries, _ := doc[section].(map[string]any)
 		for _, e := range entries {
 			entry := e.(map[string]any)
+			list, isList := entry["x-notify"].([]any)
 			rule, ok := entry["x-notify"].(map[string]any)
+			if isList && len(list) > 0 {
+				rule, ok = list[0].(map[string]any)
+			}
 			if !ok {
 				continue
 			}
 			found = true
-			if out := mutate(rule); out == nil {
+			out := mutate(rule)
+			switch {
+			case out == nil:
 				delete(entry, "x-notify")
-			} else {
+			case isList:
+				list[0] = out
+			default:
 				entry["x-notify"] = out
 			}
 		}
@@ -129,12 +137,6 @@ func TestDescribe_ShouldRejectInvalidChatRuleAndPushWithRepairedRule(t *testing.
 			r["text"] = []any{map[string]any{"field": "body", "id": "photo"}}
 			return r
 		}, func(r map[string]any) any { r["text"] = body; return r }, nil, `{"body":"hi"}`},
-		{"join on non-new", func(r map[string]any) any {
-			r["on"] = "becomesTrue"
-			r["text"] = photo
-			r["join"] = map[string]any{"prefix": "", "sep": ",", "show": 1, "more": "itemsMore"}
-			return r
-		}, func(r map[string]any) any { r["on"] = "becomesTrue"; r["text"] = photo; return r }, false, true},
 	}
 
 	for _, c := range cases {
@@ -143,7 +145,7 @@ func TestDescribe_ShouldRejectInvalidChatRuleAndPushWithRepairedRule(t *testing.
 		ev := gComp("chat-1", gChange(gChatA, c.oldV, c.newV))
 
 		// when
-		_, parseErr := parseNotifyRule(chatRule(t, bad))
+		_, parseErr := parseNotifyRules(chatRule(t, bad))
 		_, badOK := (&PushService{validator: bad}).describe(ev, goldenApp(), "Ann", false, "en")
 		_, goodOK := (&PushService{validator: good}).describe(ev, goldenApp(), "Ann", false, "en")
 
@@ -209,7 +211,7 @@ func TestDescribe_ShouldRejectInvalidChecklistRuleAndPushWithUnchangedRule(t *te
 		_, raw, _ := v.Notify("Checklist", "item_abc")
 
 		// when
-		_, parseErr := parseNotifyRule(raw)
+		_, parseErr := parseNotifyRules(raw)
 		_, ok := (&PushService{validator: v}).describe(ev, goldenApp(), "Ann", false, "en")
 
 		// then
@@ -411,4 +413,47 @@ func TestDescribe_ShouldNameMemberRemovedAndLeft(t *testing.T) {
 	assert.Equal(t, "Removed: Someone", u.body)
 	assert.Equal(t, KindMember, r.kind)
 	assert.Equal(t, "evt-1", r.scope)
+}
+
+func TestDescribe_ShouldEvaluateChecklistRuleList(t *testing.T) {
+	// given
+	svc := &PushService{validator: validatorWith(t, "checklist.v2.schema.json", identity)}
+	checked := func(title string) map[string]any { return map[string]any{"title": title, "checked": true} }
+	unchecked := func(title string) map[string]any { return map[string]any{"title": title, "checked": false} }
+	cases := []struct {
+		name   string
+		fields map[string]any
+		want   string
+	}{
+		{"becomesTrue", gChange("item_a", unchecked("Milk"), checked("Milk")), "Ann: ✓ Milk"},
+		{"becomesTrue from absent flag", gChange("item_a", gItem("Milk"), checked("Milk")), "Ann: ✓ Milk"},
+		{"becomesFalse", gChange("item_a", checked("Milk"), unchecked("Milk")), "Ann: ☐ Milk"},
+		{"new checked item is only added", gChange("item_a", nil, checked("Milk")), "Ann: + Milk"},
+		{"tombstone of checked item is only removed", gChange("item_a", checked("Milk"), ""), "Ann: − Milk"},
+		{"tombstone of absent key", gChange("item_a", nil, ""), ""},
+		{"rename fires nothing", gChange("item_a", gItem("Milk"), gItem("Oat milk")), ""},
+		{"multi delete joins", gMerge(gChange("item_a", gItem("A"), ""), gChange("item_b", gItem("B"), ""), gChange("item_c", gItem("C"), "")), "Ann: − A, B and 1 more"},
+		{"multi tick joins", gMerge(gChange("item_a", gItem("A"), checked("A")), gChange("item_b", gItem("B"), checked("B"))), "Ann: ✓ A, B"},
+	}
+
+	for _, c := range cases {
+		// when
+		n, ok := svc.describe(checklistEvent(c.fields), goldenApp(), "Ann", false, "en")
+
+		// then
+		assert.Equal(t, c.want != "", ok, c.name)
+		assert.Equal(t, c.want, n.body, c.name)
+	}
+}
+
+func TestDescribe_ShouldIgnoreWholeRuleListWhenOneMemberIsInvalid(t *testing.T) {
+	// given
+	svc := &PushService{validator: validatorWith(t, "checklist.v2.schema.json", func(r map[string]any) any { r["on"] = "weekly"; return r })}
+	ev := checklistEvent(gChange("item_a", map[string]any{"title": "Milk", "checked": false}, map[string]any{"title": "Milk", "checked": true}))
+
+	// when
+	_, ok := svc.describe(ev, goldenApp(), "Ann", false, "en")
+
+	// then
+	assert.False(t, ok)
 }
