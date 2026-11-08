@@ -237,7 +237,7 @@ func goldenCases() []goldenCase {
 			cs = append(cs, goldenCase{name: "role changed to " + role + suffix, ev: gTyped(event.EventTypeMemberRoleChanged, map[string]any{"newRole": role}), creator: "Ann", agent: agent})
 		}
 		reminder := func(offset string) map[string]any {
-			return map[string]any{"itemTitle": "Call mom", "componentId": "list-2", "ruleId": "rule-1", "occurrenceAt": int64(1794070800), "offset": offset, "tz": "Europe/Warsaw"}
+			return map[string]any{"itemTitle": "Call mom", "componentId": "list-2", "targetKey": "place_1", "ruleId": "rule-1", "occurrenceAt": int64(1794070800), "offset": offset, "tz": "Europe/Warsaw"}
 		}
 		cs = append(cs,
 			goldenCase{name: "member removed by owner" + suffix, ev: gMemberRemoved("Bo", "bo-pk"), creator: "Ann", agent: agent},

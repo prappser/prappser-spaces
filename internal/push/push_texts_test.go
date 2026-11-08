@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/prappser/prappser-spaces/internal/event"
 )
@@ -86,4 +87,25 @@ func TestDescribeReminder_ShouldOmitClockWithoutOccurrenceTime(t *testing.T) {
 	assert.Equal(t, "", en.body)
 	assert.Equal(t, "", pl.body)
 	assert.Equal(t, "🔔 Call mom", en.title)
+}
+
+func TestBuildPayload_ShouldCarryComponentAndTargetOnlyForReminders(t *testing.T) {
+	// given
+	ev := &event.Event{ID: "e1", ApplicationID: "app-1"}
+	withTarget := describeReminder(&event.Event{Data: map[string]interface{}{"componentId": "map-1", "targetKey": "place_1"}}, nil, textsEN)
+	noTarget := describeReminder(&event.Event{Data: map[string]interface{}{"componentId": "map-1"}}, nil, textsEN)
+
+	// when
+	a, err := buildPayload(ev, "App", withTarget)
+	require.NoError(t, err)
+	b, err := buildPayload(ev, "App", noTarget)
+	require.NoError(t, err)
+	c, err := buildPayload(ev, "App", notice{kind: KindItem, componentID: "map-1"})
+	require.NoError(t, err)
+
+	// then
+	assert.Contains(t, string(a), `"componentId":"map-1","target":"place_1"`)
+	assert.Contains(t, string(b), `"componentId":"map-1"`)
+	assert.NotContains(t, string(b), `"target"`)
+	assert.NotContains(t, string(c), `"componentId"`)
 }

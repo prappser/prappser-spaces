@@ -261,7 +261,8 @@ func describeReminder(ev *event.Event, app *application.Application, t texts) no
 	if ruleID := str(ev.Data["ruleId"]); ruleID != "" {
 		scope = fmt.Sprintf("%s:%d:%s", ruleID, occurrenceAt, offsetSpec)
 	}
-	return notice{kind: KindReminder, scope: scope, title: icon + title, body: body}
+	return notice{kind: KindReminder, scope: scope, title: icon + title, body: body,
+		openComponent: str(ev.Data["componentId"]), target: str(ev.Data["targetKey"])}
 }
 
 func intOf(v any) (int64, bool) {

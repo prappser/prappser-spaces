@@ -12,6 +12,7 @@ type notice struct {
 	kind                   Kind
 	scope                  string
 	componentID            string
+	openComponent, target  string // openComponent is separate: componentID also keys digest buckets and item pushes
 	body                   string
 	view                   string
 	title                  string
