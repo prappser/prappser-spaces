@@ -1,5 +1,5 @@
 {
-  "bundle": 5,
+  "bundle": 6,
   "types": {
     "Text": {
       "min": 1,
@@ -15,7 +15,7 @@
     },
     "Map": {
       "min": 1,
-      "current": 1
+      "current": 2
     },
     "Chat": {
       "min": 1,
@@ -68,6 +68,10 @@
       "sha256": "7f4bd17e2f7b14dc10e81a59d3d33c72d12ecf9206d7192ca6d2923d2959540f"
     },
     {
+      "path": "component/map.v2.schema.json",
+      "sha256": "b8e79498aded64c5ce692bd63def2b8957f19d96e2406f6a5b05c65845b7e0f7"
+    },
+    {
       "path": "component/poll.v1.schema.json",
       "sha256": "1484f12ee607671fcbf4702088aa99da4519f3d80ea92591e3d13eeb754dcd9d"
     },
@@ -77,7 +81,7 @@
     },
     {
       "path": "template/template-doc.v1.schema.json",
-      "sha256": "3d96966165dfcebe481969134ec2bf1af411da3e0151c08a087eefdf4628f3fd"
+      "sha256": "52ec747260db6467c3d071940b8e2b5f4425f2533f902372232528afed14c4e4"
     }
   ]
 }

@@ -1,0 +1,604 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://prappser.app/schemas/component/map.v2.schema.json",
+  "title": "Map component data",
+  "description": "Trip map. Places are place_<id> keys, one entry each: add one with key place_* and an id is minted (example place_* = {\"title\":\"Wieliczka\",\"latitude\":50.0647,\"longitude\":20.0555,\"order\":1}). order sets the sequence (lower first, ties by id; append with the highest order + 1). Consecutive places are joined by legs: leg_<fromId>__<toId> (two underscores) holds how to travel between them (example leg_a__b = {\"mode\":\"train\",\"line\":\"IC 3510\",\"departure\":\"08:15\",\"arrival\":\"09:40\"}). A pair with no leg uses the previous leg's mode; the first leg is car. To add a leg to a place you just added, first add the place, read its id from the keys, then write the leg in a second call. A leg whose pair is no longer consecutive is ignored. To delete a place write '' to place_<id> and to every leg_ key naming it. Times: place date/time are local \"be here at\" values; leg departure/arrival are HH:MM local without a date, the leg's day is the date of its from-place, and an arrival earlier than the departure means the next day. markers is the legacy list, read-only: readers still show it, and a place_<id> with the same id replaces that marker. Agents cannot upload files: copy attachmentIds back unchanged when editing an entry, never add ids. Members may write places and legs only while allowAddMarkerInUsage is true.",
+  "type": "object",
+  "properties": {
+    "centerLatitude": {
+      "type": "number",
+      "description": "Latitude of the map centre in degrees. Example: 52.2297.",
+      "x-merge": "single",
+      "x-access": "manage"
+    },
+    "centerLongitude": {
+      "type": "number",
+      "description": "Longitude of the map centre in degrees. Example: 21.0122.",
+      "x-merge": "single",
+      "x-access": "manage"
+    },
+    "zoom": {
+      "type": "number",
+      "description": "Zoom level of the map. Higher is closer. Default 13.",
+      "x-merge": "single",
+      "x-access": "manage"
+    },
+    "markers": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/marker"
+      },
+      "deprecated": true,
+      "description": "Deprecated legacy v1 pins, read-only and never written. Readers show them under place_ keys of the same id. Write places as place_ keys instead.",
+      "x-merge": "single",
+      "x-access": "none"
+    },
+    "allowAddMarkerInUsage": {
+      "type": "boolean",
+      "default": false,
+      "description": "When true, members may add and edit places and legs in the app and through MCP. Owner and admin always may. Default false.",
+      "x-merge": "single",
+      "x-access": "manage"
+    },
+    "routeEnabled": {
+      "type": "boolean",
+      "description": "true draws the route line.",
+      "x-merge": "single",
+      "x-access": "manage"
+    },
+    "routeMarkerIds": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Ids of the places the route passes through, in order. Superseded by place order and legs. Example: [\"a\",\"b\"].",
+      "x-merge": "single",
+      "x-access": "manage"
+    },
+    "routeColor": {
+      "enum": [
+        "red",
+        "blue",
+        "green",
+        "orange",
+        "purple",
+        "pink",
+        "yellow",
+        "teal",
+        "brown",
+        "gray"
+      ],
+      "description": "Colour of the route line.",
+      "x-merge": "single",
+      "x-access": "manage"
+    },
+    "routeStrokeWidth": {
+      "type": "number",
+      "description": "Thickness of the route line in pixels. Default 3.",
+      "x-merge": "single",
+      "x-access": "manage"
+    },
+    "showRouteDistance": {
+      "type": "boolean",
+      "description": "true shows the route length. Default true.",
+      "x-merge": "single",
+      "x-access": "manage"
+    },
+    "trackUserLocation": {
+      "type": "boolean",
+      "description": "true shows the viewer's own location on the map. Default true.",
+      "x-merge": "single",
+      "x-access": "manage"
+    },
+    "useUserLocationInRoute": {
+      "type": "boolean",
+      "description": "true includes the viewer's own location in the route. Applies only when routeEnabled is true. Default false.",
+      "x-merge": "single",
+      "x-access": "manage"
+    },
+    "otherUsers": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/userLocation"
+      },
+      "description": "Legacy, read-only. Nothing writes it.",
+      "x-merge": "single",
+      "x-access": "none"
+    },
+    "_title": {
+      "type": "string",
+      "description": "Panel title shown above the component. '' clears it. Example: \"Groceries\".",
+      "x-merge": "single",
+      "x-access": "manage"
+    },
+    "_sectionBreak": {
+      "type": "boolean",
+      "description": "true starts a new visual section, with a bigger gap above and a stronger separator.",
+      "x-merge": "single",
+      "x-access": "manage"
+    },
+    "_width": {
+      "type": "number",
+      "description": "Preferred width in logical pixels. Default 600, minimum 300.",
+      "x-merge": "single",
+      "x-access": "manage"
+    },
+    "_spaceAbove": {
+      "type": "number",
+      "description": "Legacy spacing above in pixels, no longer written. When _sectionBreak is absent, a value of 16 or more reads as a section break.",
+      "x-merge": "single",
+      "x-access": "manage"
+    },
+    "_spaceBelow": {
+      "type": "number",
+      "description": "Legacy spacing below in pixels, no longer written.",
+      "x-merge": "single",
+      "x-access": "manage"
+    }
+  },
+  "required": [
+    "centerLatitude",
+    "centerLongitude"
+  ],
+  "patternProperties": {
+    "^place_[^_]+$": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/place"
+        },
+        {
+          "const": ""
+        }
+      ],
+      "description": "One place, per $defs/place; '' deletes it (also tombstone every leg_ key that names it). The key carries the id, which has no underscore. Example: place_0198a0f2 = {\"title\":\"Wieliczka\",\"latitude\":50.0647,\"longitude\":20.0555,\"order\":1,\"date\":\"2026-07-04\",\"time\":\"10:00\"}. Members may write this key only while allowAddMarkerInUsage is true; owner and admin always may.",
+      "x-merge": "per-entry",
+      "x-access": {
+        "gate": "allowAddMarkerInUsage"
+      },
+      "x-notify": [
+        {
+          "on": "new",
+          "kind": "item",
+          "scope": "component",
+          "text": [
+            {
+              "field": "title"
+            }
+          ],
+          "join": {
+            "prefix": "+ ",
+            "sep": ", ",
+            "show": 2,
+            "more": "itemsMore"
+          },
+          "skipListed": {
+            "list": "markers",
+            "prefix": "place_"
+          }
+        },
+        {
+          "on": "changed",
+          "field": "time",
+          "kind": "item",
+          "scope": "component",
+          "text": [
+            {
+              "field": "title"
+            }
+          ],
+          "join": {
+            "prefix": "🕒 ",
+            "sep": ", ",
+            "show": 2,
+            "more": "itemsMore"
+          }
+        },
+        {
+          "on": "changed",
+          "field": "date",
+          "kind": "item",
+          "scope": "component",
+          "text": [
+            {
+              "field": "title"
+            }
+          ],
+          "join": {
+            "prefix": "📅 ",
+            "sep": ", ",
+            "show": 2,
+            "more": "itemsMore"
+          }
+        }
+      ]
+    },
+    "^leg_[^_]+__[^_]+$": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/leg"
+        },
+        {
+          "const": ""
+        }
+      ],
+      "description": "How to travel from place <fromId> to the next place <toId>, per $defs/leg; '' deletes it. The key is leg_<fromId>__<toId> with two underscores. Example: leg_a__b = {\"mode\":\"train\",\"line\":\"IC 3510\",\"departure\":\"08:15\",\"arrival\":\"09:40\"}. departure and arrival are HH:MM local without a date; the leg's day is the date of the from-place; an arrival earlier than departure means the next day. Members may write this key only while allowAddMarkerInUsage is true; owner and admin always may.",
+      "x-merge": "per-entry",
+      "x-access": {
+        "gate": "allowAddMarkerInUsage"
+      },
+      "x-notify": [
+        {
+          "on": "new",
+          "kind": "item",
+          "scope": "component",
+          "text": [
+            {
+              "when": {
+                "field": "mode",
+                "startsWith": "bus"
+              },
+              "field": "line",
+              "prefix": "🚌 "
+            },
+            {
+              "field": "line",
+              "prefix": "🚆 "
+            },
+            {
+              "field": "mode",
+              "prefix": "↪ "
+            }
+          ]
+        },
+        {
+          "on": "changed",
+          "field": "mode",
+          "kind": "item",
+          "scope": "component",
+          "text": [
+            {
+              "when": {
+                "field": "mode",
+                "startsWith": "bus"
+              },
+              "field": "line",
+              "prefix": "🚌 "
+            },
+            {
+              "field": "line",
+              "prefix": "🚆 "
+            },
+            {
+              "field": "mode",
+              "prefix": "↪ "
+            }
+          ]
+        },
+        {
+          "on": "changed",
+          "field": "line",
+          "kind": "item",
+          "scope": "component",
+          "text": [
+            {
+              "when": {
+                "field": "mode",
+                "startsWith": "bus"
+              },
+              "field": "line",
+              "prefix": "🚌 "
+            },
+            {
+              "field": "line",
+              "prefix": "🚆 "
+            },
+            {
+              "field": "mode",
+              "prefix": "↪ "
+            }
+          ]
+        },
+        {
+          "on": "changed",
+          "field": "departure",
+          "kind": "item",
+          "scope": "component",
+          "text": [
+            {
+              "when": {
+                "field": "mode",
+                "startsWith": "bus"
+              },
+              "field": "line",
+              "prefix": "🚌 "
+            },
+            {
+              "field": "line",
+              "prefix": "🚆 "
+            },
+            {
+              "field": "mode",
+              "prefix": "↪ "
+            }
+          ]
+        }
+      ]
+    },
+    "^_": {
+      "description": "Other layout and UI keys starting with _. Any value.",
+      "x-merge": "single",
+      "x-access": "manage"
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "marker": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Marker id, unique in the map."
+        },
+        "latitude": {
+          "type": "number",
+          "description": "Latitude in degrees. Example: 52.2297."
+        },
+        "longitude": {
+          "type": "number",
+          "description": "Longitude in degrees. Example: 21.0122."
+        },
+        "title": {
+          "type": "string",
+          "description": "Marker title. Example: \"Hotel\"."
+        },
+        "description": {
+          "type": "string",
+          "description": "Longer text for the marker."
+        },
+        "color": {
+          "enum": [
+            "red",
+            "blue",
+            "green",
+            "orange",
+            "purple",
+            "pink",
+            "yellow",
+            "teal",
+            "brown",
+            "gray"
+          ],
+          "description": "Marker colour."
+        },
+        "type": {
+          "enum": [
+            "standard",
+            "start",
+            "waypoint",
+            "destination"
+          ],
+          "description": "Marker role: standard, start, waypoint or destination."
+        },
+        "createdBy": {
+          "type": "string",
+          "description": "Public key of the member who created the marker, or ''."
+        },
+        "createdAtMs": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Creation time in epoch milliseconds. 0 means unset."
+        }
+      },
+      "required": [
+        "id",
+        "latitude",
+        "longitude",
+        "title"
+      ],
+      "additionalProperties": false
+    },
+    "userLocation": {
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Legacy. Id of the user."
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Legacy. Display name of the user."
+        },
+        "latitude": {
+          "type": "number",
+          "description": "Legacy. Latitude in degrees."
+        },
+        "longitude": {
+          "type": "number",
+          "description": "Legacy. Longitude in degrees."
+        },
+        "lastUpdated": {
+          "type": "string",
+          "description": "Legacy. ISO 8601 timestamp of the last update."
+        }
+      },
+      "required": [
+        "userId",
+        "displayName",
+        "latitude",
+        "longitude",
+        "lastUpdated"
+      ],
+      "additionalProperties": false
+    },
+    "place": {
+      "type": "object",
+      "description": "One place of the trip. Example: {\"title\":\"Wieliczka\",\"latitude\":50.0647,\"longitude\":20.0555,\"order\":1,\"date\":\"2026-07-04\",\"time\":\"10:00\"}.",
+      "properties": {
+        "v": {
+          "const": 2,
+          "description": "Entry version. Written by the app; agents may omit it."
+        },
+        "latitude": {
+          "type": "number",
+          "description": "Latitude in degrees. Example: 50.0647."
+        },
+        "longitude": {
+          "type": "number",
+          "description": "Longitude in degrees. Example: 20.0555."
+        },
+        "title": {
+          "type": "string",
+          "description": "Place title. Example: \"Wieliczka\"."
+        },
+        "description": {
+          "type": "string",
+          "description": "Longer text for the place. Example: \"Salt mine tour, book tickets.\""
+        },
+        "color": {
+          "enum": [
+            "red",
+            "blue",
+            "green",
+            "orange",
+            "purple",
+            "pink",
+            "yellow",
+            "teal",
+            "brown",
+            "gray"
+          ],
+          "description": "Marker colour."
+        },
+        "type": {
+          "enum": [
+            "standard",
+            "start",
+            "waypoint",
+            "destination"
+          ],
+          "description": "Marker role: standard, start, waypoint or destination."
+        },
+        "createdBy": {
+          "type": "string",
+          "description": "Public key of the member who created the marker, or ''."
+        },
+        "createdAtMs": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Creation time in epoch milliseconds. 0 means unset."
+        },
+        "date": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "description": "Local date to be here, YYYY-MM-DD, no time zone. null or absent means unset. Example: \"2026-07-04\"."
+        },
+        "time": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
+          "description": "Local time to be here at, HH:MM 24-hour, no time zone, on the place's date. null or absent means unset. Example: \"10:00\"."
+        },
+        "remindBefore": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Minutes before date and time at which all members get a reminder. Needs date and time. null or absent means no reminder. Example: 60."
+        },
+        "attachmentIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Ids of attached files. Agents cannot upload files: copy back unchanged, never add ids."
+        },
+        "order": {
+          "type": "number",
+          "description": "Position in the trip, lower first, ties broken by id. Append with the highest order + 1. Example: 2."
+        }
+      },
+      "required": [
+        "latitude",
+        "longitude",
+        "title",
+        "order"
+      ],
+      "additionalProperties": false
+    },
+    "leg": {
+      "type": "object",
+      "description": "How to travel from a place to the next one, stored under leg_<fromId>__<toId>. departure and arrival are HH:MM local without a date; the leg's day is the date of the from-place; an arrival earlier than departure means the next day. Example: {\"mode\":\"train\",\"line\":\"IC 3510\",\"departure\":\"08:15\",\"arrival\":\"09:40\"}.",
+      "properties": {
+        "v": {
+          "const": 2,
+          "description": "Entry version. Written by the app; agents may omit it."
+        },
+        "mode": {
+          "enum": [
+            "car",
+            "bike",
+            "foot",
+            "train",
+            "bus"
+          ],
+          "description": "Means of travel: car, bike, foot, train or bus. Example: \"train\"."
+        },
+        "line": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Line, route or flight name. null or absent means unset. Example: \"IC 3510\"."
+        },
+        "departure": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
+          "description": "Departure time, HH:MM local without a date; the day is the date of the from-place. null or absent means unset. Example: \"08:15\"."
+        },
+        "arrival": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
+          "description": "Arrival time, HH:MM local without a date; earlier than departure means the next day. null or absent means unset. Example: \"09:40\"."
+        },
+        "description": {
+          "type": "string",
+          "description": "Longer text for the leg. Example: \"Platform 2, seat reserved.\""
+        },
+        "attachmentIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Ids of attached files such as tickets. Agents cannot upload files: copy back unchanged, never add ids."
+        }
+      },
+      "required": [
+        "mode"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "x-migrations": [
+    {
+      "to": 2,
+      "breaking": false,
+      "entries": {
+        "^place_[^_]+$": [],
+        "^leg_[^_]+__[^_]+$": []
+      }
+    }
+  ]
+}

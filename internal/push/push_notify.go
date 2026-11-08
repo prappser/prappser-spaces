@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -101,6 +102,10 @@ func parseNotifyRule(raw any) (*notifyRule, error) {
 func (r *notifyRule) check() error {
 	switch r.On {
 	case "new", "becomesTrue", "becomesFalse", "added", "removed":
+	case "changed":
+		if r.Field == "" {
+			return errors.New("changed needs field")
+		}
 	default:
 		return fmt.Errorf("unknown on %q", r.On)
 	}
@@ -399,6 +404,10 @@ func (s *PushService) firedKeys(r *notifyRule, typ string, fields map[string]any
 					v, ok = s.newValue(typ, k, o)
 				}
 				out = append(out, fired{k, v, ok})
+			}
+		case "changed":
+			if !isEmpty(n) && !reflect.DeepEqual(o, n) {
+				out = append(out, fired{k, entryNew, true})
 			}
 		case "added":
 			if el := lastAdded(o, n); el != nil {

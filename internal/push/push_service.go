@@ -297,3 +297,11 @@ func sendOptionsFor(n notice, ev *event.Event) SendOptions {
 	}
 	return SendOptions{Urgency: webpush.UrgencyNormal, TTL: 43200}
 }
+
+// EntryKeys adapts the validator's per-entry key patterns for the event null-delete guard.
+func EntryKeys(v *component.Validator) event.EntryKeyFunc {
+	return func(componentName, key string) bool {
+		_, ok := v.Entry(schemaType(componentName), key)
+		return ok
+	}
+}

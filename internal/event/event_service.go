@@ -44,6 +44,7 @@ type EventService struct {
 	broadcaster   EventBroadcaster
 	pusher        EventPusher   // optional; nil disables web push
 	reminderStore ReminderStore // optional; nil disables reminder_changed execution
+	entryKeys     EntryKeyFunc  // optional; nil disables the entry null-delete guard
 }
 
 func NewEventService(repo *EventRepository, appRepo application.ApplicationRepository, broadcaster EventBroadcaster, pusher EventPusher) *EventService {
@@ -375,6 +376,7 @@ func (s *EventService) persistAndApply(ctx context.Context, event *Event, sequen
 	}
 
 	txs.addRemovedMemberName(event)
+	txs.dropEntryNullDeletes(event)
 
 	event.SequenceNumber = 0
 	if sequenced {

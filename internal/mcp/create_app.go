@@ -25,6 +25,8 @@ const (
 
 	checklistComponentName = "Checklist"
 	itemKeyPrefix          = "item_"
+	placeKeyPrefix         = "place_"
+	legKeyPrefix           = "leg_"
 )
 
 type createAppIn struct {
@@ -121,11 +123,24 @@ func referenceErrors(typeName, base string, data map[string]any) []component.Fie
 			out = append(out, mediaErrors(p+"/detailsDocument", item["detailsDocument"])...)
 		}
 	case "Map":
-		markers, _ := data["markers"].([]any)
-		for i, mk := range markers {
-			m, _ := mk.(map[string]any)
-			if s, _ := m["createdBy"].(string); s != "" {
-				add(fmt.Sprintf("%s/markers/%d/createdBy", base, i), "a template cannot name who created a marker")
+		keys := make([]string, 0, len(data))
+		for k := range data {
+			if strings.HasPrefix(k, placeKeyPrefix) || strings.HasPrefix(k, legKeyPrefix) {
+				keys = append(keys, k)
+			}
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			entry, ok := data[k].(map[string]any)
+			if !ok {
+				continue
+			}
+			p := base + "/" + k
+			if s, _ := entry["createdBy"].(string); s != "" {
+				add(p+"/createdBy", "a template cannot name who created a place")
+			}
+			if a, _ := entry["attachmentIds"].([]any); len(a) > 0 {
+				add(p+"/attachmentIds", "a template cannot carry attachments")
 			}
 		}
 		if u, _ := data["otherUsers"].([]any); len(u) > 0 {

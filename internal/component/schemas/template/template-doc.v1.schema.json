@@ -274,7 +274,13 @@
           "then": {
             "properties": {
               "data": {
-                "$ref": "https://prappser.app/schemas/component/map.v1.schema.json"
+                "$ref": "https://prappser.app/schemas/component/map.v2.schema.json",
+                "not": {
+                  "required": [
+                    "markers"
+                  ]
+                },
+                "description": "Templates carry no legacy 'markers' list; places are place_<id> keys."
               }
             }
           }

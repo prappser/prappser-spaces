@@ -73,14 +73,12 @@
                 "data": {
                   "centerLatitude": 51.505,
                   "centerLongitude": -0.09,
-                  "markers": [
-                    {
-                      "id": "k1",
-                      "latitude": 51.5,
-                      "longitude": -0.1,
-                      "title": "Start"
-                    }
-                  ]
+                  "place_k1": {
+                    "latitude": 51.5,
+                    "longitude": -0.1,
+                    "title": "Start",
+                    "order": 1
+                  }
                 }
               },
               {
@@ -463,6 +461,39 @@
                   "v": 1,
                   "what": "Flight",
                   "style": "iris"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "map data carries legacy markers",
+      "data": {
+        "name": "Trip",
+        "description": "Plan a trip",
+        "icon": "travel",
+        "groups": [
+          {
+            "name": "Main",
+            "index": 0,
+            "components": [
+              {
+                "type": "Map",
+                "index": 0,
+                "data": {
+                  "centerLatitude": 51.505,
+                  "centerLongitude": -0.09,
+                  "markers": [
+                    {
+                      "id": "k1",
+                      "latitude": 51.5,
+                      "longitude": -0.1,
+                      "title": "Start"
+                    }
+                  ]
                 }
               }
             ]

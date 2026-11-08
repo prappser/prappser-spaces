@@ -1,5 +1,5 @@
 {
-  "schema": "https://prappser.app/schemas/component/map.v1.schema.json",
+  "schema": "https://prappser.app/schemas/component/map.v2.schema.json",
   "cases": [
     {
       "name": "minimal",
@@ -18,7 +18,8 @@
         "markers": [],
         "allowAddMarkerInUsage": false
       },
-      "valid": true
+      "valid": true,
+      "schema": "https://prappser.app/schemas/component/map.v1.schema.json"
     },
     {
       "name": "full",
@@ -62,7 +63,8 @@
         "_spaceAbove": 8,
         "_spaceBelow": 8
       },
-      "valid": true
+      "valid": true,
+      "schema": "https://prappser.app/schemas/component/map.v1.schema.json"
     },
     {
       "name": "legacy otherUsers",
@@ -221,6 +223,453 @@
         "centerLatitude": 1.5,
         "centerLongitude": 2.5,
         "marker": []
+      },
+      "valid": false
+    },
+    {
+      "name": "place minimal",
+      "data": {
+        "centerLatitude": 51.505,
+        "centerLongitude": -0.09,
+        "place_a": {
+          "latitude": 50.0,
+          "longitude": 20.0,
+          "title": "A",
+          "order": 0
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "place full",
+      "data": {
+        "centerLatitude": 51.505,
+        "centerLongitude": -0.09,
+        "place_0198a0f2": {
+          "v": 2,
+          "latitude": 50.0647,
+          "longitude": 20.0555,
+          "title": "Wieliczka",
+          "description": "Salt mine",
+          "color": "teal",
+          "type": "waypoint",
+          "createdBy": "pk-alice",
+          "createdAtMs": 1760000000000,
+          "date": "2026-07-04",
+          "time": "10:00",
+          "remindBefore": 60,
+          "attachmentIds": [
+            "f1"
+          ],
+          "order": 1.5
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "place with null date, time and remindBefore",
+      "data": {
+        "centerLatitude": 51.505,
+        "centerLongitude": -0.09,
+        "place_a": {
+          "latitude": 50.0,
+          "longitude": 20.0,
+          "title": "A",
+          "order": 0,
+          "date": null,
+          "time": null,
+          "remindBefore": null
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "place tombstone",
+      "data": {
+        "centerLatitude": 51.505,
+        "centerLongitude": -0.09,
+        "place_a": ""
+      },
+      "valid": true
+    },
+    {
+      "name": "leg minimal",
+      "data": {
+        "centerLatitude": 51.505,
+        "centerLongitude": -0.09,
+        "leg_a__b": {
+          "mode": "car"
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "leg full",
+      "data": {
+        "centerLatitude": 51.505,
+        "centerLongitude": -0.09,
+        "leg_a__b": {
+          "v": 2,
+          "mode": "train",
+          "line": "IC 3510",
+          "departure": "23:50",
+          "arrival": "00:20",
+          "description": "Platform 2",
+          "attachmentIds": [
+            "f1"
+          ]
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "leg with null line, departure and arrival",
+      "data": {
+        "centerLatitude": 51.505,
+        "centerLongitude": -0.09,
+        "leg_a__b": {
+          "mode": "bus",
+          "line": null,
+          "departure": null,
+          "arrival": null
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "leg tombstone",
+      "data": {
+        "centerLatitude": 51.505,
+        "centerLongitude": -0.09,
+        "leg_a__b": ""
+      },
+      "valid": true
+    },
+    {
+      "name": "legacy markers next to places and legs",
+      "data": {
+        "centerLatitude": 51.505,
+        "centerLongitude": -0.09,
+        "markers": [
+          {
+            "id": "k1",
+            "latitude": 1.5,
+            "longitude": 2.5,
+            "title": "Start"
+          }
+        ],
+        "place_k1": {
+          "latitude": 50.0,
+          "longitude": 20.0,
+          "title": "A",
+          "order": 0
+        },
+        "leg_k1__k2": {
+          "mode": "foot"
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "places default to the v2 gate flag off",
+      "data": {
+        "centerLatitude": 51.505,
+        "centerLongitude": -0.09,
+        "allowAddMarkerInUsage": false,
+        "useUserLocationInRoute": false
+      },
+      "valid": true
+    },
+    {
+      "name": "place time without zero padding",
+      "data": {
+        "centerLatitude": 51.505,
+        "centerLongitude": -0.09,
+        "place_a": {
+          "latitude": 50.0,
+          "longitude": 20.0,
+          "title": "A",
+          "order": 0,
+          "time": "9:30"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "place time hour 24",
+      "data": {
+        "centerLatitude": 51.505,
+        "centerLongitude": -0.09,
+        "place_a": {
+          "latitude": 50.0,
+          "longitude": 20.0,
+          "title": "A",
+          "order": 0,
+          "time": "24:00"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "place date with time suffix",
+      "data": {
+        "centerLatitude": 51.505,
+        "centerLongitude": -0.09,
+        "place_a": {
+          "latitude": 50.0,
+          "longitude": 20.0,
+          "title": "A",
+          "order": 0,
+          "date": "2026-07-04T10:00"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "place negative remindBefore",
+      "data": {
+        "centerLatitude": 51.505,
+        "centerLongitude": -0.09,
+        "place_a": {
+          "latitude": 50.0,
+          "longitude": 20.0,
+          "title": "A",
+          "order": 0,
+          "remindBefore": -1
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "place attachmentIds not strings",
+      "data": {
+        "centerLatitude": 51.505,
+        "centerLongitude": -0.09,
+        "place_a": {
+          "latitude": 50.0,
+          "longitude": 20.0,
+          "title": "A",
+          "order": 0,
+          "attachmentIds": [
+            1
+          ]
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "place without order",
+      "data": {
+        "centerLatitude": 51.505,
+        "centerLongitude": -0.09,
+        "place_a": {
+          "latitude": 50.0,
+          "longitude": 20.0,
+          "title": "A"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "place order is a string",
+      "data": {
+        "centerLatitude": 51.505,
+        "centerLongitude": -0.09,
+        "place_a": {
+          "latitude": 50.0,
+          "longitude": 20.0,
+          "title": "A",
+          "order": "1"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "place with v 1",
+      "data": {
+        "centerLatitude": 51.505,
+        "centerLongitude": -0.09,
+        "place_a": {
+          "latitude": 50.0,
+          "longitude": 20.0,
+          "title": "A",
+          "order": 0,
+          "v": 1
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "place unknown key",
+      "data": {
+        "centerLatitude": 51.505,
+        "centerLongitude": -0.09,
+        "place_a": {
+          "latitude": 50.0,
+          "longitude": 20.0,
+          "title": "A",
+          "order": 0,
+          "zz": 1
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "place carries an id",
+      "data": {
+        "centerLatitude": 51.505,
+        "centerLongitude": -0.09,
+        "place_a": {
+          "latitude": 50.0,
+          "longitude": 20.0,
+          "title": "A",
+          "order": 0,
+          "id": "a"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "place is null",
+      "data": {
+        "centerLatitude": 51.505,
+        "centerLongitude": -0.09,
+        "place_a": null
+      },
+      "valid": false
+    },
+    {
+      "name": "place key with two underscores",
+      "data": {
+        "centerLatitude": 51.505,
+        "centerLongitude": -0.09,
+        "place_a_b": {
+          "latitude": 50.0,
+          "longitude": 20.0,
+          "title": "A",
+          "order": 0
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "leg key without the pair separator",
+      "data": {
+        "centerLatitude": 51.505,
+        "centerLongitude": -0.09,
+        "leg_a": {
+          "mode": "car"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "leg key with a single underscore between ids",
+      "data": {
+        "centerLatitude": 51.505,
+        "centerLongitude": -0.09,
+        "leg_a_b": {
+          "mode": "car"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "leg key with three underscores",
+      "data": {
+        "centerLatitude": 51.505,
+        "centerLongitude": -0.09,
+        "leg_a___b": {
+          "mode": "car"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "leg without mode",
+      "data": {
+        "centerLatitude": 51.505,
+        "centerLongitude": -0.09,
+        "leg_a__b": {
+          "line": "IC 3510"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "leg mode plane",
+      "data": {
+        "centerLatitude": 51.505,
+        "centerLongitude": -0.09,
+        "leg_a__b": {
+          "mode": "plane"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "leg departure bad",
+      "data": {
+        "centerLatitude": 51.505,
+        "centerLongitude": -0.09,
+        "leg_a__b": {
+          "mode": "car",
+          "departure": "8:00"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "leg arrival minutes 60",
+      "data": {
+        "centerLatitude": 51.505,
+        "centerLongitude": -0.09,
+        "leg_a__b": {
+          "mode": "car",
+          "arrival": "10:60"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "leg unknown key",
+      "data": {
+        "centerLatitude": 51.505,
+        "centerLongitude": -0.09,
+        "leg_a__b": {
+          "mode": "car",
+          "zz": 1
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "leg with v 1",
+      "data": {
+        "centerLatitude": 51.505,
+        "centerLongitude": -0.09,
+        "leg_a__b": {
+          "mode": "car",
+          "v": 1
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "leg is null",
+      "data": {
+        "centerLatitude": 51.505,
+        "centerLongitude": -0.09,
+        "leg_a__b": null
+      },
+      "valid": false
+    },
+    {
+      "name": "markers is an object",
+      "data": {
+        "centerLatitude": 51.505,
+        "centerLongitude": -0.09,
+        "markers": {}
       },
       "valid": false
     }
