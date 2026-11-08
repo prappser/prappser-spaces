@@ -109,3 +109,32 @@ func TestBuildPayload_ShouldCarryComponentAndTargetOnlyForReminders(t *testing.T
 	assert.NotContains(t, string(b), `"target"`)
 	assert.NotContains(t, string(c), `"componentId"`)
 }
+
+func TestBuildPayload_ShouldDropOverlongComponentAndTarget(t *testing.T) {
+	ok := strings.Repeat("x", 200)
+	long := strings.Repeat("x", 201)
+	tests := []struct {
+		name                  string
+		component, target     string
+		wantComponent, wantTg bool
+	}{
+		{"exactly 200 kept", ok, ok, true, true},
+		{"only component over", long, "place_1", false, true},
+		{"only target over", "map-1", long, true, false},
+		{"both over", long, long, false, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// given
+			n := describeReminder(&event.Event{Data: map[string]interface{}{"componentId": tt.component, "targetKey": tt.target}}, nil, textsEN)
+
+			// when
+			b, err := buildPayload(&event.Event{ID: "e1", ApplicationID: "app-1"}, "App", n)
+			require.NoError(t, err)
+
+			// then
+			assert.Equal(t, tt.wantComponent, strings.Contains(string(b), `"componentId"`))
+			assert.Equal(t, tt.wantTg, strings.Contains(string(b), `"target"`))
+		})
+	}
+}

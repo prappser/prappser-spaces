@@ -5898,6 +5898,152 @@
         }
       }
     },
+    "reminder without target": {
+      "deliveries": [
+        {
+          "subscription": "sub-de-other-muted",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "6:00 PM, in 15 min · Groceries",
+            "componentId": "list-2",
+            "eventId": "evt-1",
+            "kind": "reminder",
+            "tag": "app-1|reminder|rule-1:1794070800:-PT15M",
+            "title": "🔔 Call mom",
+            "v": 2
+          },
+          "urgency": "high",
+          "ttl": 86400,
+          "topic": ""
+        },
+        {
+          "subscription": "sub-en",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "6:00 PM, in 15 min · Groceries",
+            "componentId": "list-2",
+            "eventId": "evt-1",
+            "kind": "reminder",
+            "tag": "app-1|reminder|rule-1:1794070800:-PT15M",
+            "title": "🔔 Call mom",
+            "v": 2
+          },
+          "urgency": "high",
+          "ttl": 86400,
+          "topic": ""
+        },
+        {
+          "subscription": "sub-pl",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "18:00, za 15 min · Groceries",
+            "componentId": "list-2",
+            "eventId": "evt-1",
+            "kind": "reminder",
+            "tag": "app-1|reminder|rule-1:1794070800:-PT15M",
+            "title": "🔔 Call mom",
+            "v": 2
+          },
+          "urgency": "high",
+          "ttl": 86400,
+          "topic": ""
+        }
+      ],
+      "input": {
+        "agent": false,
+        "creatorName": "Ann",
+        "event": {
+          "creatorPublicKey": "creator-pk",
+          "data": {
+            "componentId": "list-2",
+            "itemTitle": "Call mom",
+            "occurrenceAt": 1794070800,
+            "offset": "-PT15M",
+            "ruleId": "rule-1",
+            "targetKey": "",
+            "tz": "Europe/Warsaw"
+          },
+          "id": "evt-1",
+          "type": "reminder_fired"
+        }
+      }
+    },
+    "reminder without target by agent": {
+      "deliveries": [
+        {
+          "subscription": "sub-de-other-muted",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "6:00 PM, in 15 min · Groceries",
+            "componentId": "list-2",
+            "eventId": "evt-1",
+            "kind": "reminder",
+            "tag": "app-1|reminder|rule-1:1794070800:-PT15M",
+            "title": "🔔 Call mom",
+            "v": 2
+          },
+          "urgency": "high",
+          "ttl": 86400,
+          "topic": ""
+        },
+        {
+          "subscription": "sub-en",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "6:00 PM, in 15 min · Groceries",
+            "componentId": "list-2",
+            "eventId": "evt-1",
+            "kind": "reminder",
+            "tag": "app-1|reminder|rule-1:1794070800:-PT15M",
+            "title": "🔔 Call mom",
+            "v": 2
+          },
+          "urgency": "high",
+          "ttl": 86400,
+          "topic": ""
+        },
+        {
+          "subscription": "sub-pl",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "18:00, za 15 min · Groceries",
+            "componentId": "list-2",
+            "eventId": "evt-1",
+            "kind": "reminder",
+            "tag": "app-1|reminder|rule-1:1794070800:-PT15M",
+            "title": "🔔 Call mom",
+            "v": 2
+          },
+          "urgency": "high",
+          "ttl": 86400,
+          "topic": ""
+        }
+      ],
+      "input": {
+        "agent": true,
+        "creatorName": "Ann",
+        "event": {
+          "creatorPublicKey": "creator-pk",
+          "data": {
+            "componentId": "list-2",
+            "itemTitle": "Call mom",
+            "occurrenceAt": 1794070800,
+            "offset": "-PT15M",
+            "ruleId": "rule-1",
+            "targetKey": "",
+            "tz": "Europe/Warsaw"
+          },
+          "id": "evt-1",
+          "type": "reminder_fired"
+        }
+      }
+    },
     "reminder without tz": {
       "deliveries": [
         {

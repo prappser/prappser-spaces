@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/prappser/prappser-spaces/internal/application"
 	"github.com/prappser/prappser-spaces/internal/component/lens"
@@ -262,7 +263,17 @@ func describeReminder(ev *event.Event, app *application.Application, t texts) no
 		scope = fmt.Sprintf("%s:%d:%s", ruleID, occurrenceAt, offsetSpec)
 	}
 	return notice{kind: KindReminder, scope: scope, title: icon + title, body: body,
-		openComponent: str(ev.Data["componentId"]), target: str(ev.Data["targetKey"])}
+		openComponent: routeID(ev.Data["componentId"]), target: routeID(ev.Data["targetKey"])}
+}
+
+const maxRouteIDLen = 200
+
+// routeID returns "" when v is over maxRouteIDLen characters, never truncates.
+func routeID(v any) string {
+	if s := str(v); utf8.RuneCountInString(s) <= maxRouteIDLen {
+		return s
+	}
+	return ""
 }
 
 func intOf(v any) (int64, bool) {

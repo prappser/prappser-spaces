@@ -247,6 +247,7 @@ func goldenCases() []goldenCase {
 			goldenCase{name: "reminder due now" + suffix, ev: gTyped(event.EventTypeReminderFired, reminder("PT0S")), creator: "Ann", agent: agent},
 			goldenCase{name: "reminder 2 hours before" + suffix, ev: gTyped(event.EventTypeReminderFired, reminder("-PT2H")), creator: "Ann", agent: agent},
 			goldenCase{name: "reminder 1 day before" + suffix, ev: gTyped(event.EventTypeReminderFired, reminder("-P1D")), creator: "Ann", agent: agent},
+			goldenCase{name: "reminder without target" + suffix, ev: gTyped(event.EventTypeReminderFired, gMerge(reminder("-PT15M"), map[string]any{"targetKey": ""})), creator: "Ann", agent: agent},
 			goldenCase{name: "reminder without tz" + suffix, ev: gTyped(event.EventTypeReminderFired, gMerge(reminder("-PT15M"), map[string]any{"tz": ""})), creator: "Ann", agent: agent},
 			goldenCase{name: "reminder fired with text" + suffix, ev: gTyped(event.EventTypeReminderFired, map[string]any{"itemTitle": "Call mom"}), creator: "Ann", agent: agent},
 			goldenCase{name: "reminder fired without text" + suffix, ev: gTyped(event.EventTypeReminderFired, map[string]any{}), creator: "Ann", agent: agent},
