@@ -48,7 +48,7 @@ func (s *EventService) dropFromChange(appID, componentID string, holder map[stri
 		if comp == nil {
 			c, err := s.appRepo.GetComponentByID(componentID)
 			if err != nil {
-				log.Debug().Err(err).Str("componentId", componentID).Msg("[EVENT] Entry guard component lookup failed")
+				log.Warn().Err(err).Str("applicationId", appID).Str("componentId", componentID).Msg("[EVENT] Entry guard component lookup failed, keeping null deletes")
 				return
 			}
 			if c.ApplicationID != appID {
