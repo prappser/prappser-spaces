@@ -82,22 +82,27 @@ Rules:
 
 A key may carry an `x-notify` annotation. It tells the space when a change to that key sends a push notification, and with what text. It goes on a top-level `properties` or `patternProperties` entry, next to `x-merge` and `x-access`. Only these types have a rule: chat (`m_` messages), checklist (`item_` entries), poll (`question`, `closed`), expenses (`e_` entries) and files (`items`). A type without a rule sends no push. The app evaluates the same rules to build its notification panel.
 
+`x-notify` is one rule object or a list of rule objects. With a list, the rules are tried in order and the first one that fires with non-blank text wins. If any rule of a list is invalid, the whole annotation is ignored.
+
 A rule is an object:
 
 | Member | Meaning |
 |---|---|
 | `on` | Required. When it fires, see below. |
+| `field` | Optional. A dotted path into the entry. `on` is then judged on that path of the old value against that path of the new value (both decoded and migrated), and the rule fires only when the old and the new entry are both non-empty. So a new entry or a tombstone never fires a `field` rule. |
 | `kind` | Required. `chat`, `item`, `poll` or `file`. |
 | `scope` | Required. `component` or `event`: the push tag scope, the component id or the event id. |
 | `view` | Optional. `chat` or `polls`. |
 | `text` | Required. Non-empty ordered list of candidates. The first one that gives non-blank text wins. |
-| `join` | Only with `on: new`. Folds all fired keys of the family into one push: `prefix`, `sep`, `show`, `more`. The output is `prefix` once, then the first `show` texts joined by `sep`, then, if more keys fired, a space and the localized `more` text (`itemsMore`) with the remaining count, like "+ A, B and 2 more". With fewer than `show` keys there is no "more" tail. `show` must be at least 1. |
+| `join` | Any `on`. Folds all fired keys of the family into one push: `prefix`, `sep`, `show`, `more`. The output is `prefix` once, then the first `show` texts joined by `sep`, then, if more keys fired, a space and the localized `more` text (`itemsMore`) with the remaining count, like "+ A, B and 2 more". With fewer than `show` keys there is no "more" tail. `show` must be at least 1. |
 | `skipListed` | Only with `on: new`. `list` and `prefix`: a key is skipped when the key with `prefix` removed equals the string `id` of an element of the component data list `list` (the legacy checklist `items`). |
 
 `on` values:
 
 - `new`: a key of the family goes from empty or absent to non-empty.
 - `becomesTrue`: the old value is not true and the new value is true.
+- `becomesFalse`: the old value is true and the new value is not true.
+- `removed`: the old value is non-empty and the new value is empty (a tombstone). The text is read from the old value, since a tombstone has none.
 - `added`: a list value gains an element whose string `id` was not in the old list.
 
 A text candidate has at most one of `field` (a dotted path into the value, numeric segments index arrays) or `id` (a fixed text id, see below). With neither, the text is the fired value itself, which must be a string (poll `question`). Optional members:

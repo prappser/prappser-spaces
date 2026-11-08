@@ -166,6 +166,13 @@ func goldenCases() []goldenCase {
 	add("checklist tick", gComp("list-1", gChange("item_a", gItem("Milk"), map[string]any{"title": "Milk", "checked": true})))
 	add("checklist rename", gComp("list-1", gChange("item_a", gItem("Milk"), gItem("Oat milk"))))
 	add("checklist tombstone", gComp("list-1", gChange("item_a", gItem("Milk"), "")))
+	checked := func(title string) map[string]any { return map[string]any{"title": title, "checked": true} }
+	add("checklist new item already checked", gComp("list-1", gChange("item_a", nil, checked("Milk"))))
+	add("checklist untick", gComp("list-1", gChange("item_a", checked("Milk"), map[string]any{"title": "Milk", "checked": false})))
+	add("checklist two ticks", gComp("list-1", gMerge(gChange("item_a", gItem("A"), checked("A")), gChange("item_b", gItem("B"), checked("B")))))
+	add("checklist tombstone of checked item", gComp("list-1", gChange("item_a", checked("Milk"), "")))
+	add("checklist tombstone of absent key", gComp("list-1", gChange("item_a", nil, "")))
+	add("checklist three deletes", gComp("list-1", gMerge(gChange("item_a", gItem("A"), ""), gChange("item_b", gItem("B"), ""), gChange("item_c", gItem("C"), ""))))
 	add("checklist one item with component title", gComp("list-2", gChange("item_a", nil, gItem("Milk"))))
 	add("checklist three items with component title", gComp("list-2", gMerge(
 		gChange("item_a", nil, gItem("Milk")), gChange("item_b", nil, gItem("Eggs")), gChange("item_c", nil, gItem("Bread")),

@@ -1,5 +1,5 @@
 {
-  "bundle": 4,
+  "bundle": 5,
   "types": {
     "Text": {
       "min": 1,
@@ -45,7 +45,7 @@
     },
     {
       "path": "component/checklist.v2.schema.json",
-      "sha256": "ddbefb540b18f846e0d1ffbd97b7def4511223cd630802b3b2607dede9cdaa61"
+      "sha256": "21b89972c72149e4555e6d4638a3053f58249a1c87dc9ab05b16968a91dc8b2b"
     },
     {
       "path": "component/common.v1.schema.json",

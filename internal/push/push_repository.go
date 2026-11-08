@@ -352,6 +352,53 @@ func (r *pushRepository) CountDigest(subscriptionID, applicationID string, bucke
 	return nil
 }
 
+func (r *pushRepository) UncountDigest(subscriptionID, applicationID, componentKey string, countedAt, seenAt int64) (bool, error) {
+	res, err := r.db.Exec(`
+		UPDATE push_digest_pending p SET count = p.count - 1
+		FROM push_subscriptions ps, user_devices ud, users u
+		WHERE p.subscription_id = $1 AND p.application_id = $2 AND p.component_key = $3
+		  AND p.count > 0 AND p.last_at > $5
+		  AND ps.id = p.subscription_id AND ud.device_public_key = ps.device_public_key AND ud.revoked_at IS NULL
+		  AND u.public_key = ud.user_public_key AND $4 > u.digest_sent_at AND $4 > $5`,
+		subscriptionID, applicationID, componentKey, countedAt, seenAt)
+	if err != nil {
+		return false, fmt.Errorf("failed to uncount digest: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("failed to read uncounted digest rows: %w", err)
+	}
+	return n > 0, nil
+}
+
+func (r *pushRepository) PreviousChange(applicationID, componentID, key string, sequence, since int64) (*PriorChange, error) {
+	var creator, data string
+	var createdAt int64
+	err := r.db.QueryRow(`
+		SELECT COALESCE(creator_public_key, ''), created_at, data FROM events
+		WHERE application_id = $1 AND type = 'component_data_changed' AND sequence_number < $4 AND created_at > $5
+		  AND data::jsonb->>'componentId' = $2 AND data::jsonb->'changedFields' ? $3
+		ORDER BY sequence_number DESC LIMIT 1`,
+		applicationID, componentID, key, sequence, since).Scan(&creator, &createdAt, &data)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to query previous change: %w", err)
+	}
+	var d struct {
+		ChangedFields map[string]struct {
+			OldValue any `json:"oldValue"`
+			NewValue any `json:"newValue"`
+		} `json:"changedFields"`
+	}
+	if err := json.Unmarshal([]byte(data), &d); err != nil {
+		return nil, fmt.Errorf("failed to decode previous change: %w", err)
+	}
+	c := d.ChangedFields[key]
+	return &PriorChange{CreatorPublicKey: creator, CreatedAt: createdAt, OldValue: c.OldValue, NewValue: c.NewValue, Keys: len(d.ChangedFields)}, nil
+}
+
 // ponytail: full scan each tick, move the due check into SQL if daily users grow.
 func (r *pushRepository) GetDailyUsers() ([]DigestUser, error) {
 	rows, err := r.db.Query(`SELECT public_key, timezone, digest_sent_at FROM users WHERE notify_mode = 'daily'`)
@@ -403,7 +450,7 @@ func (r *pushRepository) ClaimDigest(userPublicKey string, due, now int64) ([]Di
 		SELECT g.subscription_id, g.application_id, a.name, g.kind, g.title, g.count
 		FROM gone g
 		JOIN applications a ON a.id = g.application_id AND a.deleted_at IS NULL
-		WHERE g.last_at > $2
+		WHERE g.last_at > $2 AND g.count > 0
 		  AND EXISTS (SELECT 1 FROM members m WHERE m.application_id = g.application_id AND m.public_key = $1)
 		ORDER BY g.count DESC`, userPublicKey, seenAt)
 	if err != nil {

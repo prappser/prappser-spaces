@@ -128,26 +128,78 @@
           "order": null
         }
       },
-      "x-notify": {
-        "on": "new",
-        "kind": "item",
-        "scope": "component",
-        "text": [
-          {
-            "field": "title"
+      "x-notify": [
+        {
+          "on": "new",
+          "kind": "item",
+          "scope": "component",
+          "text": [
+            {
+              "field": "title"
+            }
+          ],
+          "join": {
+            "prefix": "+ ",
+            "sep": ", ",
+            "show": 2,
+            "more": "itemsMore"
+          },
+          "skipListed": {
+            "list": "items",
+            "prefix": "item_"
           }
-        ],
-        "join": {
-          "prefix": "+ ",
-          "sep": ", ",
-          "show": 2,
-          "more": "itemsMore"
         },
-        "skipListed": {
-          "list": "items",
-          "prefix": "item_"
+        {
+          "on": "becomesTrue",
+          "field": "checked",
+          "kind": "item",
+          "scope": "component",
+          "text": [
+            {
+              "field": "title"
+            }
+          ],
+          "join": {
+            "prefix": "✓ ",
+            "sep": ", ",
+            "show": 2,
+            "more": "itemsMore"
+          }
+        },
+        {
+          "on": "becomesFalse",
+          "field": "checked",
+          "kind": "item",
+          "scope": "component",
+          "text": [
+            {
+              "field": "title"
+            }
+          ],
+          "join": {
+            "prefix": "☐ ",
+            "sep": ", ",
+            "show": 2,
+            "more": "itemsMore"
+          }
+        },
+        {
+          "on": "removed",
+          "kind": "item",
+          "scope": "component",
+          "text": [
+            {
+              "field": "title"
+            }
+          ],
+          "join": {
+            "prefix": "− ",
+            "sep": ", ",
+            "show": 2,
+            "more": "itemsMore"
+          }
         }
-      }
+      ]
     },
     "^_": {
       "description": "Other layout and UI keys starting with _. Any value.",
