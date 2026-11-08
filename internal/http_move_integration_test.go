@@ -19,8 +19,10 @@ import (
 	"github.com/goccy/go-json"
 	"github.com/google/uuid"
 	"github.com/prappser/prappser-spaces/internal/application"
+	"github.com/prappser/prappser-spaces/internal/component"
 	"github.com/prappser/prappser-spaces/internal/event"
 	"github.com/prappser/prappser-spaces/internal/invitation"
+	"github.com/prappser/prappser-spaces/internal/push"
 	"github.com/prappser/prappser-spaces/internal/storage"
 	"github.com/prappser/prappser-spaces/internal/testdb"
 	"github.com/prappser/prappser-spaces/internal/user"
@@ -80,6 +82,9 @@ func newMoveFixture(t *testing.T) *moveFixture {
 	appRepo := application.NewRepository(db)
 	spy := &spyBroadcaster{userCasts: map[string][]*event.Event{}}
 	eventService := event.NewEventService(event.NewEventRepository(db), appRepo, spy, nil)
+	validator, err := component.NewValidator()
+	require.NoError(t, err)
+	eventService.SetEntryKeys(push.EntryKeys(validator))
 
 	storageDir := t.TempDir()
 	backend, err := storage.NewBackend(&storage.BackendConfig{Type: storage.StorageTypeLocal, LocalPath: storageDir, MaxFileSize: 1 << 20, ChunkSize: 1 << 16})

@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prappser/prappser-spaces/internal/application"
+	"github.com/prappser/prappser-spaces/internal/component"
 )
 
 func docWith(comp map[string]any) map[string]any {
@@ -95,7 +96,7 @@ func TestTemplateReferenceErrors_ShouldAcceptTemplateWithoutReferences(t *testin
 	// given
 	doc := map[string]any{"groups": []any{map[string]any{"components": []any{
 		map[string]any{"type": "Checklist", "data": map[string]any{"item_a": map[string]any{"title": "t", "checked": false, "assigneePublicKey": nil, "attachmentIds": []any{}, "detailsDocument": []any{map[string]any{"insert": "hi\n"}}}}},
-		map[string]any{"type": "Map", "data": map[string]any{"markers": []any{map[string]any{"id": "1", "createdBy": ""}}, "otherUsers": []any{}}},
+		map[string]any{"type": "Map", "data": map[string]any{"place_a": map[string]any{"title": "A", "createdBy": "", "attachmentIds": []any{}}, "otherUsers": []any{}}},
 		map[string]any{"type": "Files", "data": map[string]any{"items": []any{}}},
 		map[string]any{"type": "Text", "data": map[string]any{"document": []any{map[string]any{"insert": "hi\n"}}}},
 	}}}}
@@ -124,10 +125,12 @@ func TestTemplateReferenceErrors_ShouldRejectChecklistMemberAttachmentAndMedia(t
 	assert.Equal(t, []string{base + "/assigneePublicKey", base + "/attachmentIds", base + "/detailsDocument/1/insert"}, got)
 }
 
-func TestTemplateReferenceErrors_ShouldRejectMapAuthorAndLiveLocations(t *testing.T) {
+func TestTemplateReferenceErrors_ShouldRejectMapAuthorAttachmentsAndLiveLocations(t *testing.T) {
 	// given
 	doc := docWith(map[string]any{"type": "Map", "data": map[string]any{
-		"markers":    []any{map[string]any{"id": "1", "createdBy": ""}, map[string]any{"id": "2", "createdBy": "pk"}},
+		"place_a":    map[string]any{"title": "A", "createdBy": ""},
+		"place_b":    map[string]any{"title": "B", "createdBy": "pk", "attachmentIds": []any{"f"}},
+		"leg_a__b":   map[string]any{"mode": "bus", "attachmentIds": []any{"f"}},
 		"otherUsers": []any{map[string]any{"userId": "u"}},
 	}})
 
@@ -136,7 +139,7 @@ func TestTemplateReferenceErrors_ShouldRejectMapAuthorAndLiveLocations(t *testin
 
 	// then
 	base := "/groups/0/components/0/data"
-	assert.ElementsMatch(t, []string{base + "/markers/1/createdBy", base + "/otherUsers"}, got)
+	assert.ElementsMatch(t, []string{base + "/place_b/createdBy", base + "/place_b/attachmentIds", base + "/leg_a__b/attachmentIds", base + "/otherUsers"}, got)
 }
 
 func TestTemplateReferenceErrors_ShouldRejectFiles(t *testing.T) {
@@ -171,4 +174,19 @@ func TestTemplateReferenceErrors_ShouldRejectTextLegacyObjectDocument(t *testing
 
 	// then
 	assert.Equal(t, []string{"/groups/0/components/0/data/document"}, got)
+}
+
+func TestValidateTemplateDoc_ShouldRefuseMapLegacyMarkers(t *testing.T) {
+	// given
+	v, err := component.NewValidator()
+	require.NoError(t, err)
+	doc := map[string]any{"name": "Trip", "description": "", "icon": "travel", "groups": []any{map[string]any{"name": "Main", "index": 0, "components": []any{
+		map[string]any{"type": "Map", "index": 0, "data": map[string]any{"markers": []any{map[string]any{"id": "k1", "latitude": 51.5, "longitude": -0.1, "title": "Start"}}}},
+	}}}}
+
+	// when
+	err = v.ValidateTemplateDoc(doc)
+
+	// then
+	assert.ErrorIs(t, err, component.ErrInvalidData)
 }

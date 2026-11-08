@@ -194,6 +194,7 @@ func main() {
 
 	reminderRepository := reminder.NewRepository(db)
 	eventService.SetReminderStore(reminderRepository)
+	eventService.SetEntryKeys(push.EntryKeys(componentValidator))
 
 	spacePublicKeyString := base64.StdEncoding.EncodeToString(publicKey)
 	appService := application.NewApplicationService(appRepository, config.MaxAppsPerAccount, spacePublicKeyString)

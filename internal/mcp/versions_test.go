@@ -694,3 +694,113 @@ func TestPlanWrite_ShouldWriteChecklistV1ItemWithNullAssigneeBackAtV2(t *testing
 	require.Nil(t, res)
 	assert.Equal(t, map[string]any{"item_a": map[string]any{"v": float64(2), "title": "Milk", "checked": true, "assigneePublicKey": nil}}, written)
 }
+
+func mapPlace(title string, order float64) map[string]any {
+	return map[string]any{"title": title, "latitude": 50.06, "longitude": 19.94, "order": order}
+}
+
+func TestPlanWrite_ShouldInjectVersionOnNewMapPlaceWithMintedKeyMatchingPattern(t *testing.T) {
+	// given
+	v := embeddedValidator(t)
+
+	// when
+	written, res, err := plan(t, v, "Map", nil, map[string]any{"place_*": mapPlace("Wieliczka", 0)})
+
+	// then
+	require.NoError(t, err)
+	require.Nil(t, res)
+	require.Len(t, written, 1)
+	for k, val := range written {
+		assert.Regexp(t, `^place_[^_]+$`, k)
+		assert.Equal(t, float64(2), val.(map[string]any)["v"])
+	}
+}
+
+func TestPlanWrite_ShouldWriteMapLegByPairKey(t *testing.T) {
+	// given
+	v := embeddedValidator(t)
+	stored := map[string]any{"place_a": mapPlace("A", 0), "place_b": mapPlace("B", 1)}
+
+	// when
+	written, res, err := plan(t, v, "Map", stored, map[string]any{"leg_a__b": map[string]any{"mode": "train", "line": "IC 3510", "departure": "10:30"}})
+
+	// then
+	require.NoError(t, err)
+	require.Nil(t, res)
+	assert.Equal(t, map[string]any{"leg_a__b": map[string]any{"v": float64(2), "mode": "train", "line": "IC 3510", "departure": "10:30"}}, written)
+}
+
+func TestPlanWrite_ShouldRefuseMapLegKeyWithoutPair(t *testing.T) {
+	// given
+	v := embeddedValidator(t)
+
+	// when
+	_, _, err := plan(t, v, "Map", nil, map[string]any{"leg_x": map[string]any{"mode": "bus"}})
+	_, _, mintedErr := plan(t, v, "Map", nil, map[string]any{"leg_*": map[string]any{"mode": "bus"}})
+
+	// then
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not a key of Map")
+	require.Error(t, mintedErr)
+	assert.Contains(t, mintedErr.Error(), "not a key of Map")
+}
+
+func TestPlanWrite_ShouldRefuseWritingLegacyMapMarkers(t *testing.T) {
+	// given
+	v := embeddedValidator(t)
+
+	// when
+	_, _, err := plan(t, v, "Map", nil, map[string]any{"markers": []any{}})
+
+	// then
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not writable by agents")
+}
+
+func TestPlanWrite_ShouldGateMapPlacesAndLegsForMembersOnly(t *testing.T) {
+	// given
+	v := embeddedValidator(t)
+	set := map[string]any{"place_*": mapPlace("A", 0)}
+	leg := map[string]any{"leg_a__b": map[string]any{"mode": "bus"}}
+	off := map[string]any{"allowAddMarkerInUsage": false}
+	on := map[string]any{"allowAddMarkerInUsage": true}
+	member := func(stored, set map[string]any) error {
+		_, _, err := planWrite(v, "Map", stored, set, "pk", false)
+		return err
+	}
+
+	// when
+	placeOff, legOff := member(off, set), member(off, leg)
+	placeDefault := member(nil, set)
+	placeOn, legOn := member(on, set), member(on, leg)
+	_, _, ownerErr := planWrite(v, "Map", off, set, "pk", true)
+
+	// then
+	assert.ErrorContains(t, placeOff, "turned off by allowAddMarkerInUsage")
+	assert.ErrorContains(t, legOff, "turned off by allowAddMarkerInUsage")
+	assert.ErrorContains(t, placeDefault, "turned off by allowAddMarkerInUsage")
+	assert.NoError(t, placeOn)
+	assert.NoError(t, legOn)
+	assert.NoError(t, ownerErr)
+}
+
+func TestPlanWrite_ShouldKeepBothMapPlacesWhenTwoAddsPlanFromSameStoredData(t *testing.T) {
+	// given
+	v := embeddedValidator(t)
+	stored := map[string]any{"place_a": mapPlace("A", 0)}
+
+	// when
+	first, _, err1 := plan(t, v, "Map", stored, map[string]any{"place_*": mapPlace("B", 1)})
+	second, _, err2 := plan(t, v, "Map", stored, map[string]any{"place_*": mapPlace("C", 1)})
+
+	// then
+	require.NoError(t, err1)
+	require.NoError(t, err2)
+	merged := map[string]any{}
+	for _, w := range []map[string]any{stored, first, second} {
+		for k, val := range w {
+			merged[k] = val
+		}
+	}
+	assert.Len(t, merged, 3)
+}

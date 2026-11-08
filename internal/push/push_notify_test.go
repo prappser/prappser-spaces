@@ -457,3 +457,58 @@ func TestDescribe_ShouldIgnoreWholeRuleListWhenOneMemberIsInvalid(t *testing.T) 
 	// then
 	assert.False(t, ok)
 }
+
+func changedRule(field string) func(map[string]any) any {
+	return func(r map[string]any) any {
+		r["on"] = "changed"
+		if field == "" {
+			delete(r, "field")
+		} else {
+			r["field"] = field
+		}
+		delete(r, "skipListed")
+		r["join"].(map[string]any)["prefix"] = "~ "
+		return r
+	}
+}
+
+func TestDescribe_ShouldFireChangedOnlyWhenFieldValueChangesToNonEmpty(t *testing.T) {
+	// given
+	svc := &PushService{validator: validatorWith(t, "checklist.v2.schema.json", changedRule("title"))}
+	cases := []struct {
+		name   string
+		fields map[string]any
+		want   string
+	}{
+		{"value changed", gChange("item_a", gItem("10:00"), gItem("11:00")), "Ann: ~ 11:00"},
+		{"absent to value", gChange("item_a", map[string]any{"checked": false}, gItem("10:00")), "Ann: ~ 10:00"},
+		{"value to absent", gChange("item_a", gItem("10:00"), map[string]any{"checked": true}), ""},
+		{"value to empty string", gChange("item_a", gItem("10:00"), gItem("")), ""},
+		{"brand-new entry", gChange("item_a", nil, gItem("10:00")), ""},
+		{"unrelated field changed", gChange("item_a", map[string]any{"title": "10:00", "order": 1}, map[string]any{"title": "10:00", "order": 2}), ""},
+	}
+
+	for _, c := range cases {
+		// when
+		n, ok := svc.describe(checklistEvent(c.fields), goldenApp(), "Ann", false, "en")
+
+		// then
+		assert.Equal(t, c.want != "", ok, c.name)
+		assert.Equal(t, c.want, n.body, c.name)
+	}
+}
+
+func TestDescribe_ShouldRejectChangedRuleWithoutField(t *testing.T) {
+	// given
+	v := validatorWith(t, "checklist.v2.schema.json", changedRule(""))
+	_, raw, _ := v.Notify("Checklist", "item_a")
+	ev := checklistEvent(gChange("item_a", gItem("10:00"), gItem("11:00")))
+
+	// when
+	_, parseErr := parseNotifyRules(raw)
+	_, ok := (&PushService{validator: v}).describe(ev, goldenApp(), "Ann", false, "en")
+
+	// then
+	assert.Error(t, parseErr)
+	assert.False(t, ok)
+}

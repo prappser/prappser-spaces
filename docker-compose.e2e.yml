@@ -27,6 +27,7 @@ services:
       DATABASE_URL: postgres://test:test@postgres:5432/prappser_e2e?sslmode=disable
       TRUST_PROXY: "false"
       LOG_LEVEL: warn
+      EXTERNAL_URL: http://localhost:4646
     ports:
       - "4646:4545"
     healthcheck:

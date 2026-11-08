@@ -1558,3 +1558,61 @@ func TestMCP_UpdateComponent_ShouldFlagMalformedEntriesAndRefuseEditAndDelete(t 
 	}
 	assert.Equal(t, 0, e.eventCount(appID))
 }
+
+func TestMCP_UpdateComponent_ShouldStoreMapPlaceAndLegForAppToRead(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner := e.account()
+	appID, compID := e.componentApp(owner, "Map", map[string]any{})
+	session, _ := e.connect(owner)
+	place := func(title string, order float64) map[string]any {
+		return map[string]any{"title": title, "latitude": 50.06, "longitude": 19.94, "order": order, "time": "09:30"}
+	}
+
+	// when
+	a, aOut := update(t, session, appID, compID, map[string]any{"place_*": place("Wieliczka", 0)})
+	b, bOut := update(t, session, appID, compID, map[string]any{"place_*": place("Kraków", 1)})
+	require.False(t, a.IsError, toJSON(aOut))
+	require.False(t, b.IsError, toJSON(bOut))
+	aKey, bKey := aOut["keys"].([]any)[0].(string), bOut["keys"].([]any)[0].(string)
+	legKey := "leg_" + strings.TrimPrefix(aKey, "place_") + "__" + strings.TrimPrefix(bKey, "place_")
+	leg, legOut := update(t, session, appID, compID, map[string]any{legKey: map[string]any{"mode": "train", "line": "IC 3510", "departure": "10:30"}})
+
+	// then
+	require.False(t, leg.IsError, toJSON(legOut))
+	data := e.compData(compID)
+	assert.Regexp(t, `^place_[^_]+$`, aKey)
+	assert.Equal(t, map[string]any{"v": 2.0, "title": "Wieliczka", "latitude": 50.06, "longitude": 19.94, "order": 0.0, "time": "09:30"}, data[aKey])
+	assert.Equal(t, "Kraków", data[bKey].(map[string]any)["title"])
+	assert.Equal(t, map[string]any{"v": 2.0, "mode": "train", "line": "IC 3510", "departure": "10:30"}, data[legKey])
+	assert.Len(t, data, 3)
+	assert.NotContains(t, data, "markers")
+}
+
+func TestMCP_UpdateComponent_ShouldKeepBothMapPlacesWhenAddedConcurrently(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner := e.account()
+	appID, compID := e.componentApp(owner, "Map", map[string]any{})
+	session, _ := e.connect(owner)
+	var wg sync.WaitGroup
+	results := make([]*sdk.CallToolResult, 2)
+
+	// when
+	for i := range results {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			results[i], _ = call(t, session, "update_component", map[string]any{"appId": appID, "componentId": compID, "set": map[string]any{
+				"place_*": map[string]any{"title": fmt.Sprintf("P%d", i), "latitude": 1.0, "longitude": 2.0, "order": 0.0},
+			}})
+		}()
+	}
+	wg.Wait()
+
+	// then
+	for _, r := range results {
+		assert.False(t, r.IsError)
+	}
+	assert.Len(t, e.compData(compID), 2)
+}

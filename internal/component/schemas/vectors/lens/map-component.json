@@ -1,0 +1,397 @@
+{
+  "cases": [
+    {
+      "name": "a place without v lifts to v2, up",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^place_[^_]+$": [],
+            "^leg_[^_]+__[^_]+$": []
+          }
+        }
+      ],
+      "key": "place_a",
+      "in": {
+        "title": "Wieliczka",
+        "latitude": 50.0647,
+        "longitude": 20.0555,
+        "order": 1
+      },
+      "to": 2,
+      "out": {
+        "v": 2,
+        "title": "Wieliczka",
+        "latitude": 50.0647,
+        "longitude": 20.0555,
+        "order": 1
+      },
+      "lossy": false
+    },
+    {
+      "name": "a place at v2 is unchanged",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^place_[^_]+$": [],
+            "^leg_[^_]+__[^_]+$": []
+          }
+        }
+      ],
+      "key": "place_a",
+      "in": {
+        "v": 2,
+        "title": "Wieliczka",
+        "latitude": 50.0647,
+        "longitude": 20.0555,
+        "order": 1
+      },
+      "to": 2,
+      "out": {
+        "v": 2,
+        "title": "Wieliczka",
+        "latitude": 50.0647,
+        "longitude": 20.0555,
+        "order": 1
+      },
+      "lossy": false
+    },
+    {
+      "name": "a leg without v lifts to v2, up",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^place_[^_]+$": [],
+            "^leg_[^_]+__[^_]+$": []
+          }
+        }
+      ],
+      "key": "leg_a__b",
+      "in": {
+        "mode": "train",
+        "line": "IC 3510",
+        "departure": "08:15"
+      },
+      "to": 2,
+      "out": {
+        "v": 2,
+        "mode": "train",
+        "line": "IC 3510",
+        "departure": "08:15"
+      },
+      "lossy": false
+    },
+    {
+      "name": "a v1 place keeps unknown fields, up",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^place_[^_]+$": [],
+            "^leg_[^_]+__[^_]+$": []
+          }
+        }
+      ],
+      "key": "place_a",
+      "in": {
+        "v": 1,
+        "title": "Wieliczka",
+        "latitude": 50.0647,
+        "longitude": 20.0555,
+        "order": 1,
+        "zz_unknown": 1,
+        "meta": {
+          "zz_unknown": 2
+        }
+      },
+      "to": 2,
+      "out": {
+        "v": 2,
+        "title": "Wieliczka",
+        "latitude": 50.0647,
+        "longitude": 20.0555,
+        "order": 1,
+        "zz_unknown": 1,
+        "meta": {
+          "zz_unknown": 2
+        }
+      },
+      "lossy": false
+    },
+    {
+      "name": "a v2 place drops to v1 with its fields, down",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^place_[^_]+$": [],
+            "^leg_[^_]+__[^_]+$": []
+          }
+        }
+      ],
+      "key": "place_a",
+      "in": {
+        "v": 2,
+        "title": "Wieliczka",
+        "latitude": 50.0647,
+        "longitude": 20.0555,
+        "order": 1
+      },
+      "to": 1,
+      "out": {
+        "v": 1,
+        "title": "Wieliczka",
+        "latitude": 50.0647,
+        "longitude": 20.0555,
+        "order": 1
+      },
+      "lossy": false
+    },
+    {
+      "name": "a v2 place keeps unknown fields, down",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^place_[^_]+$": [],
+            "^leg_[^_]+__[^_]+$": []
+          }
+        }
+      ],
+      "key": "place_a",
+      "in": {
+        "v": 2,
+        "title": "Wieliczka",
+        "latitude": 50.0647,
+        "longitude": 20.0555,
+        "order": 1,
+        "zz_unknown": 1,
+        "meta": {
+          "zz_unknown": 2
+        }
+      },
+      "to": 1,
+      "out": {
+        "v": 1,
+        "title": "Wieliczka",
+        "latitude": 50.0647,
+        "longitude": 20.0555,
+        "order": 1,
+        "zz_unknown": 1,
+        "meta": {
+          "zz_unknown": 2
+        }
+      },
+      "lossy": false
+    },
+    {
+      "name": "a v2 leg drops to v1, down",
+      "kind": "migrate",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^place_[^_]+$": [],
+            "^leg_[^_]+__[^_]+$": []
+          }
+        }
+      ],
+      "key": "leg_a__b",
+      "in": {
+        "v": 2,
+        "mode": "train",
+        "line": "IC 3510",
+        "departure": "08:15"
+      },
+      "to": 1,
+      "out": {
+        "v": 1,
+        "mode": "train",
+        "line": "IC 3510",
+        "departure": "08:15"
+      },
+      "lossy": false
+    },
+    {
+      "name": "an older client edits a v2 place and the stored place keeps its version",
+      "kind": "writeback",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^place_[^_]+$": [],
+            "^leg_[^_]+__[^_]+$": []
+          }
+        }
+      ],
+      "key": "place_a",
+      "original": {
+        "v": 2,
+        "title": "Wieliczka",
+        "latitude": 50.0647,
+        "longitude": 20.0555,
+        "order": 1,
+        "zz_unknown": 1
+      },
+      "reader": 1,
+      "view": {
+        "v": 1,
+        "title": "Wieliczka",
+        "latitude": 50.0647,
+        "longitude": 20.0555,
+        "order": 1,
+        "zz_unknown": 1
+      },
+      "edited": {
+        "v": 1,
+        "title": "Kraków",
+        "latitude": 50.0647,
+        "longitude": 20.0555,
+        "order": 1,
+        "zz_unknown": 1
+      },
+      "result": {
+        "v": 2,
+        "title": "Kraków",
+        "latitude": 50.0647,
+        "longitude": 20.0555,
+        "order": 1,
+        "zz_unknown": 1
+      }
+    },
+    {
+      "name": "a newer client edits a place without v and writes v 2",
+      "kind": "writeback",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^place_[^_]+$": [],
+            "^leg_[^_]+__[^_]+$": []
+          }
+        }
+      ],
+      "key": "place_a",
+      "original": {
+        "title": "Wieliczka",
+        "latitude": 50.0647,
+        "longitude": 20.0555,
+        "order": 1
+      },
+      "reader": 2,
+      "view": {
+        "v": 2,
+        "title": "Wieliczka",
+        "latitude": 50.0647,
+        "longitude": 20.0555,
+        "order": 1
+      },
+      "edited": {
+        "v": 2,
+        "title": "Wieliczka",
+        "latitude": 50.0647,
+        "longitude": 20.0555,
+        "order": 1,
+        "time": "10:00"
+      },
+      "result": {
+        "v": 2,
+        "title": "Wieliczka",
+        "latitude": 50.0647,
+        "longitude": 20.0555,
+        "order": 1,
+        "time": "10:00"
+      }
+    },
+    {
+      "name": "a v3 place at reader 2 needs an update",
+      "kind": "state",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^place_[^_]+$": [],
+            "^leg_[^_]+__[^_]+$": []
+          }
+        }
+      ],
+      "reader": 2,
+      "entries": [
+        {
+          "key": "place_a",
+          "value": {
+            "v": 3,
+            "title": "Wieliczka",
+            "latitude": 50.0647,
+            "longitude": 20.0555,
+            "order": 1
+          }
+        }
+      ],
+      "expect": "needs-update"
+    },
+    {
+      "name": "v1 and v2 places and legs at reader 2 are full",
+      "kind": "state",
+      "steps": [
+        {
+          "to": 2,
+          "breaking": false,
+          "entries": {
+            "^place_[^_]+$": [],
+            "^leg_[^_]+__[^_]+$": []
+          }
+        }
+      ],
+      "reader": 2,
+      "entries": [
+        {
+          "key": "place_a",
+          "value": {
+            "title": "Wieliczka",
+            "latitude": 50.0647,
+            "longitude": 20.0555,
+            "order": 1
+          }
+        },
+        {
+          "key": "place_b",
+          "value": {
+            "v": 2,
+            "title": "Wieliczka",
+            "latitude": 50.0647,
+            "longitude": 20.0555,
+            "order": 1
+          }
+        },
+        {
+          "key": "leg_a__b",
+          "value": {
+            "mode": "train",
+            "line": "IC 3510",
+            "departure": "08:15"
+          }
+        }
+      ],
+      "expect": "full"
+    }
+  ]
+}

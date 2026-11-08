@@ -10,7 +10,7 @@ Language-neutral JSON Schemas (draft 2020-12) for the data a Prappser component 
 | `component/common.v1.schema.json` | shared `$defs` (Quill ops), not a component type |
 | `template/template-doc.v1.schema.json` | `https://prappser.app/schemas/template/template-doc.v1.schema.json` |
 | `vectors/<type>.json`, `vectors/template-doc.json` | test vectors, see below |
-| `vectors/lens/<op>.json`, `vectors/lens/chain.json` | lens (`x-migrations`) test vectors, see Lens vectors |
+| `vectors/lens/<op>.json`, `vectors/lens/chain.json`, `vectors/lens/checklist.json`, `vectors/lens/map-component.json` | lens (`x-migrations`) test vectors, see Lens vectors (`map.json` is the vectors of the `map` op, so the Map component's are `map-component.json`) |
 | `bundle.json` | the bundle manifest, generated, see Bundle manifest |
 | `vectors/bundle/container.json` | signed container test vectors, see Container vectors |
 
@@ -80,7 +80,7 @@ Rules:
 
 ## Push notifications and `x-notify`
 
-A key may carry an `x-notify` annotation. It tells the space when a change to that key sends a push notification, and with what text. It goes on a top-level `properties` or `patternProperties` entry, next to `x-merge` and `x-access`. Only these types have a rule: chat (`m_` messages), checklist (`item_` entries), poll (`question`, `closed`), expenses (`e_` entries) and files (`items`). A type without a rule sends no push. The app evaluates the same rules to build its notification panel.
+A key may carry an `x-notify` annotation. It tells the space when a change to that key sends a push notification, and with what text. It goes on a top-level `properties` or `patternProperties` entry, next to `x-merge` and `x-access`. Only these types have a rule: chat (`m_` messages), checklist (`item_` entries), map (`place_` and `leg_` entries), poll (`question`, `closed`), expenses (`e_` entries) and files (`items`). A type without a rule sends no push. The app evaluates the same rules to build its notification panel.
 
 `x-notify` is one rule object or a list of rule objects. With a list, the rules are tried in order and the first one that fires with non-blank text wins. If any rule of a list is invalid, the whole annotation is ignored.
 
@@ -89,12 +89,12 @@ A rule is an object:
 | Member | Meaning |
 |---|---|
 | `on` | Required. When it fires, see below. |
-| `field` | Optional. A dotted path into the entry. `on` is then judged on that path of the old value against that path of the new value (both decoded and migrated), and the rule fires only when the old and the new entry are both non-empty. So a new entry or a tombstone never fires a `field` rule. |
+| `field` | Optional, required for `changed`. A dotted path into the entry. `on` is then judged on that path of the old value against that path of the new value (both decoded and migrated), and the rule fires only when the old and the new entry are both non-empty. So a new entry or a tombstone never fires a `field` rule. |
 | `kind` | Required. `chat`, `item`, `poll` or `file`. |
 | `scope` | Required. `component` or `event`: the push tag scope, the component id or the event id. |
 | `view` | Optional. `chat` or `polls`. |
 | `text` | Required. Non-empty ordered list of candidates. The first one that gives non-blank text wins. |
-| `join` | Any `on`. Folds all fired keys of the family into one push: `prefix`, `sep`, `show`, `more`. The output is `prefix` once, then the first `show` texts joined by `sep`, then, if more keys fired, a space and the localized `more` text (`itemsMore`) with the remaining count, like "+ A, B and 2 more". With fewer than `show` keys there is no "more" tail. `show` must be at least 1. |
+| `join` | Any `on`. Folds all fired keys of the family into one push: `prefix`, `sep`, `show`, `more`. The output is `prefix` once, then the first `show` texts joined by `sep`, then, if more keys fired, a space and the localized `more` text (the `itemsMore` string, valid only as `join.more`) with the remaining count, like "+ A, B and 2 more". With fewer than `show` keys there is no "more" tail. `show` must be at least 1. |
 | `skipListed` | Only with `on: new`. `list` and `prefix`: a key is skipped when the key with `prefix` removed equals the string `id` of an element of the component data list `list` (the legacy checklist `items`). |
 
 `on` values:
@@ -104,6 +104,7 @@ A rule is an object:
 - `becomesFalse`: the old value is true and the new value is not true.
 - `removed`: the old value is non-empty and the new value is empty (a tombstone). The text is read from the old value, since a tombstone has none.
 - `added`: a list value gains an element whose string `id` was not in the old list.
+- `changed`: only with `field`. The old and the new entry are both non-empty (as for every `field` rule), the new value at `field` is non-empty and deep-differs from the old value there (after decode and migrate; absent counts as different from a set value). Clearing the field (a new value that is `null`, absent or `''`) never fires, and neither does a change to another field.
 
 A text candidate has at most one of `field` (a dotted path into the value, numeric segments index arrays) or `id` (a fixed text id, see below). With neither, the text is the fired value itself, which must be a string (poll `question`). Optional members:
 
@@ -113,7 +114,7 @@ A text candidate has at most one of `field` (a dotted path into the value, numer
 - `empty`: a text id used when the field is blank. `prefix` applies to it too.
 - `suffix`: `sep` plus exactly one of `component` and `field`. `component` adds `sep` and the string value of that top-level component data key, when it is not blank. `field` is a dotted path into the fired value, optionally with `format`: `minorUnits` renders an integer as decimal with two places (4500 is `45.00`, -50 is `-0.50`). Without `format`, the value is used as a string.
 
-Text ids are `photo`, `file`, `pollClosed` and `itemsMore`. Their wording, the "Person: " prefix, the agent label and the 120 rune cut stay in the space.
+Text ids (`id` and `empty`) are `photo`, `file` and `pollClosed`. Their wording, the "Person: " prefix, the agent label and the 120 rune cut stay in the space.
 
 A malformed rule, an unknown `on`, an unknown text id or an unknown `view` sends no push for that key. It is never an error.
 
@@ -209,7 +210,7 @@ Absent `v` means 1 everywhere. A writer at version 2 or above always writes `v`.
 - Tombstones (`''`, `null`) and values that do not decode to an object (a number, a string, an array) are not entries: migrate returns them unchanged, they are never written back, and they do not count for the component state.
 - Per-member cells (`vote_<pk>`, `react_<msgKey>_<pk>`) and settings keys (every top-level property, including single-key aggregates such as poll `options`, map `markers`, checklist `templates`, text `document`) have no `v` and are never migrated.
 - The top-level `v` of chat, poll, expenses and countdown is the settings format. It stays `const 1` in every vN file and readers do not use it to pick a chain.
-- In a vN file every entry def requires `v` with `const N`. An entry def is the `$defs` entry that a `per-entry` `patternProperties` value refers to. v1 entry defs accept an optional `v: 1`, except chat `$defs/message`, which has always required it because chat always wrote it. An absent `v` still means 1 for the lens. Exception: checklist v2 `$defs/item` keeps `v: 2` optional, so documents that never carried `v` and have no renamed field (built-in templates, the frozen golden fixture) still validate; the app's edit path (the sink's `TypeLens.writePatch`) stamps `v` on item entries it writes once the reader version is above 1; entries created by template instantiation carry no `v` and read as v1 until first edited.
+- In a vN file every entry def requires `v` with `const N`. An entry def is the `$defs` entry that a `per-entry` `patternProperties` value refers to. v1 entry defs accept an optional `v: 1`, except chat `$defs/message`, which has always required it because chat always wrote it. An absent `v` still means 1 for the lens. Exception: checklist v2 `$defs/item` and map v2 `$defs/place` and `$defs/leg` keep `v: 2` optional, so documents that never carried `v` and have no renamed field (built-in templates, the frozen golden fixture) still validate; the app's edit path (the sink's `TypeLens.writePatch`) stamps `v` on item entries it writes once the reader version is above 1; entries created by template instantiation carry no `v` and read as v1 until first edited.
 - A settings value is never an entry, but a list element inside one can be read like one. Checklist legacy `items[i]` is read through the same entry steps as an `item_<id>` entry: an element without `v` is v1, and the element's `id` is not part of the entry. Legacy elements stay read-only and are never written. A vN file gives them their own def, `legacyItem`, frozen in the v1 shape (optional `v: 1`, `assignedMemberId`, required `id`), because the stored elements never change.
 - An entry is validated against the schema file of its own version: `v` absent is the v1 file, `v` = N is the vN file, so `additionalProperties: false` and the `const N` on `v` apply per version. A validator that holds only its own newest file (the app, whose R is its embedded current version) migrates the entry to R first, then validates the result against its embedded vR, also when a fetched bundle gave it a chain up to K > R. The space embeds every version from min on and validates in the entry's own version. A written value is validated in the version it carries: R for a new entry and for an e < R write, e for an e > R write-back.
 
@@ -238,7 +239,9 @@ The top-level key stays the unit of merge in every version. When two clients on 
 
 ### Settings keys and per-member cells
 
-Settings keys and per-member cells change additively only: a new optional key, or a new optional field in a value, whose absence means its default. Renaming, retyping or remapping them, or a key-family prefix, is not expressible. Under per-key last writer wins an old client keeps writing the old key, nothing orders the old key against the new one, and readers disagree about which is current. Keeping the old key read-only and deprecated (as `items` was) shadows old clients' later writes, so it is not a safe pattern while old clients are allowed. Such a change needs a new component type. Text, map, files and countdown have no entries, so they can only change additively.
+Settings keys and per-member cells change additively only: a new optional key, or a new optional field in a value, whose absence means its default. Renaming, retyping or remapping them, or a key-family prefix, is not expressible. Under per-key last writer wins an old client keeps writing the old key, nothing orders the old key against the new one, and readers disagree about which is current. Keeping the old key read-only and deprecated (as `items` was) shadows old clients' later writes, so it is not a safe pattern while old clients are allowed. Such a change needs a new component type. Text, files and countdown have no entries, so they can only change additively.
+
+There are two deliberate exceptions: checklist `items` (v2) and map `markers` (v2). Each keeps the old settings value as a deprecated, read-only, `x-access: none` base and adds a per-entry family beside it (`item_<id>`; `place_<id>` and `leg_<fromId>__<toId>`). Readers take the union, and an entry key with the same id replaces the legacy element. This stays safe for old clients only because the space drops null writes to entry keys, so an old client's omitted-key null cannot delete entries. Residual: an old client's edit or delete of a marker that already has a `place_` key is shadowed by that key (accepted for the friends beta). New markers written by old clients still show.
 
 ### Component state
 
@@ -331,7 +334,7 @@ A consumer validates `data` against `schema` (the case override if present) and 
 
 ### Lens vectors
 
-`vectors/lens/<op>.json` (`rename`, `move`, `add`, `map`, `wrap`, `unwrap`), `vectors/lens/chain.json` and `vectors/lens/checklist.json` (the real checklist v2 step) hold `{ "cases": [ ... ] }`. They test the walk, the ops, the lossiness rules, write-back and component state defined under Versioning. The runners for `vectors/<name>.json` list `vectors/` without recursing, so they do not read `vectors/lens/`; lens runners are separate. A case carries `steps` in the exact `x-migrations` shape, spelled out in full, and uses the `key` `item_a` against the family `^item_.+$` unless the case tests family matching. Encoded families are not used: vectors carry decoded values. Values compare by deep equality (member order ignored, numbers by value). Like the other vectors, they contain no integral floats such as `1.0`, except in the cases that test judging numbers by value, which say so in their `note` (it starts with `integral float`). An optional `note` string is allowed on any case.
+`vectors/lens/<op>.json` (`rename`, `move`, `add`, `map`, `wrap`, `unwrap`), `vectors/lens/chain.json` and `vectors/lens/checklist.json` (the real checklist v2 step) and `vectors/lens/map-component.json` (the real Map v2 step) hold `{ "cases": [ ... ] }`. They test the walk, the ops, the lossiness rules, write-back and component state defined under Versioning. The runners for `vectors/<name>.json` list `vectors/` without recursing, so they do not read `vectors/lens/`; lens runners are separate. A case carries `steps` in the exact `x-migrations` shape, spelled out in full, and uses the `key` `item_a` against the family `^item_.+$` unless the case tests family matching. Encoded families are not used: vectors carry decoded values. Values compare by deep equality (member order ignored, numbers by value). Like the other vectors, they contain no integral floats such as `1.0`, except in the cases that test judging numbers by value, which say so in their `note` (it starts with `integral float`). An optional `note` string is allowed on any case.
 
 | Kind | Members | Meaning |
 |---|---|---|
