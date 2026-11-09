@@ -66,7 +66,7 @@ func goldenApp() *application.Application {
 				{ID: "files-1", Name: "Files"},
 				{ID: "gallery-1", Name: "Gallery"},
 				{ID: "text-1", Name: "Text"},
-				{ID: "map-1", Name: "Map"},
+				{ID: "map-1", Name: "Map", Data: map[string]any{"markers": []any{map[string]any{"id": "listed", "title": "Wieliczka"}}}},
 				{ID: "countdown-1", Name: "Countdown"},
 				{ID: "expenses-1", Name: "Expenses"},
 				{ID: "list-2", Name: "Checklist", Data: map[string]any{"_title": "Groceries"}},
@@ -197,6 +197,38 @@ func goldenCases() []goldenCase {
 	add("files item removed", gComp("files-1", gChange("items", grown, old)))
 	add("files without new id", gComp("files-1", gChange("items", []any{map[string]any{"id": "f1"}}, []any{map[string]any{"id": "f1"}})))
 	add("files garbage", gComp("files-1", gChange("items", nil, "garbage")))
+
+	// map
+	place := func(title string, extra map[string]any) map[string]any {
+		return gMerge(map[string]any{"v": 2, "latitude": 50.06, "longitude": 20.05, "title": title, "order": 1}, extra)
+	}
+	leg := func(fields map[string]any) map[string]any { return gMerge(map[string]any{"v": 2}, fields) }
+	kv := func(k string, v any) map[string]any { return map[string]any{k: v} }
+	add("map place new", gComp("map-1", gChange("place_a", nil, place("Wieliczka", nil))))
+	cs = append(cs, goldenCase{name: "map place new by agent", ev: gComp("map-1", gChange("place_a", nil, place("Wieliczka", nil))), creator: "Ann", agent: true})
+	add("map three places new", gComp("map-1", gMerge(
+		gChange("place_a", nil, place("Wieliczka", nil)), gChange("place_b", nil, place("Krakow", nil)), gChange("place_c", nil, place("Zakopane", nil)),
+	)))
+	add("map place time changed", gComp("map-1", gChange("place_a", place("Wieliczka", kv("time", "10:00")), place("Wieliczka", kv("time", "11:30")))))
+	add("map place date changed", gComp("map-1", gChange("place_a", place("Wieliczka", kv("date", "2026-07-04")), place("Wieliczka", kv("date", "2026-07-05")))))
+	add("map place reordered", gComp("map-1", gChange("place_a", place("Wieliczka", nil), place("Wieliczka", kv("order", 2)))))
+	add("map place note only", gComp("map-1", gChange("place_a", place("Wieliczka", nil), place("Wieliczka", kv("description", "Book tickets")))))
+	timed := map[string]any{"date": "2026-07-04", "time": "10:00"}
+	add("map place remind before only", gComp("map-1", gChange("place_a", place("Wieliczka", timed), place("Wieliczka", gMerge(timed, kv("remindBefore", 60))))))
+	add("map place time and date changed", gComp("map-1", gChange("place_a", place("Wieliczka", gMerge(kv("time", "10:00"), kv("date", "2026-07-04"))), place("Wieliczka", gMerge(kv("time", "11:30"), kv("date", "2026-07-05"))))))
+	add("map place new already listed", gComp("map-1", gChange("place_listed", nil, place("Wieliczka", nil))))
+	add("map place deleted", gComp("map-1", gChange("place_a", place("Wieliczka", nil), "")))
+	s1 := map[string]any{"mode": "train", "line": "S1"}
+	add("map leg new foot", gComp("map-1", gChange("leg_a__b", nil, leg(kv("mode", "foot")))))
+	add("map leg new car", gComp("map-1", gChange("leg_a__b", nil, leg(kv("mode", "car")))))
+	add("map leg new train with line", gComp("map-1", gChange("leg_a__b", nil, leg(s1))))
+	add("map leg new bus with line", gComp("map-1", gChange("leg_a__b", nil, leg(map[string]any{"mode": "bus", "line": "304"}))))
+	add("map leg new bus without line", gComp("map-1", gChange("leg_a__b", nil, leg(kv("mode", "bus")))))
+	add("map leg mode changed", gComp("map-1", gChange("leg_a__b", leg(kv("mode", "car")), leg(map[string]any{"mode": "bus", "line": "304"}))))
+	add("map leg line changed", gComp("map-1", gChange("leg_a__b", leg(s1), leg(map[string]any{"mode": "train", "line": "S2"}))))
+	add("map leg departure changed", gComp("map-1", gChange("leg_a__b", leg(gMerge(s1, kv("departure", "08:15"))), leg(gMerge(s1, kv("departure", "08:45"))))))
+	add("map leg arrival only changed", gComp("map-1", gChange("leg_a__b", leg(gMerge(s1, kv("arrival", "09:40"))), leg(gMerge(s1, kv("arrival", "09:55"))))))
+	add("map leg note only changed", gComp("map-1", gChange("leg_a__b", leg(s1), leg(gMerge(s1, kv("description", "Platform 2"))))))
 
 	// components without a rule
 	add("text component", gComp("text-1", gChange("content", "a", "b")))

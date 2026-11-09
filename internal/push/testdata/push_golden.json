@@ -76,6 +76,14 @@
             "componentGroupId": "",
             "applicationId": "",
             "name": "Map",
+            "data": {
+              "markers": [
+                {
+                  "id": "listed",
+                  "title": "Wieliczka"
+                }
+              ]
+            },
             "index": 0
           },
           {
@@ -3643,6 +3651,1351 @@
                 "newValue": {
                   "lat": 1.5,
                   "lng": 2.5
+                },
+                "oldValue": null
+              }
+            },
+            "componentId": "map-1"
+          },
+          "id": "evt-1",
+          "type": "component_data_changed"
+        }
+      }
+    },
+    "map leg arrival only changed": {
+      "deliveries": "none",
+      "input": {
+        "agent": false,
+        "creatorName": "Ann",
+        "event": {
+          "creatorPublicKey": "creator-pk",
+          "data": {
+            "applicationId": "app-1",
+            "changedFields": {
+              "leg_a__b": {
+                "newValue": {
+                  "arrival": "09:55",
+                  "line": "S1",
+                  "mode": "train",
+                  "v": 2
+                },
+                "oldValue": {
+                  "arrival": "09:40",
+                  "line": "S1",
+                  "mode": "train",
+                  "v": 2
+                }
+              }
+            },
+            "componentId": "map-1"
+          },
+          "id": "evt-1",
+          "type": "component_data_changed"
+        }
+      }
+    },
+    "map leg departure changed": {
+      "deliveries": [
+        {
+          "subscription": "sub-de-other-muted",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: 🚆 S1",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|map-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "3P7X0IiYcy-_KB06MZP9giXTJcm2hXd1"
+        },
+        {
+          "subscription": "sub-en",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: 🚆 S1",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|map-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "3P7X0IiYcy-_KB06MZP9giXTJcm2hXd1"
+        },
+        {
+          "subscription": "sub-pl",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: 🚆 S1",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|map-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "3P7X0IiYcy-_KB06MZP9giXTJcm2hXd1"
+        }
+      ],
+      "input": {
+        "agent": false,
+        "creatorName": "Ann",
+        "event": {
+          "creatorPublicKey": "creator-pk",
+          "data": {
+            "applicationId": "app-1",
+            "changedFields": {
+              "leg_a__b": {
+                "newValue": {
+                  "departure": "08:45",
+                  "line": "S1",
+                  "mode": "train",
+                  "v": 2
+                },
+                "oldValue": {
+                  "departure": "08:15",
+                  "line": "S1",
+                  "mode": "train",
+                  "v": 2
+                }
+              }
+            },
+            "componentId": "map-1"
+          },
+          "id": "evt-1",
+          "type": "component_data_changed"
+        }
+      }
+    },
+    "map leg line changed": {
+      "deliveries": [
+        {
+          "subscription": "sub-de-other-muted",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: 🚆 S2",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|map-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "3P7X0IiYcy-_KB06MZP9giXTJcm2hXd1"
+        },
+        {
+          "subscription": "sub-en",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: 🚆 S2",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|map-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "3P7X0IiYcy-_KB06MZP9giXTJcm2hXd1"
+        },
+        {
+          "subscription": "sub-pl",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: 🚆 S2",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|map-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "3P7X0IiYcy-_KB06MZP9giXTJcm2hXd1"
+        }
+      ],
+      "input": {
+        "agent": false,
+        "creatorName": "Ann",
+        "event": {
+          "creatorPublicKey": "creator-pk",
+          "data": {
+            "applicationId": "app-1",
+            "changedFields": {
+              "leg_a__b": {
+                "newValue": {
+                  "line": "S2",
+                  "mode": "train",
+                  "v": 2
+                },
+                "oldValue": {
+                  "line": "S1",
+                  "mode": "train",
+                  "v": 2
+                }
+              }
+            },
+            "componentId": "map-1"
+          },
+          "id": "evt-1",
+          "type": "component_data_changed"
+        }
+      }
+    },
+    "map leg mode changed": {
+      "deliveries": [
+        {
+          "subscription": "sub-de-other-muted",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: 🚌 304",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|map-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "3P7X0IiYcy-_KB06MZP9giXTJcm2hXd1"
+        },
+        {
+          "subscription": "sub-en",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: 🚌 304",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|map-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "3P7X0IiYcy-_KB06MZP9giXTJcm2hXd1"
+        },
+        {
+          "subscription": "sub-pl",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: 🚌 304",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|map-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "3P7X0IiYcy-_KB06MZP9giXTJcm2hXd1"
+        }
+      ],
+      "input": {
+        "agent": false,
+        "creatorName": "Ann",
+        "event": {
+          "creatorPublicKey": "creator-pk",
+          "data": {
+            "applicationId": "app-1",
+            "changedFields": {
+              "leg_a__b": {
+                "newValue": {
+                  "line": "304",
+                  "mode": "bus",
+                  "v": 2
+                },
+                "oldValue": {
+                  "mode": "car",
+                  "v": 2
+                }
+              }
+            },
+            "componentId": "map-1"
+          },
+          "id": "evt-1",
+          "type": "component_data_changed"
+        }
+      }
+    },
+    "map leg new bus with line": {
+      "deliveries": [
+        {
+          "subscription": "sub-de-other-muted",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: 🚌 304",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|map-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "3P7X0IiYcy-_KB06MZP9giXTJcm2hXd1"
+        },
+        {
+          "subscription": "sub-en",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: 🚌 304",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|map-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "3P7X0IiYcy-_KB06MZP9giXTJcm2hXd1"
+        },
+        {
+          "subscription": "sub-pl",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: 🚌 304",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|map-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "3P7X0IiYcy-_KB06MZP9giXTJcm2hXd1"
+        }
+      ],
+      "input": {
+        "agent": false,
+        "creatorName": "Ann",
+        "event": {
+          "creatorPublicKey": "creator-pk",
+          "data": {
+            "applicationId": "app-1",
+            "changedFields": {
+              "leg_a__b": {
+                "newValue": {
+                  "line": "304",
+                  "mode": "bus",
+                  "v": 2
+                },
+                "oldValue": null
+              }
+            },
+            "componentId": "map-1"
+          },
+          "id": "evt-1",
+          "type": "component_data_changed"
+        }
+      }
+    },
+    "map leg new bus without line": {
+      "deliveries": [
+        {
+          "subscription": "sub-de-other-muted",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: ↪ bus",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|map-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "3P7X0IiYcy-_KB06MZP9giXTJcm2hXd1"
+        },
+        {
+          "subscription": "sub-en",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: ↪ bus",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|map-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "3P7X0IiYcy-_KB06MZP9giXTJcm2hXd1"
+        },
+        {
+          "subscription": "sub-pl",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: ↪ bus",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|map-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "3P7X0IiYcy-_KB06MZP9giXTJcm2hXd1"
+        }
+      ],
+      "input": {
+        "agent": false,
+        "creatorName": "Ann",
+        "event": {
+          "creatorPublicKey": "creator-pk",
+          "data": {
+            "applicationId": "app-1",
+            "changedFields": {
+              "leg_a__b": {
+                "newValue": {
+                  "mode": "bus",
+                  "v": 2
+                },
+                "oldValue": null
+              }
+            },
+            "componentId": "map-1"
+          },
+          "id": "evt-1",
+          "type": "component_data_changed"
+        }
+      }
+    },
+    "map leg new car": {
+      "deliveries": [
+        {
+          "subscription": "sub-de-other-muted",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: ↪ car",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|map-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "3P7X0IiYcy-_KB06MZP9giXTJcm2hXd1"
+        },
+        {
+          "subscription": "sub-en",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: ↪ car",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|map-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "3P7X0IiYcy-_KB06MZP9giXTJcm2hXd1"
+        },
+        {
+          "subscription": "sub-pl",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: ↪ car",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|map-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "3P7X0IiYcy-_KB06MZP9giXTJcm2hXd1"
+        }
+      ],
+      "input": {
+        "agent": false,
+        "creatorName": "Ann",
+        "event": {
+          "creatorPublicKey": "creator-pk",
+          "data": {
+            "applicationId": "app-1",
+            "changedFields": {
+              "leg_a__b": {
+                "newValue": {
+                  "mode": "car",
+                  "v": 2
+                },
+                "oldValue": null
+              }
+            },
+            "componentId": "map-1"
+          },
+          "id": "evt-1",
+          "type": "component_data_changed"
+        }
+      }
+    },
+    "map leg new foot": {
+      "deliveries": [
+        {
+          "subscription": "sub-de-other-muted",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: ↪ foot",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|map-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "3P7X0IiYcy-_KB06MZP9giXTJcm2hXd1"
+        },
+        {
+          "subscription": "sub-en",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: ↪ foot",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|map-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "3P7X0IiYcy-_KB06MZP9giXTJcm2hXd1"
+        },
+        {
+          "subscription": "sub-pl",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: ↪ foot",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|map-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "3P7X0IiYcy-_KB06MZP9giXTJcm2hXd1"
+        }
+      ],
+      "input": {
+        "agent": false,
+        "creatorName": "Ann",
+        "event": {
+          "creatorPublicKey": "creator-pk",
+          "data": {
+            "applicationId": "app-1",
+            "changedFields": {
+              "leg_a__b": {
+                "newValue": {
+                  "mode": "foot",
+                  "v": 2
+                },
+                "oldValue": null
+              }
+            },
+            "componentId": "map-1"
+          },
+          "id": "evt-1",
+          "type": "component_data_changed"
+        }
+      }
+    },
+    "map leg new train with line": {
+      "deliveries": [
+        {
+          "subscription": "sub-de-other-muted",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: 🚆 S1",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|map-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "3P7X0IiYcy-_KB06MZP9giXTJcm2hXd1"
+        },
+        {
+          "subscription": "sub-en",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: 🚆 S1",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|map-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "3P7X0IiYcy-_KB06MZP9giXTJcm2hXd1"
+        },
+        {
+          "subscription": "sub-pl",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: 🚆 S1",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|map-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "3P7X0IiYcy-_KB06MZP9giXTJcm2hXd1"
+        }
+      ],
+      "input": {
+        "agent": false,
+        "creatorName": "Ann",
+        "event": {
+          "creatorPublicKey": "creator-pk",
+          "data": {
+            "applicationId": "app-1",
+            "changedFields": {
+              "leg_a__b": {
+                "newValue": {
+                  "line": "S1",
+                  "mode": "train",
+                  "v": 2
+                },
+                "oldValue": null
+              }
+            },
+            "componentId": "map-1"
+          },
+          "id": "evt-1",
+          "type": "component_data_changed"
+        }
+      }
+    },
+    "map leg note only changed": {
+      "deliveries": "none",
+      "input": {
+        "agent": false,
+        "creatorName": "Ann",
+        "event": {
+          "creatorPublicKey": "creator-pk",
+          "data": {
+            "applicationId": "app-1",
+            "changedFields": {
+              "leg_a__b": {
+                "newValue": {
+                  "description": "Platform 2",
+                  "line": "S1",
+                  "mode": "train",
+                  "v": 2
+                },
+                "oldValue": {
+                  "line": "S1",
+                  "mode": "train",
+                  "v": 2
+                }
+              }
+            },
+            "componentId": "map-1"
+          },
+          "id": "evt-1",
+          "type": "component_data_changed"
+        }
+      }
+    },
+    "map place date changed": {
+      "deliveries": [
+        {
+          "subscription": "sub-de-other-muted",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: 📅 Wieliczka",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|map-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "3P7X0IiYcy-_KB06MZP9giXTJcm2hXd1"
+        },
+        {
+          "subscription": "sub-en",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: 📅 Wieliczka",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|map-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "3P7X0IiYcy-_KB06MZP9giXTJcm2hXd1"
+        },
+        {
+          "subscription": "sub-pl",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: 📅 Wieliczka",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|map-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "3P7X0IiYcy-_KB06MZP9giXTJcm2hXd1"
+        }
+      ],
+      "input": {
+        "agent": false,
+        "creatorName": "Ann",
+        "event": {
+          "creatorPublicKey": "creator-pk",
+          "data": {
+            "applicationId": "app-1",
+            "changedFields": {
+              "place_a": {
+                "newValue": {
+                  "date": "2026-07-05",
+                  "latitude": 50.06,
+                  "longitude": 20.05,
+                  "order": 1,
+                  "title": "Wieliczka",
+                  "v": 2
+                },
+                "oldValue": {
+                  "date": "2026-07-04",
+                  "latitude": 50.06,
+                  "longitude": 20.05,
+                  "order": 1,
+                  "title": "Wieliczka",
+                  "v": 2
+                }
+              }
+            },
+            "componentId": "map-1"
+          },
+          "id": "evt-1",
+          "type": "component_data_changed"
+        }
+      }
+    },
+    "map place deleted": {
+      "deliveries": "none",
+      "input": {
+        "agent": false,
+        "creatorName": "Ann",
+        "event": {
+          "creatorPublicKey": "creator-pk",
+          "data": {
+            "applicationId": "app-1",
+            "changedFields": {
+              "place_a": {
+                "newValue": "",
+                "oldValue": {
+                  "latitude": 50.06,
+                  "longitude": 20.05,
+                  "order": 1,
+                  "title": "Wieliczka",
+                  "v": 2
+                }
+              }
+            },
+            "componentId": "map-1"
+          },
+          "id": "evt-1",
+          "type": "component_data_changed"
+        }
+      }
+    },
+    "map place new": {
+      "deliveries": [
+        {
+          "subscription": "sub-de-other-muted",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: + Wieliczka",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|map-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "3P7X0IiYcy-_KB06MZP9giXTJcm2hXd1"
+        },
+        {
+          "subscription": "sub-en",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: + Wieliczka",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|map-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "3P7X0IiYcy-_KB06MZP9giXTJcm2hXd1"
+        },
+        {
+          "subscription": "sub-pl",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: + Wieliczka",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|map-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "3P7X0IiYcy-_KB06MZP9giXTJcm2hXd1"
+        }
+      ],
+      "input": {
+        "agent": false,
+        "creatorName": "Ann",
+        "event": {
+          "creatorPublicKey": "creator-pk",
+          "data": {
+            "applicationId": "app-1",
+            "changedFields": {
+              "place_a": {
+                "newValue": {
+                  "latitude": 50.06,
+                  "longitude": 20.05,
+                  "order": 1,
+                  "title": "Wieliczka",
+                  "v": 2
+                },
+                "oldValue": null
+              }
+            },
+            "componentId": "map-1"
+          },
+          "id": "evt-1",
+          "type": "component_data_changed"
+        }
+      }
+    },
+    "map place new already listed": {
+      "deliveries": "none",
+      "input": {
+        "agent": false,
+        "creatorName": "Ann",
+        "event": {
+          "creatorPublicKey": "creator-pk",
+          "data": {
+            "applicationId": "app-1",
+            "changedFields": {
+              "place_listed": {
+                "newValue": {
+                  "latitude": 50.06,
+                  "longitude": 20.05,
+                  "order": 1,
+                  "title": "Wieliczka",
+                  "v": 2
+                },
+                "oldValue": null
+              }
+            },
+            "componentId": "map-1"
+          },
+          "id": "evt-1",
+          "type": "component_data_changed"
+        }
+      }
+    },
+    "map place new by agent": {
+      "deliveries": [
+        {
+          "subscription": "sub-de-other-muted",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann (agent): + Wieliczka",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|map-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "3P7X0IiYcy-_KB06MZP9giXTJcm2hXd1"
+        },
+        {
+          "subscription": "sub-en",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann (agent): + Wieliczka",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|map-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "3P7X0IiYcy-_KB06MZP9giXTJcm2hXd1"
+        },
+        {
+          "subscription": "sub-pl",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann (agent): + Wieliczka",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|map-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "3P7X0IiYcy-_KB06MZP9giXTJcm2hXd1"
+        }
+      ],
+      "input": {
+        "agent": true,
+        "creatorName": "Ann",
+        "event": {
+          "creatorPublicKey": "creator-pk",
+          "data": {
+            "applicationId": "app-1",
+            "changedFields": {
+              "place_a": {
+                "newValue": {
+                  "latitude": 50.06,
+                  "longitude": 20.05,
+                  "order": 1,
+                  "title": "Wieliczka",
+                  "v": 2
+                },
+                "oldValue": null
+              }
+            },
+            "componentId": "map-1"
+          },
+          "id": "evt-1",
+          "type": "component_data_changed"
+        }
+      }
+    },
+    "map place note only": {
+      "deliveries": "none",
+      "input": {
+        "agent": false,
+        "creatorName": "Ann",
+        "event": {
+          "creatorPublicKey": "creator-pk",
+          "data": {
+            "applicationId": "app-1",
+            "changedFields": {
+              "place_a": {
+                "newValue": {
+                  "description": "Book tickets",
+                  "latitude": 50.06,
+                  "longitude": 20.05,
+                  "order": 1,
+                  "title": "Wieliczka",
+                  "v": 2
+                },
+                "oldValue": {
+                  "latitude": 50.06,
+                  "longitude": 20.05,
+                  "order": 1,
+                  "title": "Wieliczka",
+                  "v": 2
+                }
+              }
+            },
+            "componentId": "map-1"
+          },
+          "id": "evt-1",
+          "type": "component_data_changed"
+        }
+      }
+    },
+    "map place remind before only": {
+      "deliveries": "none",
+      "input": {
+        "agent": false,
+        "creatorName": "Ann",
+        "event": {
+          "creatorPublicKey": "creator-pk",
+          "data": {
+            "applicationId": "app-1",
+            "changedFields": {
+              "place_a": {
+                "newValue": {
+                  "date": "2026-07-04",
+                  "latitude": 50.06,
+                  "longitude": 20.05,
+                  "order": 1,
+                  "remindBefore": 60,
+                  "time": "10:00",
+                  "title": "Wieliczka",
+                  "v": 2
+                },
+                "oldValue": {
+                  "date": "2026-07-04",
+                  "latitude": 50.06,
+                  "longitude": 20.05,
+                  "order": 1,
+                  "time": "10:00",
+                  "title": "Wieliczka",
+                  "v": 2
+                }
+              }
+            },
+            "componentId": "map-1"
+          },
+          "id": "evt-1",
+          "type": "component_data_changed"
+        }
+      }
+    },
+    "map place reordered": {
+      "deliveries": "none",
+      "input": {
+        "agent": false,
+        "creatorName": "Ann",
+        "event": {
+          "creatorPublicKey": "creator-pk",
+          "data": {
+            "applicationId": "app-1",
+            "changedFields": {
+              "place_a": {
+                "newValue": {
+                  "latitude": 50.06,
+                  "longitude": 20.05,
+                  "order": 2,
+                  "title": "Wieliczka",
+                  "v": 2
+                },
+                "oldValue": {
+                  "latitude": 50.06,
+                  "longitude": 20.05,
+                  "order": 1,
+                  "title": "Wieliczka",
+                  "v": 2
+                }
+              }
+            },
+            "componentId": "map-1"
+          },
+          "id": "evt-1",
+          "type": "component_data_changed"
+        }
+      }
+    },
+    "map place time and date changed": {
+      "deliveries": [
+        {
+          "subscription": "sub-de-other-muted",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: 🕒 Wieliczka",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|map-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "3P7X0IiYcy-_KB06MZP9giXTJcm2hXd1"
+        },
+        {
+          "subscription": "sub-en",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: 🕒 Wieliczka",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|map-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "3P7X0IiYcy-_KB06MZP9giXTJcm2hXd1"
+        },
+        {
+          "subscription": "sub-pl",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: 🕒 Wieliczka",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|map-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "3P7X0IiYcy-_KB06MZP9giXTJcm2hXd1"
+        }
+      ],
+      "input": {
+        "agent": false,
+        "creatorName": "Ann",
+        "event": {
+          "creatorPublicKey": "creator-pk",
+          "data": {
+            "applicationId": "app-1",
+            "changedFields": {
+              "place_a": {
+                "newValue": {
+                  "date": "2026-07-05",
+                  "latitude": 50.06,
+                  "longitude": 20.05,
+                  "order": 1,
+                  "time": "11:30",
+                  "title": "Wieliczka",
+                  "v": 2
+                },
+                "oldValue": {
+                  "date": "2026-07-04",
+                  "latitude": 50.06,
+                  "longitude": 20.05,
+                  "order": 1,
+                  "time": "10:00",
+                  "title": "Wieliczka",
+                  "v": 2
+                }
+              }
+            },
+            "componentId": "map-1"
+          },
+          "id": "evt-1",
+          "type": "component_data_changed"
+        }
+      }
+    },
+    "map place time changed": {
+      "deliveries": [
+        {
+          "subscription": "sub-de-other-muted",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: 🕒 Wieliczka",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|map-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "3P7X0IiYcy-_KB06MZP9giXTJcm2hXd1"
+        },
+        {
+          "subscription": "sub-en",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: 🕒 Wieliczka",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|map-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "3P7X0IiYcy-_KB06MZP9giXTJcm2hXd1"
+        },
+        {
+          "subscription": "sub-pl",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: 🕒 Wieliczka",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|map-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "3P7X0IiYcy-_KB06MZP9giXTJcm2hXd1"
+        }
+      ],
+      "input": {
+        "agent": false,
+        "creatorName": "Ann",
+        "event": {
+          "creatorPublicKey": "creator-pk",
+          "data": {
+            "applicationId": "app-1",
+            "changedFields": {
+              "place_a": {
+                "newValue": {
+                  "latitude": 50.06,
+                  "longitude": 20.05,
+                  "order": 1,
+                  "time": "11:30",
+                  "title": "Wieliczka",
+                  "v": 2
+                },
+                "oldValue": {
+                  "latitude": 50.06,
+                  "longitude": 20.05,
+                  "order": 1,
+                  "time": "10:00",
+                  "title": "Wieliczka",
+                  "v": 2
+                }
+              }
+            },
+            "componentId": "map-1"
+          },
+          "id": "evt-1",
+          "type": "component_data_changed"
+        }
+      }
+    },
+    "map three places new": {
+      "deliveries": [
+        {
+          "subscription": "sub-de-other-muted",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: + Wieliczka, Krakow and 1 more",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|map-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "3P7X0IiYcy-_KB06MZP9giXTJcm2hXd1"
+        },
+        {
+          "subscription": "sub-en",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: + Wieliczka, Krakow and 1 more",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|map-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "3P7X0IiYcy-_KB06MZP9giXTJcm2hXd1"
+        },
+        {
+          "subscription": "sub-pl",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: + Wieliczka, Krakow i jeszcze 1",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|map-1",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "3P7X0IiYcy-_KB06MZP9giXTJcm2hXd1"
+        }
+      ],
+      "input": {
+        "agent": false,
+        "creatorName": "Ann",
+        "event": {
+          "creatorPublicKey": "creator-pk",
+          "data": {
+            "applicationId": "app-1",
+            "changedFields": {
+              "place_a": {
+                "newValue": {
+                  "latitude": 50.06,
+                  "longitude": 20.05,
+                  "order": 1,
+                  "title": "Wieliczka",
+                  "v": 2
+                },
+                "oldValue": null
+              },
+              "place_b": {
+                "newValue": {
+                  "latitude": 50.06,
+                  "longitude": 20.05,
+                  "order": 1,
+                  "title": "Krakow",
+                  "v": 2
+                },
+                "oldValue": null
+              },
+              "place_c": {
+                "newValue": {
+                  "latitude": 50.06,
+                  "longitude": 20.05,
+                  "order": 1,
+                  "title": "Zakopane",
+                  "v": 2
                 },
                 "oldValue": null
               }
