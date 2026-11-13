@@ -128,7 +128,7 @@ type WebpushSender interface {
 type PushRepository interface {
 	UpsertSpaceVapid(v *SpaceVapid) error
 	GetSpaceVapid() (*SpaceVapid, error)
-	CreateSubscription(s *Subscription) error
+	CreateSubscription(s *Subscription) (string, error)
 	// UpsertWSSubscription registers the device's single ws subscription and returns its id;
 	// registering again keeps the existing row and id.
 	UpsertWSSubscription(s *Subscription) (string, error)

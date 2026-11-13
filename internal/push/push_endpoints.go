@@ -117,10 +117,14 @@ func (pe *PushEndpoints) CreateSubscription(ctx *fasthttp.RequestCtx) {
 			return
 		}
 		sub.ID = id
-	} else if err := pe.repo.CreateSubscription(sub); err != nil {
-		log.Error().Err(err).Msg("[PUSH] Failed to create subscription")
-		ctx.Error("Failed to create subscription", fasthttp.StatusInternalServerError)
-		return
+	} else {
+		id, err := pe.repo.CreateSubscription(sub)
+		if err != nil {
+			log.Error().Err(err).Msg("[PUSH] Failed to create subscription")
+			ctx.Error("Failed to create subscription", fasthttp.StatusInternalServerError)
+			return
+		}
+		sub.ID = id
 	}
 
 	log.Debug().Str("subscriptionId", sub.ID).Str("devicePublicKey", authenticatedUser.DevicePublicKey).Msg("[PUSH] Subscription created")
