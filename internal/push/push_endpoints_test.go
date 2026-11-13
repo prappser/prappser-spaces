@@ -96,6 +96,25 @@ func TestCreateSubscription_ShouldReturn201WithMutedApplicationIDs(t *testing.T)
 	assert.Equal(t, []string{"app-x"}, repo.subscriptions[id].MutedApplicationIDs)
 }
 
+func TestCreateSubscription_ShouldReturnIDOfExistingRowForRepeatEndpoint(t *testing.T) {
+	// given: the endpoint is already registered under a stored id
+	ep, repo := newTestEndpoints()
+	repo.subscriptions["existing-id"] = &Subscription{ID: "existing-id", Endpoint: "https://push.example.com/repeat"}
+	body := `{"endpoint":"https://push.example.com/repeat","p256dh":"p256","auth":"auth123"}`
+	ctx := newTestRequestCtx("POST", body)
+	setAuthUser(ctx, testUser("user-pk-1"))
+
+	// when
+	ep.CreateSubscription(ctx)
+
+	// then: the body carries the repo's id, not the freshly generated uuid
+	assert.Equal(t, fasthttp.StatusCreated, ctx.Response.StatusCode())
+	var resp map[string]string
+	assert.NoError(t, json.Unmarshal(ctx.Response.Body(), &resp))
+	assert.Equal(t, "existing-id", resp["id"])
+	assert.Len(t, repo.subscriptions, 1)
+}
+
 func TestCreateSubscription_ShouldDefaultMutedApplicationIDsToEmptySlice(t *testing.T) {
 	// given
 	ep, repo := newTestEndpoints()
