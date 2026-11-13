@@ -218,6 +218,117 @@ func TestPushRepository_CreateSubscription_ShouldTakeOverExistingRowOnSameEndpoi
 	assert.Equal(t, 0, subs[0].FailureCount)
 }
 
+func addAccount(t *testing.T, db *sql.DB, key string) {
+	t.Helper()
+	now := time.Now().Unix()
+	if _, err := db.Exec(
+		"INSERT INTO users (public_key, username, role, created_at) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING",
+		key, key, "user", now,
+	); err != nil {
+		t.Fatalf("Failed to insert account %s: %v", key, err)
+	}
+	if _, err := db.Exec(
+		"INSERT INTO user_devices (device_public_key, user_public_key, created_at) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING",
+		key, key, now,
+	); err != nil {
+		t.Fatalf("Failed to insert device %s: %v", key, err)
+	}
+}
+
+func addPendingDigest(t *testing.T, db *sql.DB, subID string) {
+	t.Helper()
+	if _, err := db.Exec(
+		`INSERT INTO push_digest_pending (subscription_id, application_id, count, last_at) VALUES ($1,'app-1',2,$2)`,
+		subID, time.Now().Unix(),
+	); err != nil {
+		t.Fatalf("Failed to insert pending digest: %v", err)
+	}
+}
+
+func pendingDigestCount(t *testing.T, db *sql.DB, subID string) int {
+	t.Helper()
+	var n int
+	assert.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM push_digest_pending WHERE subscription_id = $1`, subID).Scan(&n))
+	return n
+}
+
+func TestPushRepository_CreateSubscription_ShouldTakeOverFromOtherAccountAndDropOldPendingDigest_Integration(t *testing.T) {
+	// given: account 1 owns the endpoint and has pending digest rows
+	db := getTestDB(t)
+	defer db.Close()
+	repo := NewPushRepository(db)
+	addAccount(t, db, "test-user-other")
+	endpoint := "https://push.example.com/takeover-account"
+	firstID := createSub(t, repo, &Subscription{ID: "sub-ta-1", DevicePublicKey: "test-user-1", Endpoint: endpoint, P256dh: "p", Auth: "a", CreatedAt: time.Now().Unix()})
+	addPendingDigest(t, db, firstID)
+
+	// when: another account registers the same endpoint
+	secondID := createSub(t, repo, &Subscription{ID: "sub-ta-2", DevicePublicKey: "test-user-other", Endpoint: endpoint, P256dh: "p2", Auth: "a2", CreatedAt: time.Now().Unix()})
+
+	// then: one row owned by the new device, old owner's pending digest gone
+	assert.Equal(t, firstID, secondID)
+	var count int
+	var owner string
+	assert.NoError(t, db.QueryRow(`SELECT COUNT(*), MIN(device_public_key) FROM push_subscriptions WHERE endpoint = $1`, endpoint).Scan(&count, &owner))
+	assert.Equal(t, 1, count)
+	assert.Equal(t, "test-user-other", owner)
+	assert.Equal(t, 0, pendingDigestCount(t, db, firstID))
+}
+
+func TestPushRepository_CreateSubscription_ShouldKeepPendingDigestWhenSameDeviceReregisters_Integration(t *testing.T) {
+	// given
+	db := getTestDB(t)
+	defer db.Close()
+	repo := NewPushRepository(db)
+	endpoint := "https://push.example.com/reregister"
+	id := createSub(t, repo, &Subscription{ID: "sub-rr-1", DevicePublicKey: "test-user-1", Endpoint: endpoint, P256dh: "p", Auth: "a", CreatedAt: time.Now().Unix()})
+	addPendingDigest(t, db, id)
+
+	// when
+	again := createSub(t, repo, &Subscription{ID: "sub-rr-2", DevicePublicKey: "test-user-1", Endpoint: endpoint, P256dh: "p2", Auth: "a2", CreatedAt: time.Now().Unix()})
+
+	// then
+	assert.Equal(t, id, again)
+	assert.Equal(t, 1, pendingDigestCount(t, db, id))
+}
+
+func TestPushRepository_CreateSubscription_ShouldKeepDifferentEndpointsOfOneAccountSeparate_Integration(t *testing.T) {
+	// given
+	db := getTestDB(t)
+	defer db.Close()
+	repo := NewPushRepository(db)
+	now := time.Now().Unix()
+
+	// when
+	a := createSub(t, repo, &Subscription{ID: "sub-two-a", DevicePublicKey: "test-user-1", Endpoint: "https://push.example.com/two-a", P256dh: "p", Auth: "a", CreatedAt: now})
+	b := createSub(t, repo, &Subscription{ID: "sub-two-b", DevicePublicKey: "test-user-1", Endpoint: "https://push.example.com/two-b", P256dh: "p", Auth: "a", CreatedAt: now})
+
+	// then
+	assert.NotEqual(t, a, b)
+	var count int
+	assert.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM push_subscriptions WHERE endpoint LIKE 'https://push.example.com/two-%'`).Scan(&count))
+	assert.Equal(t, 2, count)
+}
+
+func TestPushRepository_CreateSubscription_ShouldPreserveLastSuccessAtOnTakeover_Integration(t *testing.T) {
+	// given
+	db := getTestDB(t)
+	defer db.Close()
+	repo := NewPushRepository(db)
+	addAccount(t, db, "test-user-other")
+	endpoint := "https://push.example.com/last-success"
+	id := createSub(t, repo, &Subscription{ID: "sub-ls-1", DevicePublicKey: "test-user-1", Endpoint: endpoint, P256dh: "p", Auth: "a", CreatedAt: time.Now().Unix()})
+	assert.NoError(t, repo.MarkSuccess(id, 1234))
+
+	// when
+	createSub(t, repo, &Subscription{ID: "sub-ls-2", DevicePublicKey: "test-user-other", Endpoint: endpoint, P256dh: "p2", Auth: "a2", CreatedAt: time.Now().Unix()})
+
+	// then
+	var last int64
+	assert.NoError(t, db.QueryRow(`SELECT last_success_at FROM push_subscriptions WHERE id = $1`, id).Scan(&last))
+	assert.Equal(t, int64(1234), last)
+}
+
 func TestPushRepository_UpdateSubscription_Integration(t *testing.T) {
 	// given
 	db := getTestDB(t)

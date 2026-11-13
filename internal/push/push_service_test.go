@@ -72,6 +72,11 @@ func (m *mockPushRepository) GetSpaceVapid() (*SpaceVapid, error) {
 func (m *mockPushRepository) CreateSubscription(s *Subscription) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	for id, existing := range m.subscriptions {
+		if existing.Transport != TransportWS && existing.Endpoint == s.Endpoint {
+			return id, nil
+		}
+	}
 	m.subscriptions[s.ID] = s
 	return s.ID, nil
 }

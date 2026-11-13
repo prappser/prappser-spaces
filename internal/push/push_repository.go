@@ -59,10 +59,28 @@ func (r *pushRepository) GetSpaceVapid() (*SpaceVapid, error) {
 	return v, nil
 }
 
+// CreateSubscription: a repeat endpoint takes over the row, keeping its id and created_at and
+// resetting failure_count. s.ID only applies to fresh inserts; callers must use the returned id.
+// A changed owner's pending digest rows are dropped so they never reach the new device.
 func (r *pushRepository) CreateSubscription(s *Subscription) (string, error) {
 	mutedJSON, err := json.Marshal(s.MutedApplicationIDs)
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal muted_application_ids: %w", err)
+	}
+
+	tx, err := r.db.Begin()
+	if err != nil {
+		return "", fmt.Errorf("failed to begin create subscription: %w", err)
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(`
+		DELETE FROM push_digest_pending
+		WHERE subscription_id IN (
+		  SELECT id FROM push_subscriptions
+		  WHERE endpoint = $1 AND transport = 'webpush' AND device_public_key <> $2
+		)`, s.Endpoint, s.DevicePublicKey); err != nil {
+		return "", fmt.Errorf("failed to clear previous owner's digest: %w", err)
 	}
 
 	query := `
@@ -79,7 +97,7 @@ func (r *pushRepository) CreateSubscription(s *Subscription) (string, error) {
 		RETURNING id`
 
 	var id string
-	err = r.db.QueryRow(query,
+	err = tx.QueryRow(query,
 		s.ID,
 		s.DevicePublicKey,
 		transportOrDefault(s.Transport),
@@ -94,6 +112,9 @@ func (r *pushRepository) CreateSubscription(s *Subscription) (string, error) {
 	).Scan(&id)
 	if err != nil {
 		return "", fmt.Errorf("failed to create subscription: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return "", fmt.Errorf("failed to commit create subscription: %w", err)
 	}
 	return id, nil
 }
