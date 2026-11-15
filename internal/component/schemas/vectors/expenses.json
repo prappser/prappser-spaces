@@ -1,13 +1,15 @@
 {
-  "schema": "https://prappser.app/schemas/component/expenses.v1.schema.json",
+  "schema": "https://prappser.app/schemas/component/expenses.v2.schema.json",
   "cases": [
     {
       "name": "empty data",
+      "schema": "https://prappser.app/schemas/component/expenses.v1.schema.json",
       "data": {},
       "valid": true
     },
     {
       "name": "created",
+      "schema": "https://prappser.app/schemas/component/expenses.v1.schema.json",
       "data": {
         "v": 1
       },
@@ -15,6 +17,7 @@
     },
     {
       "name": "full",
+      "schema": "https://prappser.app/schemas/component/expenses.v1.schema.json",
       "data": {
         "v": 1,
         "e_01234567-89ab-7def-8123-456789abcdef": "{\"what\":\"Dinner\",\"payer\":\"pk-alice\",\"amount\":4250}",
@@ -30,6 +33,7 @@
     },
     {
       "name": "deleted expense and settlement tombstones",
+      "schema": "https://prappser.app/schemas/component/expenses.v1.schema.json",
       "data": {
         "v": 1,
         "e_01234567-89ab-7def-8123-456789abcdef": "",
@@ -39,6 +43,7 @@
     },
     {
       "name": "version 2",
+      "schema": "https://prappser.app/schemas/component/expenses.v1.schema.json",
       "data": {
         "v": 2
       },
@@ -46,6 +51,7 @@
     },
     {
       "name": "expense key is not a uuid",
+      "schema": "https://prappser.app/schemas/component/expenses.v1.schema.json",
       "data": {
         "e_1": "{\"what\":\"Dinner\",\"payer\":\"pk-alice\",\"amount\":4250}"
       },
@@ -53,6 +59,7 @@
     },
     {
       "name": "settlement key is not a uuid",
+      "schema": "https://prappser.app/schemas/component/expenses.v1.schema.json",
       "data": {
         "s_1": "{\"from\":\"pk-bob\",\"to\":\"pk-alice\",\"amount\":1000}"
       },
@@ -60,6 +67,7 @@
     },
     {
       "name": "expense value is an object",
+      "schema": "https://prappser.app/schemas/component/expenses.v1.schema.json",
       "data": {
         "e_01234567-89ab-7def-8123-456789abcdef": {
           "what": "Dinner",
@@ -71,6 +79,7 @@
     },
     {
       "name": "settlement value is a number",
+      "schema": "https://prappser.app/schemas/component/expenses.v1.schema.json",
       "data": {
         "s_01234567-89ab-7def-8123-456789abcdef": 5
       },
@@ -78,6 +87,7 @@
     },
     {
       "name": "unknown top-level key",
+      "schema": "https://prappser.app/schemas/component/expenses.v1.schema.json",
       "data": {
         "expenses": []
       },
@@ -271,6 +281,388 @@
         "amount": 1000
       },
       "valid": false
+    },
+    {
+      "name": "v2 empty data",
+      "data": {},
+      "valid": true
+    },
+    {
+      "name": "v2 created",
+      "data": {
+        "v": 1
+      },
+      "valid": true
+    },
+    {
+      "name": "v2 expense and settlement keys",
+      "data": {
+        "e_01234567-89ab-7def-8123-456789abcdef": "{\"what\":\"Dinner\",\"payer\":\"pk-alice\",\"amount\":4250}",
+        "s_01234567-89ab-7def-8123-456789abcdef": "{\"from\":\"pk-bob\",\"to\":\"pk-alice\",\"amount\":1000}"
+      },
+      "valid": true
+    },
+    {
+      "name": "v2 expense and settlement tombstones",
+      "data": {
+        "e_01234567-89ab-7def-8123-456789abcdef": "",
+        "s_01234567-89ab-7def-8123-456789abcdef": ""
+      },
+      "valid": true
+    },
+    {
+      "name": "v2 expense value is an object",
+      "data": {
+        "e_01234567-89ab-7def-8123-456789abcdef": {
+          "what": "Dinner"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "v2 settlement key is not a uuid",
+      "data": {
+        "s_1": "{\"from\":\"a\",\"to\":\"b\",\"amount\":1}"
+      },
+      "valid": false
+    },
+    {
+      "name": "v2 expense minimal",
+      "schema": "https://prappser.app/schemas/component/expenses.v2.schema.json#/$defs/expense",
+      "data": {
+        "what": "Dinner",
+        "payer": "pk-alice",
+        "amount": 4250
+      },
+      "valid": true
+    },
+    {
+      "name": "v2 expense with v 2 and with",
+      "schema": "https://prappser.app/schemas/component/expenses.v2.schema.json#/$defs/expense",
+      "data": {
+        "v": 2,
+        "what": "Dinner",
+        "payer": "pk-alice",
+        "amount": 4250,
+        "with": [
+          "pk-alice",
+          "pk-bob"
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "v2 expense with v 1",
+      "schema": "https://prappser.app/schemas/component/expenses.v2.schema.json#/$defs/expense",
+      "data": {
+        "v": 1,
+        "what": "Dinner",
+        "payer": "pk-alice",
+        "amount": 4250
+      },
+      "valid": false
+    },
+    {
+      "name": "v2 expense unknown field",
+      "schema": "https://prappser.app/schemas/component/expenses.v2.schema.json#/$defs/expense",
+      "data": {
+        "what": "Dinner",
+        "payer": "pk-alice",
+        "amount": 4250,
+        "notify": [
+          "pk-bob"
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "v2 expense negative amount",
+      "schema": "https://prappser.app/schemas/component/expenses.v2.schema.json#/$defs/expense",
+      "data": {
+        "what": "Dinner",
+        "payer": "pk-alice",
+        "amount": -1
+      },
+      "valid": false
+    },
+    {
+      "name": "v2 expense missing payer",
+      "schema": "https://prappser.app/schemas/component/expenses.v2.schema.json#/$defs/expense",
+      "data": {
+        "what": "Dinner",
+        "amount": 1
+      },
+      "valid": false
+    },
+    {
+      "name": "v2 settlement valid",
+      "schema": "https://prappser.app/schemas/component/expenses.v2.schema.json#/$defs/settlement",
+      "data": {
+        "from": "pk-bob",
+        "to": "pk-alice",
+        "amount": 1000
+      },
+      "valid": true
+    },
+    {
+      "name": "v2 settlement with v 2",
+      "schema": "https://prappser.app/schemas/component/expenses.v2.schema.json#/$defs/settlement",
+      "data": {
+        "v": 2,
+        "from": "pk-bob",
+        "to": "pk-alice",
+        "amount": 1000
+      },
+      "valid": true
+    },
+    {
+      "name": "v2 settlement with v 1",
+      "schema": "https://prappser.app/schemas/component/expenses.v2.schema.json#/$defs/settlement",
+      "data": {
+        "v": 1,
+        "from": "pk-bob",
+        "to": "pk-alice",
+        "amount": 1000
+      },
+      "valid": false
+    },
+    {
+      "name": "v2 settlement unknown field",
+      "schema": "https://prappser.app/schemas/component/expenses.v2.schema.json#/$defs/settlement",
+      "data": {
+        "from": "pk-bob",
+        "to": "pk-alice",
+        "amount": 1000,
+        "by": "pk-bob"
+      },
+      "valid": false
+    },
+    {
+      "name": "v2 settlement zero amount",
+      "schema": "https://prappser.app/schemas/component/expenses.v2.schema.json#/$defs/settlement",
+      "data": {
+        "from": "pk-bob",
+        "to": "pk-alice",
+        "amount": 0
+      },
+      "valid": false
+    },
+    {
+      "name": "v2 settlement missing to",
+      "schema": "https://prappser.app/schemas/component/expenses.v2.schema.json#/$defs/settlement",
+      "data": {
+        "from": "pk-bob",
+        "amount": 1000
+      },
+      "valid": false
+    },
+    {
+      "name": "pay_ own value",
+      "data": {
+        "pay_pk-alice": [
+          {
+            "id": "m1",
+            "type": "blik",
+            "value": "600123456"
+          },
+          {
+            "id": "m2",
+            "type": "iban",
+            "value": "PL61109010140000071219812874",
+            "label": "Main account"
+          },
+          {
+            "id": "m3",
+            "type": "cash",
+            "value": ""
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "pay_ tombstone",
+      "data": {
+        "pay_pk-alice": ""
+      },
+      "valid": true
+    },
+    {
+      "name": "pay_ bad type",
+      "data": {
+        "pay_pk-alice": [
+          {
+            "id": "m1",
+            "type": "paypal",
+            "value": "a@b.c"
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "pay_ missing value",
+      "data": {
+        "pay_pk-alice": [
+          {
+            "id": "m1",
+            "type": "blik"
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "pay_ unknown field",
+      "data": {
+        "pay_pk-alice": [
+          {
+            "id": "m1",
+            "type": "blik",
+            "value": "1",
+            "extra": 1
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "pay_ value is an encoded string",
+      "data": {
+        "pay_pk-alice": "[{\"id\":\"m1\",\"type\":\"blik\",\"value\":\"1\"}]"
+      },
+      "valid": false
+    },
+    {
+      "name": "pay_ value is an object",
+      "data": {
+        "pay_pk-alice": {
+          "id": "m1"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "reminder key with value",
+      "data": {
+        "r_pk-alice__pk-bob": "{\"from\":\"pk-alice\",\"to\":\"pk-bob\",\"amount\":1000,\"at\":1767225600000}"
+      },
+      "valid": true
+    },
+    {
+      "name": "reminder tombstone",
+      "data": {
+        "r_pk-alice__pk-bob": ""
+      },
+      "valid": true
+    },
+    {
+      "name": "reminder value is an object",
+      "data": {
+        "r_pk-alice__pk-bob": {
+          "from": "pk-alice"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "reminder key has one party",
+      "data": {
+        "r_pk-alice": "{}"
+      },
+      "valid": false
+    },
+    {
+      "name": "reminder key with single underscore separator",
+      "data": {
+        "r_pk-alice_pk-bob": "{}"
+      },
+      "valid": false
+    },
+    {
+      "name": "reminder key with three parts",
+      "data": {
+        "r_a__b__c": "{}"
+      },
+      "valid": false
+    },
+    {
+      "name": "reminder valid",
+      "schema": "https://prappser.app/schemas/component/expenses.v2.schema.json#/$defs/reminder",
+      "data": {
+        "from": "pk-alice",
+        "to": "pk-bob",
+        "amount": 1000,
+        "at": 1767225600000
+      },
+      "valid": true
+    },
+    {
+      "name": "reminder with v 2",
+      "schema": "https://prappser.app/schemas/component/expenses.v2.schema.json#/$defs/reminder",
+      "data": {
+        "v": 2,
+        "from": "pk-alice",
+        "to": "pk-bob",
+        "amount": 1000,
+        "at": 1767225600000
+      },
+      "valid": true
+    },
+    {
+      "name": "reminder missing at",
+      "schema": "https://prappser.app/schemas/component/expenses.v2.schema.json#/$defs/reminder",
+      "data": {
+        "from": "pk-alice",
+        "to": "pk-bob",
+        "amount": 1000
+      },
+      "valid": false
+    },
+    {
+      "name": "reminder fractional at",
+      "schema": "https://prappser.app/schemas/component/expenses.v2.schema.json#/$defs/reminder",
+      "data": {
+        "from": "pk-alice",
+        "to": "pk-bob",
+        "amount": 1000,
+        "at": 1.5
+      },
+      "valid": false
+    },
+    {
+      "name": "reminder zero amount",
+      "schema": "https://prappser.app/schemas/component/expenses.v2.schema.json#/$defs/reminder",
+      "data": {
+        "from": "pk-alice",
+        "to": "pk-bob",
+        "amount": 0,
+        "at": 1
+      },
+      "valid": false
+    },
+    {
+      "name": "reminder unknown field",
+      "schema": "https://prappser.app/schemas/component/expenses.v2.schema.json#/$defs/reminder",
+      "data": {
+        "from": "pk-alice",
+        "to": "pk-bob",
+        "amount": 1000,
+        "at": 1,
+        "note": "x"
+      },
+      "valid": false
+    },
+    {
+      "name": "pay method valid",
+      "schema": "https://prappser.app/schemas/component/expenses.v2.schema.json#/$defs/payMethod",
+      "data": {
+        "id": "m1",
+        "type": "other",
+        "value": "ask me",
+        "label": "x"
+      },
+      "valid": true
     }
   ]
 }

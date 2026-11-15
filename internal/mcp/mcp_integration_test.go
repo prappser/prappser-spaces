@@ -906,25 +906,49 @@ func TestMCP_UpdateComponent_ShouldRejectMessageFromAnotherSender(t *testing.T) 
 	assert.Equal(t, 0, e.eventCount(appID))
 }
 
-func TestMCP_UpdateComponent_ShouldRejectOverwriteAndTombstoneOfSomeoneElsesSettlement(t *testing.T) {
+func TestMCP_UpdateComponent_ShouldRejectOverwriteAndTombstoneOfSettlementByNonParty(t *testing.T) {
 	// given
 	e := newEnv(t)
-	owner, a, b := e.account(), e.account(), e.account()
-	appID, compID := e.componentApp(owner, "Expenses", map[string]any{}, a, b)
+	owner, a, b, c := e.account(), e.account(), e.account(), e.account()
+	appID, compID := e.componentApp(owner, "Expenses", map[string]any{}, a, b, c)
 	sessionA, _ := e.connect(a)
-	sessionB, _ := e.connect(b)
+	sessionC, _ := e.connect(c)
 	recorded, recordedOut := update(t, sessionA, appID, compID, map[string]any{"s_*": toJSON(map[string]any{"from": b.PublicKey, "to": a.PublicKey, "amount": 100})})
 	require.False(t, recorded.IsError, toJSON(recordedOut))
 	key := recordedOut["keys"].([]any)[0].(string)
 
 	// when
-	overwrite, _ := update(t, sessionB, appID, compID, map[string]any{key: toJSON(map[string]any{"from": b.PublicKey, "to": b.PublicKey, "amount": 100})})
-	tombstone, _ := update(t, sessionB, appID, compID, map[string]any{key: ""})
+	overwrite, _ := update(t, sessionC, appID, compID, map[string]any{key: toJSON(map[string]any{"from": c.PublicKey, "to": c.PublicKey, "amount": 100})})
+	tombstone, _ := update(t, sessionC, appID, compID, map[string]any{key: ""})
 
 	// then
-	assert.Contains(t, errText(overwrite), "to must be your publicKey")
-	assert.Contains(t, errText(tombstone), "to must be your publicKey")
+	assert.Contains(t, errText(overwrite), "from or to must be your publicKey")
+	assert.Contains(t, errText(tombstone), "from or to must be your publicKey")
 	assert.Equal(t, 1, e.eventCount(appID))
+}
+
+func TestMCP_UpdateComponent_ShouldAllowEitherPartyToOverwriteAndTombstoneOwnSettlement(t *testing.T) {
+	// given
+	e := newEnv(t)
+	owner, from, to := e.account(), e.account(), e.account()
+	appID, compID := e.componentApp(owner, "Expenses", map[string]any{}, from, to)
+	sessionFrom, _ := e.connect(from)
+	sessionTo, _ := e.connect(to)
+	settlement := func(amount int) string {
+		return toJSON(map[string]any{"from": from.PublicKey, "to": to.PublicKey, "amount": amount})
+	}
+	recorded, recordedOut := update(t, sessionFrom, appID, compID, map[string]any{"s_*": settlement(100)})
+	require.False(t, recorded.IsError, toJSON(recordedOut))
+	key := recordedOut["keys"].([]any)[0].(string)
+
+	// when
+	byTo, byToOut := update(t, sessionTo, appID, compID, map[string]any{key: settlement(200)})
+	byFrom, byFromOut := update(t, sessionFrom, appID, compID, map[string]any{key: ""})
+
+	// then
+	require.False(t, byTo.IsError, toJSON(byToOut))
+	require.False(t, byFrom.IsError, toJSON(byFromOut))
+	assert.Equal(t, "", e.compData(compID)[key])
 }
 
 func TestMCP_UpdateComponent_ShouldValidateEncodedContent(t *testing.T) {
