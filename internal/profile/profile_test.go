@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -22,6 +23,8 @@ type mockUserRepo struct {
 	notifyModeCalls   []string
 	timezoneCalls     []string
 	seenAtCalls       []int64
+	paymentCalls      []string
+	paymentErr        error
 	updateCalls       []struct {
 		publicKey string
 		username  string
@@ -93,6 +96,17 @@ func (m *mockUserRepo) UpdateNotificationsSeenAt(publicKey string, at int64) err
 		return fmt.Errorf("user not found")
 	}
 	u.NotificationsSeenAt = max(u.NotificationsSeenAt, at)
+	return nil
+}
+
+func (m *mockUserRepo) UpdatePaymentMethods(publicKey string, raw []byte) error {
+	m.paymentCalls = append(m.paymentCalls, string(raw))
+	if m.paymentErr != nil {
+		return m.paymentErr
+	}
+	if _, ok := m.users[publicKey]; !ok {
+		return fmt.Errorf("user not found")
+	}
 	return nil
 }
 
@@ -610,4 +624,131 @@ func TestUpdateProfile_ShouldUpdateNotificationsSeenAtTogetherWithDisplayName(t 
 	assert.Equal(t, fasthttp.StatusOK, ctx.Response.StatusCode())
 	assert.Equal(t, []int64{100}, repo.seenAtCalls)
 	assert.Equal(t, "Bob", repo.users["pk-1"].Username)
+}
+
+// ---- paymentMethods ----
+
+func patchPayments(t *testing.T, body string) (*fasthttp.RequestCtx, *mockUserRepo, *mockEventService) {
+	t.Helper()
+	return patchLocale(t, body, &user.User{PublicKey: "pk-1", Username: "Alice"})
+}
+
+func TestUpdateProfile_ShouldStoreAcceptedPaymentMethodsOpaque(t *testing.T) {
+	opaque := `[{"id":"cash","type":"cash","value":"","label":""},{"id":"b1","type":"blik","value":"123 456 789","label":"Me","extra":{"x":1}}]`
+	for _, raw := range []string{`[]`, opaque} {
+		// when
+		ctx, repo, _ := patchPayments(t, `{"paymentMethods":`+raw+`}`)
+
+		// then
+		assert.Equal(t, fasthttp.StatusOK, ctx.Response.StatusCode(), raw)
+		assert.Equal(t, []string{raw}, repo.paymentCalls, raw)
+	}
+}
+
+func TestUpdateProfile_ShouldReturn400WhenPaymentMethodsMalformedShape(t *testing.T) {
+	shapes := []string{
+		`{}`, `"x"`, `1`, `true`, `{"id":"a"}`,
+		`[1]`, `["a"]`, `[null]`, `[[]]`, `[{},true]`,
+	}
+	for _, raw := range shapes {
+		// when
+		ctx, repo, _ := patchPayments(t, `{"paymentMethods":`+raw+`}`)
+
+		// then
+		assert.Equal(t, fasthttp.StatusBadRequest, ctx.Response.StatusCode(), raw)
+		assert.Empty(t, repo.paymentCalls, raw)
+	}
+}
+
+func TestUpdateProfile_ShouldAcceptTwentyPaymentMethodsAndRejectTwentyOne(t *testing.T) {
+	// given
+	list := func(n int) string { return "[" + strings.TrimSuffix(strings.Repeat("{},", n), ",") + "]" }
+
+	// when
+	okCtx, okRepo, _ := patchPayments(t, `{"paymentMethods":`+list(20)+`}`)
+	tooManyCtx, tooManyRepo, _ := patchPayments(t, `{"paymentMethods":`+list(21)+`}`)
+
+	// then
+	assert.Equal(t, fasthttp.StatusOK, okCtx.Response.StatusCode())
+	assert.Len(t, okRepo.paymentCalls, 1)
+	assert.Equal(t, fasthttp.StatusBadRequest, tooManyCtx.Response.StatusCode())
+	assert.Empty(t, tooManyRepo.paymentCalls)
+}
+
+func TestUpdateProfile_ShouldRejectPaymentMethodsOverEightKilobytes(t *testing.T) {
+	// given
+	overhead := len(`[{"v":""}]`)
+	fits := `[{"v":"` + strings.Repeat("a", 8192-overhead) + `"}]`
+	over := `[{"v":"` + strings.Repeat("a", 8192-overhead+1) + `"}]`
+
+	// when
+	okCtx, okRepo, _ := patchPayments(t, `{"paymentMethods":`+fits+`}`)
+	paddedCtx, paddedRepo, _ := patchPayments(t, `{"paymentMethods":   `+fits+`   }`)
+	overCtx, overRepo, _ := patchPayments(t, `{"paymentMethods":`+over+`}`)
+
+	// then
+	assert.Len(t, fits, 8192)
+	assert.Equal(t, fasthttp.StatusOK, okCtx.Response.StatusCode())
+	assert.Len(t, okRepo.paymentCalls, 1)
+	assert.Equal(t, fasthttp.StatusOK, paddedCtx.Response.StatusCode())
+	assert.Len(t, paddedRepo.paymentCalls, 1)
+	assert.Equal(t, fasthttp.StatusBadRequest, overCtx.Response.StatusCode())
+	assert.Empty(t, overRepo.paymentCalls)
+}
+
+func TestUpdateProfile_ShouldAcceptEscapedBackslashBeforeU0000(t *testing.T) {
+	// when
+	ctx, repo, _ := patchPayments(t, `{"paymentMethods":[{"v":"\\u0000"}]}`)
+
+	// then
+	assert.Equal(t, fasthttp.StatusOK, ctx.Response.StatusCode())
+	assert.Equal(t, []string{`[{"v":"\\u0000"}]`}, repo.paymentCalls)
+}
+
+func TestUpdateProfile_ShouldReturn500WhenPaymentMethodsWriteFailsGenerically(t *testing.T) {
+	// given
+	repo := &mockUserRepo{users: map[string]*user.User{"pk-1": {PublicKey: "pk-1", Username: "Alice"}}, paymentErr: fmt.Errorf("connection reset")}
+	ep := NewProfileEndpoints(repo, &mockAppLister{}, &mockEventService{})
+	ctx := &fasthttp.RequestCtx{}
+	ctx.Request.SetBody([]byte(`{"paymentMethods":[{"id":"cash"}]}`))
+	ctx.SetUserValue("user", repo.users["pk-1"])
+
+	// when
+	ep.UpdateProfile(ctx)
+
+	// then
+	assert.Equal(t, fasthttp.StatusInternalServerError, ctx.Response.StatusCode())
+}
+
+// goccy decodes `null` into *json.RawMessage as a nil pointer, so the field is treated as absent.
+func TestUpdateProfile_ShouldNeverWriteNullPaymentMethods(t *testing.T) {
+	cases := []struct {
+		name        string
+		body        string
+		status      int
+		localeCalls []string
+	}{
+		{"null alone", `{"paymentMethods":null}`, fasthttp.StatusBadRequest, nil},
+		{"null next to locale", `{"locale":"pl","paymentMethods":null}`, fasthttp.StatusOK, []string{"pl"}},
+	}
+	for _, c := range cases {
+		// when
+		ctx, repo, _ := patchPayments(t, c.body)
+
+		// then
+		assert.Equal(t, c.status, ctx.Response.StatusCode(), c.name)
+		assert.Equal(t, c.localeCalls, repo.localeCalls, c.name)
+		assert.Empty(t, repo.paymentCalls, c.name)
+	}
+}
+
+func TestUpdateProfile_ShouldWritePaymentMethodsWithoutFanOutOrOtherWrites(t *testing.T) {
+	// when
+	ctx, repo, events := patchPayments(t, `{"paymentMethods":[{"id":"cash"}]}`)
+
+	// then
+	assert.Equal(t, fasthttp.StatusOK, ctx.Response.StatusCode())
+	assert.Len(t, repo.paymentCalls, 1)
+	assert.Empty(t, events.produced)
+	assert.Empty(t, repo.updateCalls)
 }

@@ -66,6 +66,20 @@ func (s *PushService) fanout(ev *event.Event, app *application.Application, crea
 		return
 	}
 
+	if en.to != nil {
+		var audience []string
+		for _, pk := range recipientPublicKeys {
+			if slices.Contains(en.to, pk) {
+				audience = append(audience, pk)
+			}
+		}
+		if len(audience) == 0 {
+			log.Debug().Str("eventId", ev.ID).Msg("[PUSH] Notification audience has no recipients, skipping")
+			return
+		}
+		recipientPublicKeys = audience
+	}
+
 	subs, err := s.repo.GetSubscriptionsForUsers(recipientPublicKeys)
 	if err != nil {
 		log.Warn().Err(err).Str("eventId", ev.ID).Msg("[PUSH] Failed to fetch subscriptions")

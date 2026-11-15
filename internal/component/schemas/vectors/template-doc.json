@@ -806,6 +806,62 @@
         ]
       },
       "valid": true
+    },
+    {
+      "name": "payment method key in data",
+      "data": {
+        "name": "Trip",
+        "description": "Plan a trip",
+        "icon": "travel",
+        "groups": [
+          {
+            "name": "Main",
+            "index": 0,
+            "components": [
+              {
+                "type": "Expenses",
+                "index": 0,
+                "data": {
+                  "_title": "Costs",
+                  "pay_pk-alice": [
+                    {
+                      "id": "m1",
+                      "type": "blik",
+                      "value": "600123456"
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "reminder key in data",
+      "data": {
+        "name": "Trip",
+        "description": "Plan a trip",
+        "icon": "travel",
+        "groups": [
+          {
+            "name": "Main",
+            "index": 0,
+            "components": [
+              {
+                "type": "Expenses",
+                "index": 0,
+                "data": {
+                  "_title": "Costs",
+                  "r_pk-alice__pk-bob": "{\"from\":\"pk-alice\",\"to\":\"pk-bob\",\"amount\":1000,\"at\":1767225600000}"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "valid": false
     }
   ]
 }

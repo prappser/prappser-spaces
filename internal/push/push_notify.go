@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"reflect"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -29,6 +30,7 @@ type notifyRule struct {
 	Text       []textCandidate `json:"text"`
 	Join       *joinSpec       `json:"join"`
 	SkipListed *skipListedSpec `json:"skipListed"`
+	To         string          `json:"to"`
 }
 
 type textCandidate struct {
@@ -132,6 +134,9 @@ func (r *notifyRule) check() error {
 	}
 	if j := r.Join; j != nil && (j.Show < 1 || j.More != "itemsMore") {
 		return errors.New("invalid join")
+	}
+	if r.To != "" && r.Join != nil {
+		return errors.New("to cannot be combined with join")
 	}
 	if s := r.SkipListed; s != nil && s.List == "" {
 		return errors.New("invalid skipListed")
@@ -358,6 +363,7 @@ func (s *PushService) describeComponent(ev *event.Event, app *application.Applic
 			if rule.Scope == "component" {
 				n.scope = componentID
 			}
+			n.to = rule.audience(hits[len(hits)-1].value)
 			n.componentTitle = cut(str(comp.Data["_title"]))
 			n.body = person + ": " + cut(what)
 			if rule.On == "becomesFalse" && rule.Field != "" && len(hits) == 1 && len(fields) == 1 {
@@ -498,6 +504,29 @@ func (s *PushService) evalRule(r *notifyRule, typ string, comp *application.Comp
 		out += " " + fmt.Sprintf(t.itemsMore, more)
 	}
 	return out, hits, true
+}
+
+// audience returns the pks named by the rule's `to` field in value, nil meaning everyone.
+func (r *notifyRule) audience(value any) []string {
+	if r.To == "" {
+		return nil
+	}
+	v, _ := dotted(value, r.To)
+	var out []string
+	add := func(x any) {
+		if k, ok := x.(string); ok && k != "" && !slices.Contains(out, k) {
+			out = append(out, k)
+		}
+	}
+	switch x := v.(type) {
+	case string:
+		add(x)
+	case []any:
+		for _, k := range x {
+			add(k)
+		}
+	}
+	return out
 }
 
 func (r *notifyRule) dropListed(hits []fired, comp *application.Component) []fired {

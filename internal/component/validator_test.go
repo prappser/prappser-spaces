@@ -361,7 +361,7 @@ func TestAccess_ShouldResolveRulesFromSchema(t *testing.T) {
 	// then
 	assert.True(t, msgOK)
 	assert.True(t, msg.Append)
-	assert.Equal(t, "sender", msg.Author)
+	assert.Equal(t, []string{"sender"}, msg.Author)
 	assert.Equal(t, "message", msg.Content)
 	assert.Equal(t, AccessMember, react.Level)
 	assert.False(t, react.OwnKey("react_m_"+msgID+"_other", "pk"))
@@ -416,6 +416,11 @@ func TestNewValidator_ShouldRejectBadAccess(t *testing.T) {
 		"unless without default": {`"a":{"x-access":{"unless":"b"}},"b":{"x-access":"manage"}`, "has no boolean default"},
 		"unknown content def":    {`"a":{"x-access":{"content":"nope"}}`, "is not in $defs"},
 		"wrong gate type":        {`"a":{"x-access":{"gate":1}}`, "gate must be a string"},
+		"empty author":           {`"a":{"x-access":{"author":""}}`, "x-access author must be"},
+		"empty author array":     {`"a":{"x-access":{"author":[]}}`, "x-access author must be"},
+		"non-string author":      {`"a":{"x-access":{"author":["to",1]}}`, "x-access author must be"},
+		"empty author name":      {`"a":{"x-access":{"author":["to",""]}}`, "x-access author must be"},
+		"duplicate author":       {`"a":{"x-access":{"author":["to","to"]}}`, "x-access author must be"},
 	}
 	for name, c := range cases {
 		// when
@@ -824,4 +829,25 @@ func TestNotify_ShouldResolveRawRuleAndKeepMalformedOnesLoadable(t *testing.T) {
 	assert.True(t, oddOK)
 	assert.Equal(t, "not an object", oddRaw)
 	assert.False(t, plainOK)
+}
+
+func TestAccess_ShouldParseAuthorAsStringOrArray(t *testing.T) {
+	// given
+	fsys := fstest.MapFS{
+		"schemas/template/template-doc.v1.schema.json": {Data: []byte(`{"$id":"` + templateSchema + `"}`)},
+		"schemas/bundle.json":                          {Data: []byte(`{"types":{"X":{"min":1,"current":1}}}`)},
+		"schemas/component/x.v1.schema.json": {Data: []byte(`{"$id":"https://x/x.json","properties":{
+			"one":{"x-access":{"author":"to"}},
+			"two":{"x-access":{"author":["from","to"]}}}}`)},
+	}
+	v, err := NewValidatorFS(fsys)
+	require.NoError(t, err)
+
+	// when
+	one, _ := v.Access("X", "one")
+	two, _ := v.Access("X", "two")
+
+	// then
+	assert.Equal(t, []string{"to"}, one.Author)
+	assert.Equal(t, []string{"from", "to"}, two.Author)
 }

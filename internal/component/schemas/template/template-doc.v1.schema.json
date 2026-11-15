@@ -182,10 +182,10 @@
         },
         "data": {
           "type": "object",
-          "description": "Member-authored keys are forbidden: a template carries no messages, reactions, votes or expenses.",
+          "description": "Member-authored keys are forbidden: a template carries no messages, reactions, votes, expenses, payment methods or reminders.",
           "propertyNames": {
             "not": {
-              "pattern": "^(m_|react_|vote_|e_|s_)"
+              "pattern": "^(m_|react_|vote_|e_|s_|pay_|r_)"
             }
           }
         }
@@ -337,7 +337,7 @@
           "then": {
             "properties": {
               "data": {
-                "$ref": "https://prappser.app/schemas/component/expenses.v1.schema.json"
+                "$ref": "https://prappser.app/schemas/component/expenses.v2.schema.json"
               }
             }
           }

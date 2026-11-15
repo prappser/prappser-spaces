@@ -16,7 +16,7 @@ Language-neutral JSON Schemas (draft 2020-12) for the data a Prappser component 
 
 Files refer to each other with `$ref` to the absolute `$id`. A consumer must register every file under its `$id` before compiling and must not fetch anything over the network.
 
-The template-doc schema validates the `template` object of a `prappser.template` file (name, description, icon, groups), not the outer envelope. Each component's `data` is dispatched on `type` to the component schema. Template `data` may not contain keys starting with `m_`, `react_`, `vote_`, `e_` or `s_`, so a template cannot carry messages, reactions, votes or expenses in another member's name.
+The template-doc schema validates the `template` object of a `prappser.template` file (name, description, icon, groups), not the outer envelope. Each component's `data` is dispatched on `type` to the component schema. Template `data` may not contain keys starting with `m_`, `react_`, `vote_`, `e_`, `s_`, `pay_` or `r_`, so a template cannot carry messages, reactions, votes, expenses, payment methods or reminders in another member's name.
 
 ## What a schema describes
 
@@ -37,8 +37,8 @@ Every top-level `properties` entry and every `patternProperties` entry carries a
 | Value | Meaning |
 |---|---|
 | `single` | One value for the whole key. Last writer wins. |
-| `per-entry` | The key family holds independent entries (`m_<uuid>`, `e_<uuid>`, `s_<uuid>`). Each key is its own last-writer-wins cell. |
-| `per-member` | The key family holds one cell per member (`vote_<publicKey>`, `react_<messageKey>_<publicKey>`). A member only writes their own cells. |
+| `per-entry` | The key family holds independent entries (`m_<uuid>`, `e_<uuid>`, `s_<uuid>`, `r_<creditor>__<debtor>`). Each key is its own last-writer-wins cell. |
+| `per-member` | The key family holds one cell per member (`vote_<publicKey>`, `pay_<publicKey>`, `react_<messageKey>_<publicKey>`). A member only writes their own cells. |
 
 Decisions behind this (#270):
 
@@ -62,7 +62,7 @@ Every top-level `properties` entry and every `patternProperties` entry carries a
 | `gate` | Name of a boolean property of the same schema. |
 | `fields` | Map of inner field name to a boolean property name, or `null` for open. |
 | `append` | `true`: the key may only be created. |
-| `author` | Name of a field inside the decoded value that holds the writer's public key. |
+| `author` | Name of a field inside the decoded value that holds the writer's public key, or a list of such field names (any one may match). |
 | `content` | Name of a `$defs` entry the decoded value must satisfy. |
 | `unless` | Name of a boolean property of the same schema. The key is blocked while it is true. |
 
@@ -72,7 +72,7 @@ Rules:
 - `fields`: the old and new values are compared field by field. A value that is absent, `''` or not an object counts as `{}`, and a field that is missing, `null`, `false`, `''` or `0` counts as unset. Each changed field is checked against `fields[field]` if listed (`null` means open), otherwise against `gate` (if the rule has none, the field is open). A tombstone (`''` over an object) counts every set field of the old value as changed. When the old value is not an object (a create, or a key holding `''`), `gate` applies too. Owner and admin bypass these checks.
 - `unless`: the key is blocked for every role, owner and admin included, while the flag's current value is true. When the flag is absent, its schema `default` applies. There is no bypass.
 - `append`: the key must not exist yet, and no tombstone. Applies to all roles.
-- `author`: the decoded value's field must equal the caller's public key. When the key already exists, the old decoded value's field must too, so a tombstone or an edit of someone else's entry is rejected. Applies to all roles.
+- `author`: the decoded value's field must equal the caller's public key. When the key already exists, the old decoded value's field must too, so a tombstone or an edit of someone else's entry is rejected. Applies to all roles. With a list of field names, the caller's public key must equal any one of the listed fields in the new value, and in the old value when the key exists (expenses `s_`: `["from","to"]`, either party of a settlement).
 - `content`: a non-empty value must be a JSON string that decodes and validates against `<$id>#/$defs/<name>`. `''` is a tombstone and skips this check (`append` and `author` still apply).
 - Per-member keys (`x-merge: per-member`) need nothing extra: for all roles the key must match the pattern with its trailing `.+$` replaced by the caller's quoted public key plus `$`.
 - Viewers cannot write through MCP at all.
@@ -80,7 +80,7 @@ Rules:
 
 ## Push notifications and `x-notify`
 
-A key may carry an `x-notify` annotation. It tells the space when a change to that key sends a push notification, and with what text. It goes on a top-level `properties` or `patternProperties` entry, next to `x-merge` and `x-access`. Only these types have a rule: chat (`m_` messages), checklist (`item_` entries), map (`place_` and `leg_` entries), poll (`question`, `closed`), expenses (`e_` entries) and files (`items`). A type without a rule sends no push. The app evaluates the same rules to build its notification panel.
+A key may carry an `x-notify` annotation. It tells the space when a change to that key sends a push notification, and with what text. It goes on a top-level `properties` or `patternProperties` entry, next to `x-merge` and `x-access`. Only these types have a rule: chat (`m_` messages), checklist (`item_` entries), map (`place_` and `leg_` entries), poll (`question`, `closed`), expenses (`e_`, `s_` and `r_` entries) and files (`items`). A type without a rule sends no push. Expenses v2 narrows each push with `to`: `notify` (expense members or the settlement counterparty) or `to` (the reminder debtor). Settlements and reminders carry a `note`, the push text rendered by the writer in their language, because text candidates need a non-empty string field and the space has no wording for them. The app evaluates the same rules to build its notification panel.
 
 `x-notify` is one rule object or a list of rule objects. With a list, the rules are tried in order and the first one that fires with non-blank text wins. If any rule of a list is invalid, the whole annotation is ignored.
 
@@ -95,6 +95,7 @@ A rule is an object:
 | `view` | Optional. `chat` or `polls`. |
 | `text` | Required. Non-empty ordered list of candidates. The first one that gives non-blank text wins. |
 | `join` | Any `on`. Folds all fired keys of the family into one push: `prefix`, `sep`, `show`, `more`. The output is `prefix` once, then the first `show` texts joined by `sep`, then, if more keys fired, a space and the localized `more` text (the `itemsMore` string, valid only as `join.more`) with the remaining count, like "+ A, B and 2 more". With fewer than `show` keys there is no "more" tail. `show` must be at least 1. |
+| `to` | Optional. A dotted path into the same entry value the text is read from; it names one public key (string) or an array of public keys. Only those members, minus the author, are notified, and the bell row shows only for them. Missing, empty or unusable means everyone but the author. Not allowed together with `join`. It is read from the client-written entry, so an author can only narrow the audience, never broaden it. With `changed` it reads the new value. Keep it constant across a toggle and its revert. |
 | `skipListed` | Only with `on: new`. `list` and `prefix`: a key is skipped when the key with `prefix` removed equals the string `id` of an element of the component data list `list` (the legacy checklist `items`). |
 
 `on` values:
@@ -206,11 +207,11 @@ Lossiness is decided statically from the ops the traversal crosses, never from t
 Absent `v` means 1 everywhere. A writer at version 2 or above always writes `v`.
 
 - Object entries (`item_<id>`): `value.v`.
-- Encoded entries (`m_`, `e_`, `s_`: `type: string` with `contentMediaType: application/json`): `v` on the decoded object. Decode, migrate or write back, encode. The bytes of the encoding are not part of the contract; compare decoded values.
+- Encoded entries (`m_`, `e_`, `s_`, `r_`: `type: string` with `contentMediaType: application/json`): `v` on the decoded object. Decode, migrate or write back, encode. The bytes of the encoding are not part of the contract; compare decoded values.
 - Tombstones (`''`, `null`) and values that do not decode to an object (a number, a string, an array) are not entries: migrate returns them unchanged, they are never written back, and they do not count for the component state.
-- Per-member cells (`vote_<pk>`, `react_<msgKey>_<pk>`) and settings keys (every top-level property, including single-key aggregates such as poll `options`, map `markers`, checklist `templates`, text `document`) have no `v` and are never migrated.
+- Per-member cells (`vote_<pk>`, `pay_<pk>`, `react_<msgKey>_<pk>`) and settings keys (every top-level property, including single-key aggregates such as poll `options`, map `markers`, checklist `templates`, text `document`) have no `v` and are never migrated.
 - The top-level `v` of chat, poll, expenses and countdown is the settings format. It stays `const 1` in every vN file and readers do not use it to pick a chain.
-- In a vN file every entry def requires `v` with `const N`. An entry def is the `$defs` entry that a `per-entry` `patternProperties` value refers to. v1 entry defs accept an optional `v: 1`, except chat `$defs/message`, which has always required it because chat always wrote it. An absent `v` still means 1 for the lens. Exception: checklist v2 `$defs/item` and map v2 `$defs/place` and `$defs/leg` keep `v: 2` optional, so documents that never carried `v` and have no renamed field (built-in templates, the frozen golden fixture) still validate; the app's edit path (the sink's `TypeLens.writePatch`) stamps `v` on item entries it writes once the reader version is above 1; entries created by template instantiation carry no `v` and read as v1 until first edited.
+- In a vN file every entry def requires `v` with `const N`. An entry def is the `$defs` entry that a `per-entry` `patternProperties` value refers to. v1 entry defs accept an optional `v: 1`, except chat `$defs/message`, which has always required it because chat always wrote it. An absent `v` still means 1 for the lens. Exception: checklist v2 `$defs/item`, map v2 `$defs/place` and `$defs/leg`, and expenses v2 `$defs/expense`, `$defs/settlement` and `$defs/reminder` keep `v: 2` optional, so documents that never carried `v` and have no renamed field (built-in templates, the frozen golden fixture) still validate; the app's edit path (the sink's `TypeLens.writePatch`) stamps `v` on item entries it writes once the reader version is above 1; entries created by template instantiation carry no `v` and read as v1 until first edited.
 - A settings value is never an entry, but a list element inside one can be read like one. Checklist legacy `items[i]` is read through the same entry steps as an `item_<id>` entry: an element without `v` is v1, and the element's `id` is not part of the entry. Legacy elements stay read-only and are never written. A vN file gives them their own def, `legacyItem`, frozen in the v1 shape (optional `v: 1`, `assignedMemberId`, required `id`), because the stored elements never change.
 - An entry is validated against the schema file of its own version: `v` absent is the v1 file, `v` = N is the vN file, so `additionalProperties: false` and the `const N` on `v` apply per version. A validator that holds only its own newest file (the app, whose R is its embedded current version) migrates the entry to R first, then validates the result against its embedded vR, also when a fetched bundle gave it a chain up to K > R. The space embeds every version from min on and validates in the entry's own version. A written value is validated in the version it carries: R for a new entry and for an e < R write, e for an e > R write-back.
 
@@ -417,7 +418,7 @@ The consumer enforces these, they are not checked here:
 - A member can uncheck a legacy checklist item that lives only in `items` while `allowToggleInUsage` is false. The old value is read from `item_<id>` only, so a write of `item_<id>` with `checked: false` is compared against `{}` and `checked` counts as unchanged. It still needs `allowAddInUsage`.
 - Chat reaction at most 32 UTF-16 units, checked by the app's controller and decoders.
 - Checklist `attachmentIds`, chat attachment ids and Files `storageId` pointing at something that exists.
-- Member references in a template: Map marker `createdBy` and `createdAtMs` and checklist `assigneePublicKey` (and `attachmentIds`; v1 documents carry the old name `assignedMemberId`) let a template name a member or file. The schema allows them, so `create_app` must strip or reject them. The app's own template strip already clears them on export and import (Map `stripForTemplate` sets `createdBy` to `''`, `createdAtMs` to 0 and drops `otherUsers`; the checklist strip clears `assigneePublicKey`, `attachmentIds` and `checked`).
+- Member references in a template: Map marker `createdBy` and `createdAtMs` and checklist `assigneePublicKey` (and `attachmentIds`; v1 documents carry the old name `assignedMemberId`) let a template name a member or file. The schema allows them, so `create_app` must strip or reject them. The app's own template strip already clears them on export and import (Map `stripForTemplate` sets `createdBy` to `''`, `createdAtMs` to 0, drops `otherUsers`, place `date`, `time` and `remindBefore`, leg `departure`, `arrival` and `attachmentIds`, and any leg whose endpoints are not both exported places; the checklist strip clears `assigneePublicKey`, `attachmentIds` and `checked`).
 - Calendar validity of a checklist `date` (`2026-02-30` matches the pattern).
 - Settlement `from != to`, and that a vote names an existing option.
 - That an encoded `m_`, `e_` or `s_` value is valid JSON of the right shape (see Portability).

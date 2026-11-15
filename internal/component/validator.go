@@ -83,7 +83,7 @@ type Access struct {
 	Unless  *Flag
 	Fields  map[string]*Flag
 	Append  bool
-	Author  string
+	Author  []string
 	Content string
 	own     *regexp.Regexp
 }
@@ -326,6 +326,29 @@ func parseFlag(props map[string]any, name string) (*Flag, error) {
 	return &Flag{Name: name, Default: def}, nil
 }
 
+func parseAuthor(val any) ([]string, error) {
+	const msg = "x-access author must be a field name or a non-empty array of distinct field names"
+	if s, ok := val.(string); ok {
+		if s == "" {
+			return nil, errors.New(msg)
+		}
+		return []string{s}, nil
+	}
+	list, ok := val.([]any)
+	if !ok || len(list) == 0 {
+		return nil, errors.New(msg)
+	}
+	names := make([]string, 0, len(list))
+	for _, e := range list {
+		s, ok := e.(string)
+		if !ok || s == "" || slices.Contains(names, s) {
+			return nil, errors.New(msg)
+		}
+		names = append(names, s)
+	}
+	return names, nil
+}
+
 func parseAccess(raw any, props, defs map[string]any) (Access, error) {
 	switch t := raw.(type) {
 	case string:
@@ -376,8 +399,8 @@ func parseAccess(raw any, props, defs map[string]any) (Access, error) {
 				}
 				a.Append = b
 			case "author":
-				if a.Author, _ = val.(string); a.Author == "" {
-					return Access{}, errors.New("x-access author must be a string")
+				if a.Author, err = parseAuthor(val); err != nil {
+					return Access{}, err
 				}
 			case "content":
 				if a.Content, _ = val.(string); a.Content == "" {

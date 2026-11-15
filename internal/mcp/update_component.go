@@ -79,13 +79,13 @@ func gateFlags(acc component.Access, old, val any) []*component.Flag {
 	return flags
 }
 
-func isAuthor(raw any, field, publicKey string) bool {
+func isAuthor(raw any, fields []string, publicKey string) bool {
 	s, _ := raw.(string)
 	var m map[string]any
 	if json.Unmarshal([]byte(s), &m) != nil {
 		return false
 	}
-	return m[field] == publicKey
+	return slices.ContainsFunc(fields, func(f string) bool { return m[f] == publicKey })
 }
 
 func mintKeys(set map[string]any) map[string]any {
@@ -144,10 +144,10 @@ func checkWrite(v *component.Validator, typ string, old, data map[string]any, pu
 				return fail("cannot be deleted")
 			}
 		}
-		if acc.Author != "" {
+		if len(acc.Author) > 0 {
 			oldStr, _ := oldVal.(string)
 			if (isStr && str != "" && !isAuthor(str, acc.Author, publicKey)) || (oldStr != "" && !isAuthor(oldStr, acc.Author, publicKey)) {
-				return fail("%s must be your publicKey", acc.Author)
+				return fail("%s must be your publicKey", strings.Join(acc.Author, " or "))
 			}
 		}
 	}
