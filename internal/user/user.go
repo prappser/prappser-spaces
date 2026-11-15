@@ -78,6 +78,7 @@ type User struct {
 	// here would let any authenticated device pull it and crack it offline
 	// without proving the password.
 	HasEscrow bool `json:"hasEscrow,omitempty"`
+	PaymentMethods json.RawMessage `json:"paymentMethods,omitempty"`
 }
 
 // Device is one entry in a user's device roster (see device_repository.go).
@@ -99,6 +100,16 @@ const (
 
 	accessTokenTyp = "at+jwt"
 )
+
+type PaymentMethodsStore interface {
+	GetPaymentMethods(publicKey string) ([]byte, error)
+	UpdatePaymentMethods(publicKey string, raw []byte) error
+}
+
+type Repository interface {
+	UserRepository
+	PaymentMethodsStore
+}
 
 type UserRepository interface {
 	CreateUser(user *User) error
@@ -740,6 +751,22 @@ func (ue UserEndpoints) GetProfile(ctx *fasthttp.RequestCtx) {
 		profile.HasEscrow = accountKeyBlob != ""
 	}
 	profile.IdentityBinding = authenticatedUser.StoredBinding
+
+	if store, ok := ue.userRepository.(PaymentMethodsStore); ok {
+		paymentMethods, err := store.GetPaymentMethods(authenticatedUser.PublicKey)
+		if err != nil {
+			log.Error().Err(err).Str("publicKey", authenticatedUser.PublicKey).Msg("[PROFILE] Failed to look up payment methods")
+			ctx.Error("Failed to load profile", fasthttp.StatusInternalServerError)
+			return
+		}
+		// raw null, not omitted: omitempty would drop an empty value and hide the key from clients
+		if paymentMethods == nil {
+			paymentMethods = []byte("null")
+		}
+		profile.PaymentMethods = paymentMethods
+	} else {
+		log.Warn().Msg("[PROFILE] User repository has no payment methods store, omitting paymentMethods")
+	}
 
 	ctx.SetStatusCode(fasthttp.StatusOK)
 	ctx.SetContentType("application/json")

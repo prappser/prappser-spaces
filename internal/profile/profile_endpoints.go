@@ -1,6 +1,7 @@
 package profile
 
 import (
+	"bytes"
 	"errors"
 	"slices"
 	"strings"
@@ -43,9 +44,16 @@ func (e *ProfileEndpoints) UpdateProfile(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	if req.DisplayName == nil && req.Locale == nil && req.NotifyMode == nil && req.Timezone == nil && req.NotificationsSeenAt == nil {
-		ctx.Error("displayName, locale, notifyMode, timezone or notificationsSeenAt required", fasthttp.StatusBadRequest)
+	if req.DisplayName == nil && req.Locale == nil && req.NotifyMode == nil && req.Timezone == nil && req.NotificationsSeenAt == nil && req.PaymentMethods == nil {
+		ctx.Error("displayName, locale, notifyMode, timezone, notificationsSeenAt or paymentMethods required", fasthttp.StatusBadRequest)
 		return
+	}
+
+	if req.PaymentMethods != nil {
+		if err := validatePaymentMethods(*req.PaymentMethods); err != nil {
+			ctx.Error(err.Error(), fasthttp.StatusBadRequest)
+			return
+		}
 	}
 
 	var displayName, locale string
@@ -89,11 +97,24 @@ func (e *ProfileEndpoints) UpdateProfile(ctx *fasthttp.RequestCtx) {
 
 	tzChanged := req.Timezone != nil && *req.Timezone != authenticatedUser.Timezone
 
-	if !nameChanged && !localeChanged && !modeChanged && !tzChanged && req.NotificationsSeenAt == nil {
+	if !nameChanged && !localeChanged && !modeChanged && !tzChanged && req.NotificationsSeenAt == nil && req.PaymentMethods == nil {
 		ctx.SetStatusCode(fasthttp.StatusOK)
 		ctx.SetContentType("application/json")
 		json.NewEncoder(ctx).Encode(authenticatedUser)
 		return
+	}
+
+	// first, so a database rejection (400) leaves no other field written
+	if req.PaymentMethods != nil {
+		if err := e.userRepo.UpdatePaymentMethods(publicKey, *req.PaymentMethods); err != nil {
+			if errors.Is(err, user.ErrInvalidPaymentMethods) {
+				ctx.Error(errPaymentMethods.Error(), fasthttp.StatusBadRequest)
+				return
+			}
+			log.Error().Err(err).Str("publicKey", publicKey).Msg("[PROFILE] Failed to update payment methods")
+			ctx.Error("Failed to update profile", fasthttp.StatusInternalServerError)
+			return
+		}
 	}
 
 	if localeChanged {
@@ -155,6 +176,31 @@ func (e *ProfileEndpoints) UpdateProfile(ctx *fasthttp.RequestCtx) {
 	ctx.SetContentType("application/json")
 	ctx.SetStatusCode(fasthttp.StatusOK)
 	ctx.SetBody(response)
+}
+
+const (
+	maxPaymentMethodsBytes = 8192
+	maxPaymentMethods      = 20
+)
+
+var errPaymentMethods = errors.New("paymentMethods must be an array of at most 20 objects, 8 KB total")
+
+func validatePaymentMethods(raw []byte) error {
+	raw = bytes.TrimSpace(raw)
+	// leading byte checked because json.Unmarshal accepts null into a slice
+	if len(raw) > maxPaymentMethodsBytes || len(raw) == 0 || raw[0] != '[' {
+		return errPaymentMethods
+	}
+	var items []json.RawMessage
+	if err := json.Unmarshal(raw, &items); err != nil || len(items) > maxPaymentMethods {
+		return errPaymentMethods
+	}
+	for _, item := range items {
+		if item = bytes.TrimSpace(item); len(item) == 0 || item[0] != '{' {
+			return errPaymentMethods
+		}
+	}
+	return nil
 }
 
 func normalizeLocale(raw string) (string, error) {
