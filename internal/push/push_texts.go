@@ -41,6 +41,8 @@ type texts struct {
 	digestTitle   func(total, apps int) string
 	digestKinds   map[Kind]string
 	digestOther   string
+	decimal       string
+	currency      string
 	digestMore    func(n int) string
 }
 
@@ -79,6 +81,7 @@ var textsEN = texts{
 	},
 	digestKinds: map[Kind]string{KindChat: "Chat", KindItem: "Items", KindPoll: "Polls", KindFile: "Files", KindMember: "Members", KindReminder: "Reminders"},
 	digestOther: "Activity",
+	decimal:     ".",
 	digestMore:  func(n int) string { return fmt.Sprintf("+%d more apps", n) },
 }
 
@@ -126,6 +129,8 @@ var textsPL = texts{
 	},
 	digestKinds: map[Kind]string{KindChat: "Czat", KindItem: "Pozycje", KindPoll: "Ankiety", KindFile: "Pliki", KindMember: "Osoby", KindReminder: "Przypomnienia"},
 	digestOther: "Aktywność",
+	decimal:     ",",
+	currency:    "zł",
 	digestMore: func(n int) string {
 		if n == 1 {
 			return "+1 aplikacja więcej"
@@ -144,12 +149,12 @@ func plPlural(n int) string {
 	return "many"
 }
 
-func minorUnits(n int64) string {
+func minorUnits(n int64, decimal string) string {
 	sign := ""
 	if n < 0 {
 		sign, n = "-", -n
 	}
-	return fmt.Sprintf("%s%d.%02d", sign, n/100, n%100)
+	return fmt.Sprintf("%s%d%s%02d", sign, n/100, decimal, n%100)
 }
 
 func textsFor(lang string) texts {

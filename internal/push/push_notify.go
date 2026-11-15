@@ -589,14 +589,14 @@ func (c textCandidate) eval(value any, comp *application.Component, t texts) str
 	}
 	text = c.Prefix + text
 	if sx := c.Suffix; sx != nil {
-		if extra := sx.eval(value, comp); extra != "" {
+		if extra := sx.eval(value, comp, t); extra != "" {
 			text += sx.Sep + extra
 		}
 	}
 	return text
 }
 
-func (sx *suffixSpec) eval(value any, comp *application.Component) string {
+func (sx *suffixSpec) eval(value any, comp *application.Component, t texts) string {
 	if sx.Component != "" {
 		return strings.TrimSpace(str(comp.Data[sx.Component]))
 	}
@@ -605,7 +605,15 @@ func (sx *suffixSpec) eval(value any, comp *application.Component) string {
 		return strings.TrimSpace(str(v))
 	}
 	if n, ok := intOf(v); ok {
-		return minorUnits(n)
+		out := minorUnits(n, t.decimal)
+		cur := strings.TrimSpace(str(comp.Data["_currency"]))
+		if cur == "" {
+			cur = t.currency
+		}
+		if cur != "" {
+			out += " " + cur
+		}
+		return out
 	}
 	return ""
 }

@@ -113,7 +113,7 @@ A text candidate has at most one of `field` (a dotted path into the value, numer
 - `unless`: path to a bool. The candidate is skipped when it is true.
 - `prefix`: a string put in front of the text.
 - `empty`: a text id used when the field is blank. `prefix` applies to it too.
-- `suffix`: `sep` plus exactly one of `component` and `field`. `component` adds `sep` and the string value of that top-level component data key, when it is not blank. `field` is a dotted path into the fired value, optionally with `format`: `minorUnits` renders an integer as decimal with two places (4500 is `45.00`, -50 is `-0.50`). Without `format`, the value is used as a string.
+- `suffix`: `sep` plus exactly one of `component` and `field`. `component` adds `sep` and the string value of that top-level component data key, when it is not blank. `field` is a dotted path into the fired value, optionally with `format`: `minorUnits` renders an integer as decimal with two places (4500 is `45.00`, -50 is `-0.50`); renderers use the reader's locale decimal separator and append the component `_currency` (or the locale default), e.g. pl `45,00 zł`, en `45.00`. Without `format`, the value is used as a string.
 
 Text ids (`id` and `empty`) are `photo`, `file` and `pollClosed`. Their wording, the "Person: " prefix, the agent label and the 120 rune cut stay in the space.
 

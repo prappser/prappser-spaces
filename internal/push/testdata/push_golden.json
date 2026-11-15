@@ -119,6 +119,16 @@
               "_title": "Costs"
             },
             "index": 0
+          },
+          {
+            "id": "expenses-3",
+            "componentGroupId": "",
+            "applicationId": "",
+            "name": "Expenses",
+            "data": {
+              "_currency": "EUR"
+            },
+            "index": 0
           }
         ]
       }
@@ -3020,7 +3030,7 @@
           "payload": {
             "appName": "Trip",
             "applicationId": "app-1",
-            "body": "Ann: Refund · -0.50",
+            "body": "Ann: Refund · -0,50 zł",
             "componentTitle": "Costs",
             "eventId": "evt-1",
             "kind": "item",
@@ -3047,6 +3057,77 @@
               }
             },
             "componentId": "expenses-2"
+          },
+          "id": "evt-1",
+          "type": "component_data_changed"
+        }
+      }
+    },
+    "expense with component currency": {
+      "deliveries": [
+        {
+          "subscription": "sub-de-other-muted",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: Tickets · 60.00 EUR",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|expenses-3",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "D3HNThrERZFk9XBQeKn35Zd6QVMG4IEy"
+        },
+        {
+          "subscription": "sub-en",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: Tickets · 60.00 EUR",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|expenses-3",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "D3HNThrERZFk9XBQeKn35Zd6QVMG4IEy"
+        },
+        {
+          "subscription": "sub-pl",
+          "payload": {
+            "appName": "Trip",
+            "applicationId": "app-1",
+            "body": "Ann: Tickets · 60,00 EUR",
+            "eventId": "evt-1",
+            "kind": "item",
+            "tag": "app-1|item|expenses-3",
+            "title": "Trip",
+            "v": 2
+          },
+          "urgency": "normal",
+          "ttl": 43200,
+          "topic": "D3HNThrERZFk9XBQeKn35Zd6QVMG4IEy"
+        }
+      ],
+      "input": {
+        "agent": false,
+        "creatorName": "Ann",
+        "event": {
+          "creatorPublicKey": "creator-pk",
+          "data": {
+            "applicationId": "app-1",
+            "changedFields": {
+              "e_0b7e5c1a-3f2d-4a9e-8c11-5d6e7f8a9b0c": {
+                "newValue": "{\"what\":\"Tickets\",\"payer\":\"pk\",\"amount\":6000}",
+                "oldValue": null
+              }
+            },
+            "componentId": "expenses-3"
           },
           "id": "evt-1",
           "type": "component_data_changed"
@@ -3094,7 +3175,7 @@
           "payload": {
             "appName": "Trip",
             "applicationId": "app-1",
-            "body": "Ann: Dinner · 45.00",
+            "body": "Ann: Dinner · 45,00 zł",
             "componentTitle": "Costs",
             "eventId": "evt-1",
             "kind": "item",
