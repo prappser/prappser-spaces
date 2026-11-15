@@ -3,6 +3,7 @@ package profile
 import (
 	"context"
 
+	"github.com/goccy/go-json"
 	"github.com/prappser/prappser-spaces/internal/application"
 	"github.com/prappser/prappser-spaces/internal/event"
 	"github.com/prappser/prappser-spaces/internal/user"
@@ -10,11 +11,12 @@ import (
 
 // UpdateProfileRequest is the PATCH /users/me request body.
 type UpdateProfileRequest struct {
-	DisplayName         *string `json:"displayName"`
-	Locale              *string `json:"locale"`
-	NotifyMode          *string `json:"notifyMode"`
-	Timezone            *string `json:"timezone"`
-	NotificationsSeenAt *int64  `json:"notificationsSeenAt"`
+	DisplayName         *string          `json:"displayName"`
+	Locale              *string          `json:"locale"`
+	NotifyMode          *string          `json:"notifyMode"`
+	Timezone            *string          `json:"timezone"`
+	NotificationsSeenAt *int64           `json:"notificationsSeenAt"`
+	PaymentMethods      *json.RawMessage `json:"paymentMethods"`
 }
 
 // EventService is the interface for producing space-generated events.
@@ -35,4 +37,5 @@ type userRepository interface {
 	UpdateNotifyMode(publicKey, mode string) error
 	UpdateTimezone(publicKey, tz string) error
 	UpdateNotificationsSeenAt(publicKey string, at int64) error
+	UpdatePaymentMethods(publicKey string, raw []byte) error
 }

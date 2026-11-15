@@ -38,7 +38,11 @@ type userRepository struct {
 	db *sql.DB
 }
 
-func NewUserRepository(db *sql.DB) UserRepository {
+var _ Repository = (*userRepository)(nil)
+
+var ErrInvalidPaymentMethods = errors.New("payment methods rejected by the database")
+
+func NewUserRepository(db *sql.DB) Repository {
 	return &userRepository{db: db}
 }
 
@@ -176,6 +180,37 @@ func (r *userRepository) UpdateTimezone(publicKey, tz string) error {
 	result, err := r.db.Exec("UPDATE users SET timezone = $1 WHERE public_key = $2", tz, publicKey)
 	if err != nil {
 		return fmt.Errorf("failed to update timezone: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to check rows affected: %w", err)
+	}
+	if rows == 0 {
+		return fmt.Errorf("user with public key %s not found", publicKey)
+	}
+	return nil
+}
+
+func (r *userRepository) GetPaymentMethods(publicKey string) ([]byte, error) {
+	var raw []byte
+	err := r.db.QueryRow("SELECT payment_methods FROM users WHERE public_key = $1", publicKey).Scan(&raw)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to get payment methods: %w", err)
+	}
+	return raw, nil
+}
+
+func (r *userRepository) UpdatePaymentMethods(publicKey string, raw []byte) error {
+	result, err := r.db.Exec("UPDATE users SET payment_methods = $1 WHERE public_key = $2", string(raw), publicKey)
+	if err != nil {
+		var pqErr *pq.Error
+		if errors.As(err, &pqErr) && pqErr.Code.Class() == "22" {
+			return ErrInvalidPaymentMethods
+		}
+		return fmt.Errorf("failed to update payment methods: %w", err)
 	}
 	rows, err := result.RowsAffected()
 	if err != nil {
