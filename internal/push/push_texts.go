@@ -18,6 +18,7 @@ type notice struct {
 	title                  string
 	componentTitle         string
 	revertKey, revertField string
+	to                     []string // nil means everyone
 }
 
 type texts struct {

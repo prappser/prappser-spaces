@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -958,5 +959,60 @@ func TestPushService_Fanout_ShouldCancelDigestCountOfOwnCheckWhenUnchecking(t *t
 		if c.wantUndo {
 			assert.Equal(t, uncountCall{"sub-d", "app-1", "list-1", 1700000000, 42}, repo.uncounts[0], c.name)
 		}
+	}
+}
+
+func TestPushService_Fanout_ShouldNotifyOnlyRecipientsNamedByTo(t *testing.T) {
+	cases := []struct {
+		name       string
+		value      string
+		recipients []string
+		want       []string
+	}{
+		{"single key", `{"body":"hi","who":"pk-a"}`, []string{"pk-a", "pk-b"}, []string{"sub-a"}},
+		{"array with a stranger", `{"body":"hi","who":["pk-b","pk-stranger"]}`, []string{"pk-a", "pk-b"}, []string{"sub-b"}},
+		{"names only a non-member", `{"body":"hi","who":"pk-stranger"}`, []string{"pk-a", "pk-b"}, nil},
+		{"filter drops the middle", `{"body":"hi","who":["pk-a","pk-c"]}`, []string{"pk-a", "pk-b", "pk-c"}, []string{"sub-a", "sub-c"}},
+		{"missing field", `{"body":"hi"}`, []string{"pk-a", "pk-b", "pk-stranger"}, []string{"sub-a", "sub-b", "sub-stranger"}},
+	}
+	for _, c := range cases {
+		// given
+		repo := newMockPushRepository()
+		sender := newMockWebpushSender(SendResult{StatusCode: 201})
+		svc := newGoldenService(repo, sender)
+		svc.validator = validatorWith(t, "chat.v1.schema.json", func(r map[string]any) any { r["to"] = "who"; return r })
+		for _, id := range []string{"a", "b", "c", "stranger"} {
+			repo.subscriptions["sub-"+id] = &Subscription{ID: "sub-" + id, DevicePublicKey: "pk-" + id, NotifyMode: user.NotifyModeAll, MutedApplicationIDs: []string{}}
+		}
+		recipients := slices.Clone(c.recipients)
+
+		// when
+		svc.fanout(gComp("chat-1", gChange(gChatA, nil, c.value)), goldenApp(), "Ann", false, recipients)
+
+		// then
+		var got []string
+		for _, call := range sender.calls {
+			got = append(got, call.sub.ID)
+		}
+		assert.ElementsMatch(t, c.want, got, c.name)
+		assert.Equal(t, c.recipients, recipients, c.name)
+	}
+}
+
+func TestPushService_Fanout_ShouldGateDigestCountingByTo(t *testing.T) {
+	// given
+	repo := newMockPushRepository()
+	svc := newGoldenService(repo, newMockWebpushSender(SendResult{StatusCode: 201}))
+	svc.validator = validatorWith(t, "chat.v1.schema.json", func(r map[string]any) any { r["to"] = "who"; return r })
+	for _, id := range []string{"a", "b"} {
+		repo.subscriptions["sub-"+id] = &Subscription{ID: "sub-" + id, DevicePublicKey: "pk-" + id, NotifyMode: user.NotifyModeDaily, MutedApplicationIDs: []string{}}
+	}
+
+	// when
+	svc.fanout(gComp("chat-1", gChange(gChatA, nil, `{"body":"hi","who":"pk-a"}`)), goldenApp(), "Ann", false, []string{"pk-a", "pk-b"})
+
+	// then
+	if assert.Len(t, repo.digestCounts, 1) {
+		assert.Equal(t, "sub-a", repo.digestCounts[0].subscriptionID)
 	}
 }

@@ -512,3 +512,138 @@ func TestDescribe_ShouldRejectChangedRuleWithoutField(t *testing.T) {
 	assert.Error(t, parseErr)
 	assert.False(t, ok)
 }
+
+func toRule(on, field string, to ...string) func(map[string]any) any {
+	path := "who"
+	if len(to) > 0 {
+		path = to[0]
+	}
+	return func(r map[string]any) any {
+		r["on"], r["to"] = on, path
+		if field != "" {
+			r["field"] = field
+		}
+		return r
+	}
+}
+
+func TestParseNotifyRules_ShouldRejectBadToAndAcceptString(t *testing.T) {
+	// given
+	cases := []struct {
+		name   string
+		mutate func(map[string]any) any
+		valid  bool
+	}{
+		{"to string", func(r map[string]any) any { r["to"] = "who"; return r }, true},
+		{"to number", func(r map[string]any) any { r["to"] = 5; return r }, false},
+		{"to with join", func(r map[string]any) any {
+			r["to"] = "who"
+			r["join"] = map[string]any{"prefix": "", "sep": ", ", "show": 2, "more": "itemsMore"}
+			return r
+		}, false},
+	}
+	for _, c := range cases {
+		v := validatorWith(t, "chat.v1.schema.json", c.mutate)
+
+		// when
+		_, err := parseNotifyRules(chatRule(t, v))
+
+		// then
+		assert.Equal(t, c.valid, err == nil, c.name)
+	}
+}
+
+func TestDescribe_ShouldResolveAudienceFromToField(t *testing.T) {
+	// given
+	v := validatorWith(t, "chat.v1.schema.json", toRule("new", ""))
+	cases := []struct {
+		name  string
+		value string
+		want  []string
+	}{
+		{"single key", `{"body":"hi","who":"pk-a"}`, []string{"pk-a"}},
+		{"array", `{"body":"hi","who":["pk-a","pk-b"]}`, []string{"pk-a", "pk-b"}},
+		{"array skips non-strings and duplicates", `{"body":"hi","who":["pk-a",3,"","pk-b","pk-a",null]}`, []string{"pk-a", "pk-b"}},
+		{"missing field", `{"body":"hi"}`, nil},
+		{"empty string", `{"body":"hi","who":""}`, nil},
+		{"array without usable keys", `{"body":"hi","who":[1,""]}`, nil},
+		{"number", `{"body":"hi","who":7}`, nil},
+	}
+	for _, c := range cases {
+		// when
+		n, ok := chatBody(t, v, gChatA, c.value)
+
+		// then
+		assert.True(t, ok, c.name)
+		assert.Equal(t, c.want, n.to, c.name)
+	}
+}
+
+func TestDescribe_ShouldResolveDottedAudiencePath(t *testing.T) {
+	v := validatorWith(t, "chat.v1.schema.json", toRule("new", "", "meta.who"))
+	cases := []struct {
+		name  string
+		value string
+		want  []string
+	}{
+		{"nested key", `{"body":"hi","meta":{"who":"pk-a"}}`, []string{"pk-a"}},
+		{"non-map intermediate", `{"body":"hi","meta":"x"}`, nil},
+	}
+	for _, c := range cases {
+		// when
+		n, ok := chatBody(t, v, gChatA, c.value)
+
+		// then
+		assert.True(t, ok, c.name)
+		assert.Equal(t, c.want, n.to, c.name)
+	}
+}
+
+func TestDescribe_ShouldTreatEmptyToAsAbsent(t *testing.T) {
+	// given
+	v := validatorWith(t, "chat.v1.schema.json", toRule("new", "", ""))
+
+	// when
+	n, ok := chatBody(t, v, gChatA, `{"body":"hi","who":"pk-a","to":"pk-a"}`)
+
+	// then
+	assert.True(t, ok)
+	assert.Nil(t, n.to)
+}
+
+func TestDescribe_ShouldBeUnrestrictedWithoutToRule(t *testing.T) {
+	// given
+	v := validatorWith(t, "chat.v1.schema.json", identity)
+
+	// when
+	n, ok := chatBody(t, v, gChatA, `{"body":"hi","who":"pk-a"}`)
+
+	// then
+	assert.True(t, ok)
+	assert.Nil(t, n.to)
+}
+
+func TestDescribe_ShouldReadToFromNewValueOnChangeAndOldValueOnRemoval(t *testing.T) {
+	cases := []struct {
+		name       string
+		on         string
+		oldV, newV string
+		want       []string
+	}{
+		{"changed reassigns to the new value", "changed", `{"body":"x","status":"open","who":"pk-a"}`, `{"body":"x","status":"done","who":"pk-b"}`, []string{"pk-b"}},
+		{"removed reads the old value", "removed", `{"body":"x","status":"open","who":"pk-a"}`, `{"body":"x","status":"","who":"pk-b"}`, []string{"pk-a"}},
+	}
+	for _, c := range cases {
+		// given
+		v := validatorWith(t, "chat.v1.schema.json", toRule(c.on, "status"))
+		svc := &PushService{validator: v}
+		ev := gComp("chat-1", gChange(gChatA, c.oldV, c.newV))
+
+		// when
+		n, ok := svc.describe(ev, goldenApp(), "Ann", false, "en")
+
+		// then
+		assert.True(t, ok, c.name)
+		assert.Equal(t, c.want, n.to, c.name)
+	}
+}

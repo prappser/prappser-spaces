@@ -1,5 +1,5 @@
 {
-  "bundle": 6,
+  "bundle": 8,
   "types": {
     "Text": {
       "min": 1,
@@ -37,7 +37,7 @@
   "files": [
     {
       "path": "component/chat.v1.schema.json",
-      "sha256": "a8dce723a353c400d2e4d88d159fbc38c7e38edd06e320c2d6f3665077657294"
+      "sha256": "e83aeec0482058d35d4f4b898f62cd8106da05290db48cfd12558ef4c0b0ab6e"
     },
     {
       "path": "component/checklist.v1.schema.json",
@@ -45,7 +45,7 @@
     },
     {
       "path": "component/checklist.v2.schema.json",
-      "sha256": "21b89972c72149e4555e6d4638a3053f58249a1c87dc9ab05b16968a91dc8b2b"
+      "sha256": "e0ea865ad7e4a8ae1432da390afe4bebb6534aa4295b085df014ccc097919382"
     },
     {
       "path": "component/common.v1.schema.json",
@@ -53,15 +53,15 @@
     },
     {
       "path": "component/countdown.v1.schema.json",
-      "sha256": "5beca5447465fc2979dd894daa58741bda7e387bcf10a88075e53a5d92c5e5d7"
+      "sha256": "3fe61bcadbcde9d1f2801ae6686347e1f090e1f3d16395ce7de03c0269fe8905"
     },
     {
       "path": "component/expenses.v1.schema.json",
-      "sha256": "4c1ea0a969f7b9d5287ebad15b160b46e00cf902c0033f48ccd6f224b91f85be"
+      "sha256": "89884070559787c37b3a72f094dfd9386c7ea86ce4eb9ae5cdfcee342bd12921"
     },
     {
       "path": "component/files.v1.schema.json",
-      "sha256": "5099eeff43bd57f446f93c381d8941a511decba14d6df4b84796579754dbb30b"
+      "sha256": "07c1408d9e99947409de2279604308b78ff3210255a233e2430c28b6100c0c89"
     },
     {
       "path": "component/map.v1.schema.json",
@@ -69,15 +69,15 @@
     },
     {
       "path": "component/map.v2.schema.json",
-      "sha256": "b8e79498aded64c5ce692bd63def2b8957f19d96e2406f6a5b05c65845b7e0f7"
+      "sha256": "0c5ac06d11215b629ae1eab511ce5250ff4b9c58eb6eaa28834f58622489dfe5"
     },
     {
       "path": "component/poll.v1.schema.json",
-      "sha256": "1484f12ee607671fcbf4702088aa99da4519f3d80ea92591e3d13eeb754dcd9d"
+      "sha256": "061e4a5c482ab5cff8d0688e99bd87321eaf6a9baf6f9d183059e74ed5f9adca"
     },
     {
       "path": "component/text.v1.schema.json",
-      "sha256": "84d82ba94e8df9b4c1d98cddabdad6da4ff1a49cf3fa745880d9b7d30ec26d08"
+      "sha256": "325863eccbe147361d4294e283fced0488eb969ac06f7ee7065ed13807c645b9"
     },
     {
       "path": "template/template-doc.v1.schema.json",
