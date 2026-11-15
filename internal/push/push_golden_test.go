@@ -71,6 +71,7 @@ func goldenApp() *application.Application {
 				{ID: "expenses-1", Name: "Expenses"},
 				{ID: "list-2", Name: "Checklist", Data: map[string]any{"_title": "Groceries"}},
 				{ID: "expenses-2", Name: "Expenses", Data: map[string]any{"_title": "Costs"}},
+				{ID: "expenses-3", Name: "Expenses", Data: map[string]any{"_currency": "EUR"}},
 			},
 		}},
 	}
@@ -236,6 +237,7 @@ func goldenCases() []goldenCase {
 	add("countdown component", gComp("countdown-1", gChange("target", nil, "2030-01-01")))
 	add("expenses component", gComp("expenses-1", gChange("expense_a", nil, map[string]any{"title": "Dinner", "amount": 10})))
 	add("expense with component title", gComp("expenses-2", gChange("e_0b7e5c1a-3f2d-4a9e-8c11-5d6e7f8a9b0c", nil, `{"what":"Dinner","payer":"pk","amount":4500}`)))
+	add("expense with component currency", gComp("expenses-3", gChange("e_0b7e5c1a-3f2d-4a9e-8c11-5d6e7f8a9b0c", nil, `{"what":"Tickets","payer":"pk","amount":6000}`)))
 	add("expense refund", gComp("expenses-2", gChange("e_0b7e5c1a-3f2d-4a9e-8c11-5d6e7f8a9b0c", nil, `{"what":"Refund","payer":"pk","amount":-50}`)))
 	add("unknown component", gComp("nope", gChange(gChatA, nil, `{"body":"x"}`)))
 

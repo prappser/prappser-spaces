@@ -57,10 +57,10 @@ func TestPlPlural_ShouldPickPolishForm(t *testing.T) {
 
 func TestMinorUnits_ShouldFormatWithSign(t *testing.T) {
 	// when / then
-	assert.Equal(t, "45.00", minorUnits(4500))
-	assert.Equal(t, "0.05", minorUnits(5))
-	assert.Equal(t, "-0.50", minorUnits(-50))
-	assert.Equal(t, "-12.34", minorUnits(-1234))
+	assert.Equal(t, "45.00", minorUnits(4500, "."))
+	assert.Equal(t, "0.05", minorUnits(5, "."))
+	assert.Equal(t, "-0.50", minorUnits(-50, "."))
+	assert.Equal(t, "-12,34", minorUnits(-1234, ","))
 }
 
 func TestReminderPhrases_ShouldPluralizeEnglishAndPolish(t *testing.T) {
