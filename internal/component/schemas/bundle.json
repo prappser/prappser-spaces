@@ -1,5 +1,5 @@
 {
-  "bundle": 8,
+  "bundle": 9,
   "types": {
     "Text": {
       "min": 1,
@@ -27,7 +27,7 @@
     },
     "Expenses": {
       "min": 1,
-      "current": 1
+      "current": 2
     },
     "Countdown": {
       "min": 1,
@@ -60,6 +60,10 @@
       "sha256": "89884070559787c37b3a72f094dfd9386c7ea86ce4eb9ae5cdfcee342bd12921"
     },
     {
+      "path": "component/expenses.v2.schema.json",
+      "sha256": "2a4eadef89053461126fe88b28acac5c72d799a0a19cb91d2269b1f1094ab884"
+    },
+    {
       "path": "component/files.v1.schema.json",
       "sha256": "07c1408d9e99947409de2279604308b78ff3210255a233e2430c28b6100c0c89"
     },
@@ -81,7 +85,7 @@
     },
     {
       "path": "template/template-doc.v1.schema.json",
-      "sha256": "52ec747260db6467c3d071940b8e2b5f4425f2533f902372232528afed14c4e4"
+      "sha256": "cdce1b94bc90ef7a4628c3afd20dfe618a326714d640fee22e16578c3a3f86a5"
     }
   ]
 }

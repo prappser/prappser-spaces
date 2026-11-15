@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://prappser.app/schemas/component/expenses.v2.schema.json",
   "title": "Expenses component data",
-  "description": "Shared expenses. Each expense is an e_<uuid> key, each settlement an s_<uuid> key and each reminder an r_<creditor>__<debtor> key; the value is a JSON-encoded string of $defs/expense, $defs/settlement or $defs/reminder, and '' deletes it (tombstone). Amounts are integer minor units (cents). Any member may add, edit or delete expenses. A settlement records that from paid to; either party (from or to) may record, edit or delete it, so one of them must be your own public key. A reminder nudges a debtor: r_<creditor>__<debtor> with from the creditor and to the debtor, written only by the creditor (from). Each member may publish how they want to be paid in their own pay_<publicKey> key. The entry v is optional: write none, the app stamps it.",
+  "description": "Shared expenses. Each expense is an e_<uuid> key, each settlement an s_<uuid> key and each reminder an r_<creditor>__<debtor> key; the value is a JSON-encoded string of $defs/expense, $defs/settlement or $defs/reminder, and '' deletes it (tombstone). Amounts are integer minor units (cents). Any member may add, edit or delete expenses. A settlement records that from paid to; either party (from or to) may record, edit or delete it, so one of them must be your own public key. A reminder nudges a debtor: r_<creditor>__<debtor> with from the creditor and to the debtor, written only by the creditor (from). Each member may publish how they want to be paid in their own pay_<publicKey> key. Entries carry notification fields so a push reaches only the people it concerns: an expense has notify (public keys), a settlement has notify (the counterparty) and note (the push text), a reminder has note (the push text). The entry v is optional: write none, the app stamps it.",
   "type": "object",
   "properties": {
     "v": {
@@ -51,7 +51,7 @@
   "patternProperties": {
     "^e_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$": {
       "type": "string",
-      "description": "One expense, a JSON-encoded string of $defs/expense. Key e_<uuid>. '' deletes it. Any member may add, edit or delete. Write no v. Include with (the members who share it) to split between some members only; without it the expense is split between all current members. Example value: \"{\\\"what\\\":\\\"Dinner\\\",\\\"payer\\\":\\\"<publicKey>\\\",\\\"amount\\\":4500}\". Annotation only: '' and future non-JSON values are also stored here.",
+      "description": "One expense, a JSON-encoded string of $defs/expense. Key e_<uuid>. '' deletes it. Any member may add, edit or delete. Write no v. Include with (the members who share it) to split between some members only; without it the expense is split between all current members. Also write notify (the members to notify): the members in with plus the payer. Absent notify notifies everyone but you. Example value: \"{\\\"what\\\":\\\"Dinner\\\",\\\"payer\\\":\\\"<publicKey>\\\",\\\"amount\\\":4500,\\\"with\\\":[\\\"<publicKey>\\\",\\\"<other publicKey>\\\"],\\\"notify\\\":[\\\"<publicKey>\\\",\\\"<other publicKey>\\\"]}\". Annotation only: '' and future non-JSON values are also stored here.",
       "contentMediaType": "application/json",
       "x-merge": "per-entry",
       "x-access": {
@@ -61,6 +61,7 @@
         "on": "new",
         "kind": "item",
         "scope": "component",
+        "to": "notify",
         "text": [
           {
             "field": "what",
@@ -75,7 +76,7 @@
     },
     "^s_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$": {
       "type": "string",
-      "description": "One settlement, a JSON-encoded string of $defs/settlement. Key s_<uuid>. '' deletes it. Either party (from or to) may record, edit or delete it, so from or to must be your own public key. Example value: \"{\\\"from\\\":\\\"<debtor publicKey>\\\",\\\"to\\\":\\\"<creditor publicKey>\\\",\\\"amount\\\":2000}\". Annotation only: '' and future non-JSON values are also stored here.",
+      "description": "One settlement, a JSON-encoded string of $defs/settlement. Key s_<uuid>. '' deletes it. Either party (from or to) may record, edit or delete it, so from or to must be your own public key. Also write notify (the other party, who gets the push) and note (the push text, in your language, without your name). Example value: \"{\\\"from\\\":\\\"<debtor publicKey>\\\",\\\"to\\\":\\\"<creditor publicKey>\\\",\\\"amount\\\":2000,\\\"notify\\\":\\\"<creditor publicKey>\\\",\\\"note\\\":\\\"paid back 20.00\\\"}\". Annotation only: '' and future non-JSON values are also stored here.",
       "contentMediaType": "application/json",
       "x-merge": "per-entry",
       "x-access": {
@@ -83,6 +84,17 @@
         "author": [
           "from",
           "to"
+        ]
+      },
+      "x-notify": {
+        "on": "new",
+        "kind": "item",
+        "scope": "component",
+        "to": "notify",
+        "text": [
+          {
+            "field": "note"
+          }
         ]
       }
     },
@@ -104,13 +116,38 @@
     },
     "^r_[^_]+__[^_]+$": {
       "type": "string",
-      "description": "One payment reminder, a JSON-encoded string of $defs/reminder. Key r_<creditor>__<debtor> with two underscores, both public keys (base64 has no underscore); one reminder per pair, a newer write replaces it. '' deletes it. Only the creditor (from) may write it, so from must be your own public key. Example: r_<creditor>__<debtor> = \"{\\\"from\\\":\\\"<creditor publicKey>\\\",\\\"to\\\":\\\"<debtor publicKey>\\\",\\\"amount\\\":2000,\\\"at\\\":1767225600000}\". Annotation only: '' and future non-JSON values are also stored here.",
+      "description": "One payment reminder, a JSON-encoded string of $defs/reminder. Key r_<creditor>__<debtor> with two underscores, both public keys (base64 has no underscore); one reminder per pair, a newer write replaces it. '' deletes it. Only the creditor (from) may write it, so from must be your own public key. Example: r_<creditor>__<debtor> = \"{\\\"from\\\":\\\"<creditor publicKey>\\\",\\\"to\\\":\\\"<debtor publicKey>\\\",\\\"amount\\\":2000,\\\"at\\\":1767225600000,\\\"note\\\":\\\"pay back 20.00\\\"}\". Also write note (the push text, in your language); a resend overwrites the same key and notifies the debtor again. Annotation only: '' and future non-JSON values are also stored here.",
       "contentMediaType": "application/json",
       "x-merge": "per-entry",
       "x-access": {
         "content": "reminder",
         "author": "from"
-      }
+      },
+      "x-notify": [
+        {
+          "on": "new",
+          "kind": "item",
+          "scope": "component",
+          "to": "to",
+          "text": [
+            {
+              "field": "note"
+            }
+          ]
+        },
+        {
+          "on": "changed",
+          "field": "at",
+          "kind": "item",
+          "scope": "component",
+          "to": "to",
+          "text": [
+            {
+              "field": "note"
+            }
+          ]
+        }
+      ]
     },
     "^_": {
       "description": "Other layout and UI keys starting with _. Any value.",
@@ -146,6 +183,13 @@
             "type": "string"
           },
           "description": "Public keys of the members who share the expense. Absent means all current members."
+        },
+        "notify": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Public keys notified about this expense, normally with plus the payer. Absent means everyone but the author."
         }
       },
       "required": [
@@ -174,6 +218,14 @@
           "type": "integer",
           "minimum": 1,
           "description": "Amount in integer minor units (cents), at least 1. Example: 2000 is 20.00."
+        },
+        "notify": {
+          "type": "string",
+          "description": "Public key of the counterparty to notify: the creditor when the debtor recorded it, the debtor when the creditor recorded it."
+        },
+        "note": {
+          "type": "string",
+          "description": "The notification text, rendered by the writer in their language, without a name. Example: \"paid back 20.00\". The space only takes text from a non-empty string field and has no wording for it, so the writer supplies it."
         }
       },
       "required": [
@@ -206,6 +258,10 @@
         "at": {
           "type": "integer",
           "description": "When the reminder was sent, in milliseconds since the Unix epoch."
+        },
+        "note": {
+          "type": "string",
+          "description": "The notification text, rendered by the writer in their language. Example: \"pay back 20.00\". The space only takes text from a non-empty string field and has no wording for it, so the writer supplies it."
         }
       },
       "required": [

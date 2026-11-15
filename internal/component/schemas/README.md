@@ -80,7 +80,7 @@ Rules:
 
 ## Push notifications and `x-notify`
 
-A key may carry an `x-notify` annotation. It tells the space when a change to that key sends a push notification, and with what text. It goes on a top-level `properties` or `patternProperties` entry, next to `x-merge` and `x-access`. Only these types have a rule: chat (`m_` messages), checklist (`item_` entries), map (`place_` and `leg_` entries), poll (`question`, `closed`), expenses (`e_` entries) and files (`items`). A type without a rule sends no push. The app evaluates the same rules to build its notification panel.
+A key may carry an `x-notify` annotation. It tells the space when a change to that key sends a push notification, and with what text. It goes on a top-level `properties` or `patternProperties` entry, next to `x-merge` and `x-access`. Only these types have a rule: chat (`m_` messages), checklist (`item_` entries), map (`place_` and `leg_` entries), poll (`question`, `closed`), expenses (`e_`, `s_` and `r_` entries) and files (`items`). A type without a rule sends no push. Expenses v2 narrows each push with `to`: `notify` (expense members or the settlement counterparty) or `to` (the reminder debtor). Settlements and reminders carry a `note`, the push text rendered by the writer in their language, because text candidates need a non-empty string field and the space has no wording for them. The app evaluates the same rules to build its notification panel.
 
 `x-notify` is one rule object or a list of rule objects. With a list, the rules are tried in order and the first one that fires with non-blank text wins. If any rule of a list is invalid, the whole annotation is ignored.
 
@@ -95,6 +95,7 @@ A rule is an object:
 | `view` | Optional. `chat` or `polls`. |
 | `text` | Required. Non-empty ordered list of candidates. The first one that gives non-blank text wins. |
 | `join` | Any `on`. Folds all fired keys of the family into one push: `prefix`, `sep`, `show`, `more`. The output is `prefix` once, then the first `show` texts joined by `sep`, then, if more keys fired, a space and the localized `more` text (the `itemsMore` string, valid only as `join.more`) with the remaining count, like "+ A, B and 2 more". With fewer than `show` keys there is no "more" tail. `show` must be at least 1. |
+| `to` | Optional. A dotted path into the same entry value the text is read from; it names one public key (string) or an array of public keys. Only those members, minus the author, are notified, and the bell row shows only for them. Missing, empty or unusable means everyone but the author. Not allowed together with `join`. It is read from the client-written entry, so an author can only narrow the audience, never broaden it. With `changed` it reads the new value. Keep it constant across a toggle and its revert. |
 | `skipListed` | Only with `on: new`. `list` and `prefix`: a key is skipped when the key with `prefix` removed equals the string `id` of an element of the component data list `list` (the legacy checklist `items`). |
 
 `on` values:

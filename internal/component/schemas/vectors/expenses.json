@@ -369,9 +369,7 @@
         "what": "Dinner",
         "payer": "pk-alice",
         "amount": 4250,
-        "notify": [
-          "pk-bob"
-        ]
+        "extra": 1
       },
       "valid": false
     },
@@ -425,6 +423,71 @@
         "amount": 1000
       },
       "valid": false
+    },
+    {
+      "name": "v2 expense notify and settlement and reminder note valid",
+      "schema": "https://prappser.app/schemas/component/expenses.v2.schema.json#/$defs/expense",
+      "data": {
+        "what": "Dinner",
+        "payer": "pk-alice",
+        "amount": 4250,
+        "with": [
+          "pk-bob"
+        ],
+        "notify": [
+          "pk-alice",
+          "pk-bob"
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "v2 expense notify must be an array",
+      "schema": "https://prappser.app/schemas/component/expenses.v2.schema.json#/$defs/expense",
+      "data": {
+        "what": "Dinner",
+        "payer": "pk-alice",
+        "amount": 4250,
+        "notify": "pk-bob"
+      },
+      "valid": false
+    },
+    {
+      "name": "v2 settlement notify and note valid",
+      "schema": "https://prappser.app/schemas/component/expenses.v2.schema.json#/$defs/settlement",
+      "data": {
+        "from": "pk-bob",
+        "to": "pk-alice",
+        "amount": 1000,
+        "notify": "pk-alice",
+        "note": "paid back 10.00"
+      },
+      "valid": true
+    },
+    {
+      "name": "v2 settlement notify must be a string",
+      "schema": "https://prappser.app/schemas/component/expenses.v2.schema.json#/$defs/settlement",
+      "data": {
+        "from": "pk-bob",
+        "to": "pk-alice",
+        "amount": 1000,
+        "notify": [
+          "pk-alice"
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "v2 reminder note valid",
+      "schema": "https://prappser.app/schemas/component/expenses.v2.schema.json#/$defs/reminder",
+      "data": {
+        "from": "pk-alice",
+        "to": "pk-bob",
+        "amount": 1000,
+        "at": 1,
+        "note": "pay back 10.00"
+      },
+      "valid": true
     },
     {
       "name": "v2 settlement unknown field",
@@ -649,7 +712,7 @@
         "to": "pk-bob",
         "amount": 1000,
         "at": 1,
-        "note": "x"
+        "extra": 1
       },
       "valid": false
     },
