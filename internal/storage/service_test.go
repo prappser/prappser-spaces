@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"image"
+	"image/png"
 	"io"
 	"mime/multipart"
 	"net/textproto"
@@ -173,6 +175,8 @@ type mockStorageService struct {
 	// instead of the "not implemented" default below.
 	uploadResult *Storage
 	uploadErr    error
+	thumbCalls   int
+	setThumbErr  error
 }
 
 func (m *mockStorageService) Get(_ context.Context, id, _ string) (*Storage, error) {
@@ -193,6 +197,11 @@ func (m *mockStorageService) GetData(_ context.Context, id string) (io.ReadClose
 
 func (m *mockStorageService) GetThumbnail(_ context.Context, id string) (io.ReadCloser, *Storage, error) {
 	return nil, nil, fmt.Errorf("no thumbnail available")
+}
+
+func (m *mockStorageService) SetThumbnail(_ context.Context, _ *Storage, _ []byte) error {
+	m.thumbCalls++
+	return m.setThumbErr
 }
 
 func (m *mockStorageService) Upload(_ context.Context, _ *string, _ string, _ *string, _ *UploadRequest, _ io.Reader, _ string, _ bool) (*Storage, error) {
@@ -714,4 +723,188 @@ func TestValidateStorageID_ShouldAcceptUUID(t *testing.T) {
 
 func (m *mockUserRepoStorage) ReviveDevice(_, _ string, _ int64) (bool, error) {
 	return false, nil
+}
+
+func pngBytes(t *testing.T, w, h int) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, image.NewRGBA(image.Rect(0, 0, w, h))); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+func TestGenerateThumbnail_ShouldStoreFittedJPEG(t *testing.T) {
+	// given
+	backend := newMockBackend()
+	svc := &Service{backend: backend}
+	stored := &Storage{ID: "doc-1", StoragePath: "app/doc-1.pdf"}
+
+	// when
+	err := svc.generateThumbnail(context.Background(), stored, pngBytes(t, 600, 400))
+
+	// then
+	assert.NoError(t, err)
+	assert.Equal(t, "app/doc-1_thumb.jpg", stored.ThumbnailPath)
+	cfg, format, err := image.DecodeConfig(strings.NewReader(backend.objects[stored.ThumbnailPath]))
+	assert.NoError(t, err)
+	assert.Equal(t, "jpeg", format)
+	assert.LessOrEqual(t, cfg.Width, 300)
+	assert.LessOrEqual(t, cfg.Height, 300)
+}
+
+func TestSetThumbnail_ShouldReturnErrInvalidImageForGarbage(t *testing.T) {
+	// given: nil repo, a decode failure must return before any DB write
+	svc := &Service{backend: newMockBackend()}
+
+	// when
+	err := svc.SetThumbnail(context.Background(), &Storage{ID: "doc-1", StoragePath: "doc-1"}, []byte("not an image"))
+
+	// then
+	assert.ErrorIs(t, err, ErrInvalidImage)
+}
+
+func TestSetThumbnail_ShouldReturnErrFileTooLargeForOversizedBytes(t *testing.T) {
+	// given
+	svc := &Service{backend: newMockBackend()}
+
+	// when
+	err := svc.SetThumbnail(context.Background(), &Storage{ID: "doc-1", StoragePath: "doc-1"}, make([]byte, maxThumbUploadBytes+1))
+
+	// then
+	assert.ErrorIs(t, err, ErrFileTooLarge)
+}
+
+func TestSetThumbnail_ShouldReturnErrFileTooLargeForWideImage(t *testing.T) {
+	// given
+	svc := &Service{backend: newMockBackend()}
+
+	// when
+	err := svc.SetThumbnail(context.Background(), &Storage{ID: "doc-1", StoragePath: "doc-1"}, pngBytes(t, maxThumbUploadDim+1, 1))
+
+	// then
+	assert.ErrorIs(t, err, ErrFileTooLarge)
+}
+
+func TestSetThumbnail_ShouldReturnErrFileTooLargeForTallImage(t *testing.T) {
+	// given
+	svc := &Service{backend: newMockBackend()}
+
+	// when
+	err := svc.SetThumbnail(context.Background(), &Storage{ID: "doc-1", StoragePath: "doc-1"}, pngBytes(t, 1, maxThumbUploadDim+1))
+
+	// then
+	assert.ErrorIs(t, err, ErrFileTooLarge)
+}
+
+// ---- PutThumbnail endpoint ----
+
+func putThumbnail(t *testing.T, row *Storage, pk, contentType string, body []byte, isMember bool, setThumbErr error) (*fasthttp.RequestCtx, *mockStorageService) {
+	t.Helper()
+	repo := newMockStorageRepo()
+	if row != nil {
+		repo.records[row.ID] = row
+	}
+	svc := &mockStorageService{repo: repo, backend: newMockBackend(), setThumbErr: setThumbErr}
+	ep := &Endpoints{service: svc, appRepo: &mockAppRepo{isMember: isMember}}
+	ctx := newTestRequestCtxStorage("PUT")
+	ctx.Request.Header.SetContentType(contentType)
+	ctx.Request.SetBody(body)
+	ctx.SetUserValue("storageID", "doc-1")
+	setStorageAuthUser(ctx, storageTestUser(pk))
+	ep.PutThumbnail(ctx)
+	return ctx, svc
+}
+
+func pdfRow() *Storage {
+	appID := "app-1"
+	return &Storage{ID: "doc-1", ApplicationID: &appID, UploaderPublicKey: "pk-1", ContentType: "application/pdf", Status: string(StorageStatusReady)}
+}
+
+func TestPutThumbnail_ShouldReturn204ForUploader(t *testing.T) {
+	// given
+	row := pdfRow()
+
+	// when
+	ctx, svc := putThumbnail(t, row, "pk-1", "image/png; charset=binary", pngBytes(t, 10, 10), true, nil)
+
+	// then
+	assert.Equal(t, fasthttp.StatusNoContent, ctx.Response.StatusCode())
+	assert.Equal(t, 1, svc.thumbCalls)
+}
+
+func TestPutThumbnail_ShouldReturn403ForNonUploader(t *testing.T) {
+	// when
+	ctx, svc := putThumbnail(t, pdfRow(), "pk-2", "image/png", pngBytes(t, 10, 10), true, nil)
+
+	// then
+	assert.Equal(t, fasthttp.StatusForbidden, ctx.Response.StatusCode())
+	assert.Equal(t, 0, svc.thumbCalls)
+}
+
+func TestPutThumbnail_ShouldReturn404ForUnknownID(t *testing.T) {
+	// when
+	ctx, _ := putThumbnail(t, nil, "pk-1", "image/png", pngBytes(t, 10, 10), true, nil)
+
+	// then
+	assert.Equal(t, fasthttp.StatusNotFound, ctx.Response.StatusCode())
+}
+
+func TestPutThumbnail_ShouldReturn409ForImageRow(t *testing.T) {
+	// given
+	row := pdfRow()
+	row.ContentType = "image/png"
+
+	// when
+	ctx, svc := putThumbnail(t, row, "pk-1", "image/png", pngBytes(t, 10, 10), true, nil)
+
+	// then
+	assert.Equal(t, fasthttp.StatusConflict, ctx.Response.StatusCode())
+	assert.Equal(t, 0, svc.thumbCalls)
+}
+
+func TestPutThumbnail_ShouldReturn413WhenServiceReportsTooLarge(t *testing.T) {
+	// when
+	ctx, _ := putThumbnail(t, pdfRow(), "pk-1", "image/png", pngBytes(t, 10, 10), true, ErrFileTooLarge)
+
+	// then
+	assert.Equal(t, fasthttp.StatusRequestEntityTooLarge, ctx.Response.StatusCode())
+}
+
+func TestPutThumbnail_ShouldReturn415WhenServiceReportsInvalidImage(t *testing.T) {
+	// when
+	ctx, _ := putThumbnail(t, pdfRow(), "pk-1", "image/png", pngBytes(t, 10, 10), true, ErrInvalidImage)
+
+	// then
+	assert.Equal(t, fasthttp.StatusUnsupportedMediaType, ctx.Response.StatusCode())
+}
+
+func TestPutThumbnail_ShouldReturn403ForNonMember(t *testing.T) {
+	// when
+	ctx, svc := putThumbnail(t, pdfRow(), "pk-1", "image/png", pngBytes(t, 10, 10), false, nil)
+
+	// then
+	assert.Equal(t, fasthttp.StatusForbidden, ctx.Response.StatusCode())
+	assert.Equal(t, 0, svc.thumbCalls)
+}
+
+func TestPutThumbnail_ShouldReturn404ForNotReadyRow(t *testing.T) {
+	// given
+	row := pdfRow()
+	row.Status = string(StorageStatusPending)
+
+	// when
+	ctx, svc := putThumbnail(t, row, "pk-1", "image/png", pngBytes(t, 10, 10), true, nil)
+
+	// then
+	assert.Equal(t, fasthttp.StatusNotFound, ctx.Response.StatusCode())
+	assert.Equal(t, 0, svc.thumbCalls)
+}
+
+func TestPutThumbnail_ShouldReturn415ForBadContentType(t *testing.T) {
+	// when
+	ctx, _ := putThumbnail(t, pdfRow(), "pk-1", "image/gif", pngBytes(t, 10, 10), true, nil)
+
+	// then
+	assert.Equal(t, fasthttp.StatusUnsupportedMediaType, ctx.Response.StatusCode())
 }
