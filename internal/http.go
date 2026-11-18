@@ -485,7 +485,14 @@ func NewRequestHandler(config *Config, userEndpoints *user.UserEndpoints, status
 			parts := strings.Split(path, "/")
 			if len(parts) == 4 && parts[3] == "thumb" {
 				ctx.SetUserValue("storageID", parts[2])
-				authMiddleware.RequireAuth(storageEndpoints.GetThumbnail)(ctx)
+				switch string(ctx.Method()) {
+				case "GET":
+					authMiddleware.RequireAuth(storageEndpoints.GetThumbnail)(ctx)
+				case "PUT":
+					authMiddleware.RequireAuth(storageEndpoints.PutThumbnail)(ctx)
+				default:
+					ctx.Error("Method Not Allowed", fasthttp.StatusMethodNotAllowed)
+				}
 			} else {
 				ctx.Error("Not Found", fasthttp.StatusNotFound)
 			}

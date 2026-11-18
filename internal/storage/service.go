@@ -26,6 +26,9 @@ const (
 	maxThumbnailWidth  = 300
 	maxThumbnailHeight = 300
 
+	maxThumbUploadBytes = 512 * 1024
+	maxThumbUploadDim   = 2048
+
 	pqUniqueViolation = "23505"
 
 	// maxContentTypeLength caps the stored content type; the DB column is
@@ -54,6 +57,7 @@ func isValidContentType(contentType string) bool {
 var (
 	ErrFileTooLarge         = errors.New("file too large")
 	ErrStorageQuotaExceeded = errors.New("storage quota exceeded")
+	ErrInvalidImage         = errors.New("invalid image")
 )
 
 type Service struct {
@@ -181,7 +185,7 @@ func (s *Service) Upload(ctx context.Context, appID *string, uploaderPublicKey s
 func (s *Service) generateThumbnail(ctx context.Context, stored *Storage, data []byte) error {
 	img, err := imaging.Decode(bytes.NewReader(data))
 	if err != nil {
-		return fmt.Errorf("failed to decode image for thumbnail: %w", err)
+		return fmt.Errorf("failed to decode image for thumbnail: %w: %w", ErrInvalidImage, err)
 	}
 
 	thumb := imaging.Fit(img, maxThumbnailWidth, maxThumbnailHeight, imaging.Lanczos)
@@ -200,6 +204,26 @@ func (s *Service) generateThumbnail(ctx context.Context, stored *Storage, data [
 	}
 
 	stored.ThumbnailPath = thumbnailPath
+	return nil
+}
+
+func (s *Service) SetThumbnail(ctx context.Context, stored *Storage, data []byte) error {
+	if len(data) > maxThumbUploadBytes {
+		return fmt.Errorf("%w: thumbnail %d bytes (max: %d)", ErrFileTooLarge, len(data), maxThumbUploadBytes)
+	}
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		return fmt.Errorf("failed to decode thumbnail: %w: %w", ErrInvalidImage, err)
+	}
+	if cfg.Width > maxThumbUploadDim || cfg.Height > maxThumbUploadDim {
+		return fmt.Errorf("%w: thumbnail %dx%d (max: %d)", ErrFileTooLarge, cfg.Width, cfg.Height, maxThumbUploadDim)
+	}
+	if err := s.generateThumbnail(ctx, stored, data); err != nil {
+		return err
+	}
+	if err := s.repo.UpdateThumbnail(stored.ID, stored.ThumbnailPath); err != nil {
+		return fmt.Errorf("failed to update thumbnail path: %w", err)
+	}
 	return nil
 }
 
