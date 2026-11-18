@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"image/jpeg"
 	"io"
 	"mime/multipart"
 	"net/textproto"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -15,6 +17,7 @@ import (
 	"github.com/prappser/prappser-spaces/internal/application"
 	"github.com/prappser/prappser-spaces/internal/user"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/valyala/fasthttp"
 )
 
@@ -714,4 +717,20 @@ func TestValidateStorageID_ShouldAcceptUUID(t *testing.T) {
 
 func (m *mockUserRepoStorage) ReviveDevice(_, _ string, _ int64) (bool, error) {
 	return false, nil
+}
+
+func TestRenderPDFThumbnail_ShouldFitFirstPageIntoThumbnailBounds(t *testing.T) {
+	// given
+	data, err := os.ReadFile("testdata/one-page.pdf")
+	require.NoError(t, err)
+
+	// when
+	out, err := renderPDFThumbnail(context.Background(), data)
+
+	// then
+	require.NoError(t, err)
+	img, err := jpeg.Decode(bytes.NewReader(out))
+	require.NoError(t, err)
+	b := img.Bounds()
+	assert.Equal(t, maxThumbnailHeight, max(b.Dx(), b.Dy()))
 }

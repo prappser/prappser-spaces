@@ -26,6 +26,8 @@ const (
 	maxThumbnailWidth  = 300
 	maxThumbnailHeight = 300
 
+	thumbnailJPEGQuality = 80
+
 	pqUniqueViolation = "23505"
 
 	// maxContentTypeLength caps the stored content type; the DB column is
@@ -164,15 +166,7 @@ func (s *Service) Upload(ctx context.Context, appID *string, uploaderPublicKey s
 		return nil, fmt.Errorf("failed to save storage record: %w", err)
 	}
 
-	if strings.HasPrefix(req.ContentType, "image/") {
-		s.processImage(ctx, stored, buf.Bytes())
-		if stored.Width != nil && stored.Height != nil {
-			s.repo.UpdateDimensions(stored.ID, *stored.Width, *stored.Height)
-		}
-		if stored.ThumbnailPath != "" {
-			s.repo.UpdateThumbnail(stored.ID, stored.ThumbnailPath)
-		}
-	}
+	s.processMedia(ctx, stored, buf.Bytes())
 
 	s.populateURLs(ctx, stored, baseURL)
 	return stored, nil
@@ -187,20 +181,38 @@ func (s *Service) generateThumbnail(ctx context.Context, stored *Storage, data [
 	thumb := imaging.Fit(img, maxThumbnailWidth, maxThumbnailHeight, imaging.Lanczos)
 
 	var thumbBuf bytes.Buffer
-	if err := imaging.Encode(&thumbBuf, thumb, imaging.JPEG, imaging.JPEGQuality(80)); err != nil {
+	if err := imaging.Encode(&thumbBuf, thumb, imaging.JPEG, imaging.JPEGQuality(thumbnailJPEGQuality)); err != nil {
 		return fmt.Errorf("failed to encode thumbnail: %w", err)
 	}
 
+	return s.storeThumbnail(ctx, stored, &thumbBuf)
+}
+
+func (s *Service) storeThumbnail(ctx context.Context, stored *Storage, r io.Reader) error {
 	ext := "_thumb.jpg"
 	basePath := strings.TrimSuffix(stored.StoragePath, filepath.Ext(stored.StoragePath))
 	thumbnailPath := basePath + ext
 
-	if err := s.backend.Store(ctx, thumbnailPath, &thumbBuf); err != nil {
+	if err := s.backend.Store(ctx, thumbnailPath, r); err != nil {
 		return fmt.Errorf("failed to store thumbnail: %w", err)
 	}
 
 	stored.ThumbnailPath = thumbnailPath
 	return nil
+}
+
+func (s *Service) processMedia(ctx context.Context, stored *Storage, data []byte) {
+	if strings.HasPrefix(stored.ContentType, "image/") {
+		s.processImage(ctx, stored, data)
+		if stored.Width != nil && stored.Height != nil {
+			s.repo.UpdateDimensions(stored.ID, *stored.Width, *stored.Height)
+		}
+	} else if strings.HasPrefix(stored.ContentType, "application/pdf") {
+		s.processPDF(ctx, stored, data)
+	}
+	if stored.ThumbnailPath != "" {
+		s.repo.UpdateThumbnail(stored.ID, stored.ThumbnailPath)
+	}
 }
 
 func (s *Service) Get(ctx context.Context, id string, baseURL string) (*Storage, error) {
@@ -489,15 +501,7 @@ func (s *Service) CompleteChunkedUpload(ctx context.Context, storageID string, b
 
 	s.repo.DeleteChunks(storageID)
 
-	if strings.HasPrefix(stored.ContentType, "image/") {
-		s.processImage(ctx, stored, combined.Bytes())
-		if stored.Width != nil && stored.Height != nil {
-			s.repo.UpdateDimensions(storageID, *stored.Width, *stored.Height)
-		}
-		if stored.ThumbnailPath != "" {
-			s.repo.UpdateThumbnail(storageID, stored.ThumbnailPath)
-		}
-	}
+	s.processMedia(ctx, stored, combined.Bytes())
 
 	stored.SizeBytes = int64(combined.Len())
 	stored.Status = string(StorageStatusReady)
@@ -595,6 +599,17 @@ func (s *Service) processImage(ctx context.Context, stored *Storage, data []byte
 
 	if err := s.generateThumbnail(ctx, stored, data); err != nil {
 		log.Warn().Err(err).Str("storageId", stored.ID).Msg("Failed to generate thumbnail")
+	}
+}
+
+func (s *Service) processPDF(ctx context.Context, stored *Storage, data []byte) {
+	thumb, err := renderPDFThumbnail(ctx, data)
+	if err != nil {
+		log.Warn().Err(err).Str("storageId", stored.ID).Msg("Failed to generate PDF thumbnail")
+		return
+	}
+	if err := s.storeThumbnail(ctx, stored, bytes.NewReader(thumb)); err != nil {
+		log.Warn().Err(err).Str("storageId", stored.ID).Msg("Failed to generate PDF thumbnail")
 	}
 }
 

@@ -108,6 +108,7 @@ internal/
     s3_storage.go          — S3/MinIO backend
     repository.go          — Repository
     service.go             — Service
+    pdf.go                 — renderPDFThumbnail: first-page JPEG via PDFium on wazero (lazy pool, time and memory capped)
     endpoints.go           — Endpoints
   middleware/
     auth.go                — AuthMiddleware: RequireAuth(), RequireRole()
