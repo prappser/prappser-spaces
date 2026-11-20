@@ -28,6 +28,66 @@
       "valid": true
     },
     {
+      "name": "emoji icon",
+      "data": {
+        "name": "Trip",
+        "description": "",
+        "icon": "emoji:🛒|coral",
+        "groups": []
+      },
+      "valid": true
+    },
+    {
+      "name": "emoji icon with zwj sequence",
+      "data": {
+        "name": "Trip",
+        "description": "",
+        "icon": "emoji:👩‍👩‍👧|slate",
+        "groups": []
+      },
+      "valid": true
+    },
+    {
+      "name": "emoji icon with empty emoji",
+      "data": {
+        "name": "Trip",
+        "description": "",
+        "icon": "emoji:|coral",
+        "groups": []
+      },
+      "valid": false
+    },
+    {
+      "name": "emoji icon with unknown background",
+      "data": {
+        "name": "Trip",
+        "description": "",
+        "icon": "emoji:🛒|pink",
+        "groups": []
+      },
+      "valid": false
+    },
+    {
+      "name": "emoji icon without background",
+      "data": {
+        "name": "Trip",
+        "description": "",
+        "icon": "emoji:🛒",
+        "groups": []
+      },
+      "valid": false
+    },
+    {
+      "name": "unknown icon name",
+      "data": {
+        "name": "Trip",
+        "description": "",
+        "icon": "nope",
+        "groups": []
+      },
+      "valid": false
+    },
+    {
       "name": "all eight component types",
       "data": {
         "name": "Trip",

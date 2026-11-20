@@ -1,5 +1,5 @@
 {
-  "bundle": 9,
+  "bundle": 10,
   "types": {
     "Text": {
       "min": 1,
@@ -85,7 +85,7 @@
     },
     {
       "path": "template/template-doc.v1.schema.json",
-      "sha256": "cdce1b94bc90ef7a4628c3afd20dfe618a326714d640fee22e16578c3a3f86a5"
+      "sha256": "08b284d6eb1a7581f5878e5cb5983f885816c5e012d7b4a3392c4b9526001f0f"
     }
   ]
 }
