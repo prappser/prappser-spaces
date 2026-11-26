@@ -55,11 +55,12 @@ type User struct {
 	// request-scoped identity, not account data.
 	DevicePublicKey string `json:"-"`
 	Agent           bool   `json:"-"`
+	TokenExpiresAt  int64  `json:"-"`
 	// HasPassword reports whether this account has password-login credentials
 	// set. Populated only by GetProfile (looked up on demand, not stored on
 	// the account record) - omitempty so every other endpoint that serializes
 	// a User keeps emitting byte-identical payloads.
-	HasPassword bool `json:"hasPassword,omitempty"`
+	HasPassword bool     `json:"hasPassword,omitempty"`
 	NotifyModes []string `json:"notifyModes,omitempty"`
 	// UserStateBlob is the account's escrowed user-state blob (see GetEscrow),
 	// exposed so a device can union it with local state after another
@@ -77,7 +78,7 @@ type User struct {
 	// Deliberately a boolean, not the blob itself: exposing accountKeyBlob
 	// here would let any authenticated device pull it and crack it offline
 	// without proving the password.
-	HasEscrow bool `json:"hasEscrow,omitempty"`
+	HasEscrow      bool            `json:"hasEscrow,omitempty"`
 	PaymentMethods json.RawMessage `json:"paymentMethods,omitempty"`
 }
 

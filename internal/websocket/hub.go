@@ -14,9 +14,11 @@ type Hub struct {
 	clients       map[*Client]bool
 	byUser        map[string][]*Client // publicKey -> clients
 	byApp         map[string][]*Client // applicationId -> subscribers
-	register      chan *Client
 	unregister    chan *Client
 	disconnect    chan disconnectReq
+	pendingMu     sync.Mutex
+	pending       map[disconnectReq]struct{} // overflow of disconnect, drained by one worker
+	draining      bool
 	broadcast     chan *BroadcastMessage
 	userBroadcast chan *UserBroadcastMessage
 	mu            sync.RWMutex
@@ -29,9 +31,8 @@ func NewHub(appRepo application.ApplicationRepository) *Hub {
 		clients:       make(map[*Client]bool),
 		byUser:        make(map[string][]*Client),
 		byApp:         make(map[string][]*Client),
-		register:      make(chan *Client),
 		unregister:    make(chan *Client),
-		disconnect:    make(chan disconnectReq),
+		disconnect:    make(chan disconnectReq, 64),
 		broadcast:     make(chan *BroadcastMessage, 256),
 		userBroadcast: make(chan *UserBroadcastMessage, 256),
 	}
@@ -40,9 +41,6 @@ func NewHub(appRepo application.ApplicationRepository) *Hub {
 func (h *Hub) Run() {
 	for {
 		select {
-		case client := <-h.register:
-			h.registerClient(client)
-
 		case client := <-h.unregister:
 			h.unregisterClient(client)
 
@@ -167,26 +165,20 @@ func (h *Hub) Unsubscribe(client *Client, applicationID string) {
 		Msg("[WS] Application subscription removed")
 }
 
+// broadcastToApp and broadcastToUser send under the read lock because unregisterClient closes client.send under the write lock.
 func (h *Hub) broadcastToApp(msg *BroadcastMessage) {
-	h.mu.RLock()
-	var clients []*Client
-	for _, c := range h.byApp[msg.ApplicationID] {
-		if msg.Recipients[c.user.PublicKey] {
-			clients = append(clients, c)
-		}
-	}
-	h.mu.RUnlock()
-
-	if len(clients) == 0 {
-		return
-	}
-
 	eventMsg := &EventsMessage{
 		Type:   MessageTypeEvents,
 		Events: []*event.Event{msg.Event},
 	}
 
-	for _, client := range clients {
+	h.mu.RLock()
+	delivered := 0
+	for _, client := range h.byApp[msg.ApplicationID] {
+		if !msg.Recipients[client.user.PublicKey] {
+			continue
+		}
+		delivered++
 		select {
 		case client.send <- eventMsg:
 		default:
@@ -197,30 +189,32 @@ func (h *Hub) broadcastToApp(msg *BroadcastMessage) {
 				Msg("[WS] Client send buffer full, dropping message")
 		}
 	}
+	h.mu.RUnlock()
+
+	if delivered == 0 {
+		return
+	}
 
 	log.Debug().
 		Str("applicationId", msg.ApplicationID).
 		Str("eventId", msg.Event.ID).
-		Int("recipients", len(clients)).
+		Int("recipients", delivered).
 		Msg("[WS] Event broadcast complete")
 }
 
 func (h *Hub) broadcastToUser(msg *UserBroadcastMessage) {
-	h.mu.RLock()
-	clients := make([]*Client, len(h.byUser[msg.UserPublicKey]))
-	copy(clients, h.byUser[msg.UserPublicKey])
-	h.mu.RUnlock()
-
-	if len(clients) == 0 {
-		return
-	}
-
 	eventMsg := &EventsMessage{
 		Type:   MessageTypeEvents,
 		Events: []*event.Event{msg.Event},
 	}
 
-	for _, client := range clients {
+	h.mu.RLock()
+	delivered := 0
+	for _, client := range h.byUser[msg.UserPublicKey] {
+		if client.user.Agent {
+			continue
+		}
+		delivered++
 		select {
 		case client.send <- eventMsg:
 		default:
@@ -228,6 +222,11 @@ func (h *Hub) broadcastToUser(msg *UserBroadcastMessage) {
 				Str("userPublicKey", client.user.PublicKey[:20]+"...").
 				Msg("[WS] Client send buffer full, dropping user broadcast")
 		}
+	}
+	h.mu.RUnlock()
+
+	if delivered == 0 {
+		return
 	}
 
 	pkLen := len(msg.UserPublicKey)
@@ -237,7 +236,7 @@ func (h *Hub) broadcastToUser(msg *UserBroadcastMessage) {
 	log.Debug().
 		Str("userPublicKey", msg.UserPublicKey[:pkLen]+"...").
 		Str("eventId", msg.Event.ID).
-		Int("recipients", len(clients)).
+		Int("recipients", delivered).
 		Msg("[WS] User event broadcast complete")
 }
 
@@ -264,8 +263,9 @@ func (h *Hub) SendPush(account, device string, payload []byte) bool {
 	return delivered
 }
 
+// Register inserts the client before returning, so a Disconnect issued afterwards always sees it.
 func (h *Hub) Register(client *Client) {
-	h.register <- client
+	h.registerClient(client)
 }
 
 func (h *Hub) Unregister(client *Client) {
@@ -273,8 +273,64 @@ func (h *Hub) Unregister(client *Client) {
 }
 
 // Disconnect closes the account's sockets for one device; an empty device means every socket of the account.
+// It never blocks the caller: requests go to Run, and a full queue spills into a coalesced pending set
+// that a single worker drains, so a flood cannot spawn goroutines and no request is dropped.
 func (h *Hub) Disconnect(account, device string) {
-	h.disconnect <- disconnectReq{account: account, device: device}
+	req := disconnectReq{account: account, device: device}
+	select {
+	case h.disconnect <- req:
+		return
+	default:
+	}
+
+	h.pendingMu.Lock()
+	defer h.pendingMu.Unlock()
+	if h.pending == nil {
+		h.pending = make(map[disconnectReq]struct{})
+	}
+	h.pending[req] = struct{}{}
+	if !h.draining {
+		h.draining = true
+		go h.drainPending()
+	}
+}
+
+func (h *Hub) drainPending() {
+	for {
+		h.pendingMu.Lock()
+		reqs := h.pending
+		h.pending = nil
+		if len(reqs) == 0 {
+			h.draining = false
+			h.pendingMu.Unlock()
+			return
+		}
+		h.pendingMu.Unlock()
+
+		for req := range reqs {
+			h.disconnectClients(req)
+		}
+	}
+}
+
+// EvictAgents drops the live subscriptions of every agent on the app except the owner's own, keeping their sockets open.
+func (h *Hub) EvictAgents(applicationID, ownerPublicKey string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	for _, c := range append([]*Client(nil), h.byApp[applicationID]...) {
+		if !c.user.Agent || c.user.PublicKey == ownerPublicKey {
+			continue
+		}
+		h.removeFromAppSubscribers(c, applicationID)
+		c.mu.Lock()
+		delete(c.subscriptions, applicationID)
+		c.mu.Unlock()
+		select {
+		case c.send <- &OutgoingMessage{Type: MessageTypeError, Error: "agent access to this application was turned off"}:
+		default:
+		}
+	}
 }
 
 func (h *Hub) BroadcastToApplication(applicationID string, ev *event.Event) {

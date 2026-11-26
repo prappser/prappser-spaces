@@ -283,7 +283,7 @@ func (s *Service) exchangeCode(p tokenParams) (*TokenResponse, error) {
 	}
 	if reused {
 		if entry.deviceKey != "" {
-			if err := s.users.RevokeDevice(entry.deviceKey, nowFunc().Unix()); err != nil {
+			if err := s.agents.RevokeAgent(entry.userPublicKey, entry.deviceKey); err != nil {
 				log.Error().Err(err).Msg("[OAUTH] Failed to revoke device after code reuse")
 			}
 		}
@@ -310,7 +310,7 @@ func (s *Service) exchangeCode(p tokenParams) (*TokenResponse, error) {
 		return nil, newError(CodeServerError, "failed to issue tokens")
 	}
 	if s.store.setCodeDevice(p.Code, tokens.DevicePublicKey) {
-		if err := s.users.RevokeDevice(tokens.DevicePublicKey, nowFunc().Unix()); err != nil {
+		if err := s.agents.RevokeAgent(entry.userPublicKey, tokens.DevicePublicKey); err != nil {
 			log.Error().Err(err).Msg("[OAUTH] Failed to revoke device after code replay during issuance")
 		}
 		log.Warn().Msg("[OAUTH] Authorization code replayed during token issuance, device revoked")

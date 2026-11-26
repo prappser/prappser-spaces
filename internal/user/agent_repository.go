@@ -73,16 +73,17 @@ func (r *agentRepository) rotateRefreshToken(oldHash, newHash string, now, newEx
 	return device, nil
 }
 
-func (r *agentRepository) deviceForPrevHash(hash string) (string, error) {
-	var device string
-	err := r.db.QueryRow(
-		`SELECT device_public_key FROM agent_refresh_tokens WHERE prev_token_hash = $1`, hash,
-	).Scan(&device)
+func (r *agentRepository) deviceForPrevHash(hash string) (device, account string, err error) {
+	err = r.db.QueryRow(
+		`SELECT t.device_public_key, d.user_public_key FROM agent_refresh_tokens t
+		 JOIN user_devices d ON d.device_public_key = t.device_public_key
+		 WHERE t.prev_token_hash = $1`, hash,
+	).Scan(&device, &account)
 	if err == sql.ErrNoRows {
-		return "", nil
+		return "", "", nil
 	}
 	if err != nil {
-		return "", fmt.Errorf("failed to look up previous refresh token: %w", err)
+		return "", "", fmt.Errorf("failed to look up previous refresh token: %w", err)
 	}
-	return device, nil
+	return device, account, nil
 }

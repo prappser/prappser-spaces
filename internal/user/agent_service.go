@@ -41,6 +41,7 @@ type AgentService struct {
 	publicKey      ed25519.PublicKey
 	issuer         string
 	audience       string
+	Disconnect     func(account, device string)
 }
 
 func NewAgentService(db *sql.DB, userRepository UserRepository, privateKey ed25519.PrivateKey, publicKey ed25519.PublicKey, externalURL string) *AgentService {
@@ -121,15 +122,15 @@ func (as *AgentService) Refresh(refreshToken string) (*AgentTokens, error) {
 		return nil, err
 	}
 	if device == "" {
-		reused, err := as.repo.deviceForPrevHash(oldHash)
+		reused, account, err := as.repo.deviceForPrevHash(oldHash)
 		if err != nil {
-			return nil, err
-		}
-		if reused != "" {
-			if err := as.userRepository.RevokeDevice(reused, now.Unix()); err != nil {
-				return nil, fmt.Errorf("failed to revoke device after token reuse: %w", err)
+			log.Error().Err(err).Msg("[AGENT] Refresh token reuse lookup failed")
+		} else if reused != "" {
+			if err := as.RevokeAgent(account, reused); err != nil {
+				log.Error().Err(err).Msg("[AGENT] Failed to revoke device after token reuse")
+			} else {
+				log.Warn().Msg("[AGENT] Refresh token reuse, device revoked")
 			}
-			log.Warn().Msg("[AGENT] Refresh token reuse, device revoked")
 		}
 		return nil, ErrInvalidRefreshToken
 	}
@@ -139,6 +140,23 @@ func (as *AgentService) Refresh(refreshToken string) (*AgentTokens, error) {
 		return nil, err
 	}
 	return &AgentTokens{DevicePublicKey: device, AccessToken: access, AccessTokenExpiresAt: exp, RefreshToken: newToken}, nil
+}
+
+// RevokeAgent disconnects even when the revoke fails, so a live socket never outlasts a revoke attempt.
+func (as *AgentService) RevokeAgent(account, device string) error {
+	err := as.userRepository.RevokeDevice(device, time.Now().Unix())
+	if as.Disconnect != nil {
+		as.Disconnect(account, device)
+	}
+	return err
+}
+
+func (as *AgentService) DeviceActive(device string) (bool, error) {
+	d, err := as.userRepository.GetDevice(device)
+	if err != nil {
+		return false, err
+	}
+	return d != nil && d.RevokedAt == nil, nil
 }
 
 func (as *AgentService) mintAccessToken(deviceKey string) (string, int64, error) {
@@ -194,5 +212,6 @@ func (as *AgentService) ValidateAccessToken(tokenString string) (*User, error) {
 	}
 	user.DevicePublicKey = device.DevicePublicKey
 	user.Agent = true
+	user.TokenExpiresAt = claims.ExpiresAt.Unix()
 	return user, nil
 }

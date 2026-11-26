@@ -250,13 +250,15 @@ func TestOAuthToken_ReusedCode_ShouldRevokeDevice_Integration(t *testing.T) {
 	// given
 	f := newFixture(t, nil)
 	verifier, challenge := pkcePair()
-	_, code := f.approvedCode(challenge)
+	pk, code := f.approvedCode(challenge)
 	first := f.token(f.codeForm(code, verifier))
 	require.Equal(t, fasthttp.StatusOK, first.Response.StatusCode())
 	var tok TokenResponse
 	require.NoError(t, json.Unmarshal(first.Response.Body(), &tok))
-	_, err := f.agents.ValidateAccessToken(tok.AccessToken)
+	device, err := f.agents.ValidateAccessToken(tok.AccessToken)
 	require.NoError(t, err)
+	var disconnected [][2]string
+	f.agents.Disconnect = func(account, device string) { disconnected = append(disconnected, [2]string{account, device}) }
 
 	// when
 	second := f.token(f.codeForm(code, verifier))
@@ -266,6 +268,7 @@ func TestOAuthToken_ReusedCode_ShouldRevokeDevice_Integration(t *testing.T) {
 	assert.Equal(t, CodeInvalidGrant, errCode)
 	_, err = f.agents.ValidateAccessToken(tok.AccessToken)
 	assert.Error(t, err)
+	assert.Equal(t, [][2]string{{pk, device.DevicePublicKey}}, disconnected)
 }
 
 func (f *fixture) failFirstIssue() (restore func()) {
