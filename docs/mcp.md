@@ -14,6 +14,8 @@ claude mcp add --transport http my-space https://my-space.example/mcp
 
 Claude Code opens a browser to sign in. Sign-in (OAuth) is provided by the agent sign-in flow, not by this endpoint.
 
+The `prappser-agent` daemon signs in with the built-in client id `https://prappser.app/oauth/prappser-agent`. The space never fetches it; it is registered with the redirect `http://127.0.0.1/callback`, so any loopback port is accepted. Consent, PKCE (S256) and the token endpoint work as for any other client. Every agent device records the `clientId` and `clientHost` it signed in with (shown in the device list). Signing in again with the same client revokes that account's earlier agent devices of the same client, so a re-login does not use up the agent limit.
+
 ## Endpoints
 
 - `POST /mcp`: the MCP endpoint. Needs a bearer token; without one it answers 401 with a `WWW-Authenticate` header that points at the metadata below.
@@ -21,7 +23,7 @@ Claude Code opens a browser to sign in. Sign-in (OAuth) is provided by the agent
 
 `/mcp` sends no CORS headers because agents are not browsers.
 
-The WebSocket endpoint (`/ws`) also accepts an agent access token, in addition to a user JWT, so an agent can follow events live.
+The WebSocket endpoint (`/ws`) also accepts an agent access token, in addition to a user JWT, so an agent can follow events live. Send it in the `Authorization: Bearer` header; the `?token=` query form still works for agent tokens but is being phased out.
 
 ## Tools
 

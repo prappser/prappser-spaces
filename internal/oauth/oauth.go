@@ -71,6 +71,7 @@ type pendingRequest struct {
 type authCode struct {
 	clientID      string
 	clientName    string
+	clientHost    string
 	redirectURI   string
 	codeChallenge string
 	userPublicKey string

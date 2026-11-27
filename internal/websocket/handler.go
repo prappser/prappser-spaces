@@ -18,6 +18,9 @@ var upgrader = websocket.FastHTTPUpgrader{
 	},
 }
 
+// The daemon is moving to the Authorization header; drop the query path with this one-line flip.
+var acceptAgentTokenInQuery = true
+
 type Handler struct {
 	hub         *Hub
 	userService *user.UserService
@@ -34,10 +37,18 @@ func NewHandler(hub *Hub, userService *user.UserService, agents *user.AgentServi
 	}
 }
 
+func (h *Handler) isAgentToken(token string) bool {
+	hdr, _, err := jwt.NewParser().ParseUnverified(token, jwt.MapClaims{})
+	return err == nil && h.agents != nil && hdr.Header["typ"] == "at+jwt"
+}
+
 // HandleFastHTTP handles WebSocket upgrade requests for FastHTTP
 func (h *Handler) HandleFastHTTP(ctx *fasthttp.RequestCtx) {
 	// Extract JWT token from query param or Authorization header
 	token := string(ctx.QueryArgs().Peek("token"))
+	if token != "" && !acceptAgentTokenInQuery && h.isAgentToken(token) {
+		token = ""
+	}
 	if token == "" {
 		authHeader := string(ctx.Request.Header.Peek("Authorization"))
 		if strings.HasPrefix(authHeader, "Bearer ") {
@@ -53,7 +64,7 @@ func (h *Handler) HandleFastHTTP(ctx *fasthttp.RequestCtx) {
 
 	var authenticatedUser *user.User
 	var err error
-	if hdr, _, perr := jwt.NewParser().ParseUnverified(token, jwt.MapClaims{}); perr == nil && h.agents != nil && hdr.Header["typ"] == "at+jwt" {
+	if h.isAgentToken(token) {
 		authenticatedUser, err = h.agents.ValidateAccessToken(token)
 	} else {
 		authenticatedUser, err = h.userService.ValidateJWT(token)

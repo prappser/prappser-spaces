@@ -5,6 +5,7 @@ package websocket
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"database/sql"
 	"errors"
 	"net"
 	"net/http"
@@ -24,6 +25,7 @@ import (
 const wsIssuer = "https://space.test"
 
 type handlerFixture struct {
+	db     *sql.DB
 	hub    *Hub
 	users  user.UserRepository
 	userSv *user.UserService
@@ -43,7 +45,7 @@ func newHandlerFixture(t *testing.T) *handlerFixture {
 	agents := user.NewAgentService(db, users, priv, pub, wsIssuer)
 	go hub.Run()
 
-	return &handlerFixture{hub: hub, users: users, userSv: userSv, agents: agents, priv: priv,
+	return &handlerFixture{db: db, hub: hub, users: users, userSv: userSv, agents: agents, priv: priv,
 		dialer: serveHandler(t, NewHandler(hub, userSv, agents))}
 }
 
@@ -314,6 +316,8 @@ func TestHandler_ShouldRevokeDeviceAndCloseSocketOnRefreshTokenReuse_Integration
 	_, err = f.agents.Refresh(first.RefreshToken)
 	require.NoError(t, err)
 	conn := f.dialReady(t, first.AccessToken)
+	_, err = f.db.Exec("UPDATE agent_refresh_tokens SET rotated_at = rotated_at - 60 WHERE device_public_key = $1", first.DevicePublicKey)
+	require.NoError(t, err)
 
 	// when
 	_, err = f.agents.Refresh(first.RefreshToken)
@@ -442,4 +446,49 @@ func subscriberKeys(h *Hub, appID string) []string {
 		keys = append(keys, c.user.PublicKey)
 	}
 	return keys
+}
+
+func TestHandler_ShouldRejectAgentTokenInQueryWhenQueryTokensOff_Integration(t *testing.T) {
+	// given
+	f := newHandlerFixture(t)
+	agent, err := f.agents.IssueTokens(ownerKey, "daemon")
+	require.NoError(t, err)
+	prev := acceptAgentTokenInQuery
+	acceptAgentTokenInQuery = false
+	t.Cleanup(func() { acceptAgentTokenInQuery = prev })
+
+	// when
+	f.assertRejected(t, agent.AccessToken)
+
+	// then
+	header := http.Header{"Authorization": {"Bearer " + agent.AccessToken}}
+	conn, _, err := f.dialer.Dial("ws://test/ws", header)
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+	var msg OutgoingMessage
+	require.NoError(t, conn.ReadJSON(&msg))
+	assert.Equal(t, MessageTypeConnected, msg.Type)
+	f.dialReady(t, f.humanToken(t))
+}
+
+func TestHandler_ShouldIgnoreAgentTokenInQueryAndUseHeaderWhenQueryTokensOff_Integration(t *testing.T) {
+	// given
+	f := newHandlerFixture(t)
+	agent, err := f.agents.IssueTokens(ownerKey, "daemon")
+	require.NoError(t, err)
+	stale := f.signAgentToken(t, agent.DevicePublicKey, wsIssuer, wsIssuer+"/mcp", "at+jwt", time.Now().Add(-time.Minute))
+	prev := acceptAgentTokenInQuery
+	acceptAgentTokenInQuery = false
+	defer func() { acceptAgentTokenInQuery = prev }()
+
+	// when
+	header := http.Header{"Authorization": {"Bearer " + agent.AccessToken}}
+	conn, _, err := f.dialer.Dial("ws://test/ws?token="+stale, header)
+
+	// then
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+	var msg OutgoingMessage
+	require.NoError(t, conn.ReadJSON(&msg))
+	assert.Equal(t, MessageTypeConnected, msg.Type)
 }

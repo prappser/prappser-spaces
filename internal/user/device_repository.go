@@ -45,10 +45,10 @@ func (r *userRepository) GetDevice(devicePublicKey string) (*Device, error) {
 	var revokedAt sql.NullInt64
 
 	err := r.db.QueryRow(
-		`SELECT device_public_key, user_public_key, device_name, created_at, last_seen_at, revoked_at, kind
+		`SELECT device_public_key, user_public_key, device_name, created_at, last_seen_at, revoked_at, kind, client_id, client_host
 		 FROM user_devices WHERE device_public_key = $1`,
 		devicePublicKey,
-	).Scan(&d.DevicePublicKey, &d.UserPublicKey, &deviceName, &d.CreatedAt, &lastSeenAt, &revokedAt, &d.Kind)
+	).Scan(&d.DevicePublicKey, &d.UserPublicKey, &deviceName, &d.CreatedAt, &lastSeenAt, &revokedAt, &d.Kind, &d.ClientID, &d.ClientHost)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
@@ -71,7 +71,7 @@ func (r *userRepository) GetDevice(devicePublicKey string) (*Device, error) {
 // ListDevices returns the devices for an account; revoked ones only when includeRevoked is set.
 func (r *userRepository) ListDevices(userPublicKey string, includeRevoked bool) ([]*Device, error) {
 	rows, err := r.db.Query(
-		`SELECT device_public_key, user_public_key, device_name, created_at, last_seen_at, revoked_at, kind
+		`SELECT device_public_key, user_public_key, device_name, created_at, last_seen_at, revoked_at, kind, client_id, client_host
 		 FROM user_devices WHERE user_public_key = $1 AND ($2 OR revoked_at IS NULL)`,
 		userPublicKey, includeRevoked,
 	)
@@ -87,7 +87,7 @@ func (r *userRepository) ListDevices(userPublicKey string, includeRevoked bool) 
 		var lastSeenAt sql.NullInt64
 		var revokedAt sql.NullInt64
 
-		if err := rows.Scan(&d.DevicePublicKey, &d.UserPublicKey, &deviceName, &d.CreatedAt, &lastSeenAt, &revokedAt, &d.Kind); err != nil {
+		if err := rows.Scan(&d.DevicePublicKey, &d.UserPublicKey, &deviceName, &d.CreatedAt, &lastSeenAt, &revokedAt, &d.Kind, &d.ClientID, &d.ClientHost); err != nil {
 			return nil, fmt.Errorf("failed to scan device: %w", err)
 		}
 		if deviceName.Valid {

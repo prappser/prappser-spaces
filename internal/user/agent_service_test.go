@@ -29,3 +29,21 @@ func TestAgentService_ValidateAccessToken_ShouldRejectWrongTyp(t *testing.T) {
 	// then
 	assert.ErrorContains(t, err, "not an access token")
 }
+
+func TestDerivedRefreshToken_ShouldBeStablePerInputAndKey(t *testing.T) {
+	// given
+	pubA, privA, err := ed25519.GenerateKey(rand.Reader)
+	assert.NoError(t, err)
+	pubB, privB, err := ed25519.GenerateKey(rand.Reader)
+	assert.NoError(t, err)
+	svc := NewAgentService(nil, nil, privA, pubA, "https://space.test")
+	other := NewAgentService(nil, nil, privB, pubB, "https://space.test")
+
+	// when
+	a, b := svc.derivedRefreshToken("hash-1"), svc.derivedRefreshToken("hash-1")
+
+	// then
+	assert.Equal(t, a, b)
+	assert.NotEqual(t, a, svc.derivedRefreshToken("hash-2"))
+	assert.NotEqual(t, a, other.derivedRefreshToken("hash-1"))
+}

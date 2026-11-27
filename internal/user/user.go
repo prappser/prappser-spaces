@@ -93,6 +93,8 @@ type Device struct {
 	LastSeenAt      *int64  `json:"lastSeenAt,omitempty"`
 	RevokedAt       *int64  `json:"revokedAt,omitempty"`
 	Kind            string  `json:"kind"`
+	ClientID        *string `json:"clientId,omitempty"`
+	ClientHost      *string `json:"clientHost,omitempty"`
 }
 
 const (

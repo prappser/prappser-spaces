@@ -84,17 +84,9 @@ type TokenResponse struct {
 }
 
 func (s *Service) Authorize(ctx context.Context, p authorizeParams) (string, error) {
-	if _, err := parseClientID(p.ClientID); err != nil {
-		return "", newError(CodeInvalidRequest, err.Error())
-	}
-	doc, err := s.fetcher.fetch(ctx, p.ClientID)
+	client, err := s.resolveClient(ctx, p.ClientID)
 	if err != nil {
-		log.Error().Err(err).Msg("[OAUTH] Client metadata fetch failed")
-		return "", newError(CodeInvalidRequest, "client metadata document could not be fetched")
-	}
-	client, err := parseClientDoc(p.ClientID, doc)
-	if err != nil {
-		return "", newError(CodeInvalidRequest, err.Error())
+		return "", err
 	}
 
 	redirect, err := parseRedirectURI(p.RedirectURI)
@@ -140,6 +132,25 @@ func (s *Service) Authorize(ctx context.Context, p authorizeParams) (string, err
 	}
 	log.Debug().Msg("[OAUTH] Authorization request parked for consent")
 	return s.appURL + "/#/oauth/consent?space=" + url.QueryEscape(s.issuer) + "&request=" + url.QueryEscape(id), nil
+}
+
+func (s *Service) resolveClient(ctx context.Context, clientID string) (*clientInfo, error) {
+	if clientID == BuiltInAgentClientID {
+		return builtInAgentClient, nil
+	}
+	if _, err := parseClientID(clientID); err != nil {
+		return nil, newError(CodeInvalidRequest, err.Error())
+	}
+	doc, err := s.fetcher.fetch(ctx, clientID)
+	if err != nil {
+		log.Error().Err(err).Msg("[OAUTH] Client metadata fetch failed")
+		return nil, newError(CodeInvalidRequest, "client metadata document could not be fetched")
+	}
+	client, err := parseClientDoc(clientID, doc)
+	if err != nil {
+		return nil, newError(CodeInvalidRequest, err.Error())
+	}
+	return client, nil
 }
 
 func (s *Service) checkResource(resource string, present bool) error {
@@ -211,10 +222,11 @@ func (s *Service) GetRequest(id, userPublicKey string) (*RequestInfo, error) {
 }
 
 func (s *Service) Approve(id, userPublicKey string) (string, error) {
-	if _, err := s.store.getPending(id, userPublicKey); err != nil {
+	pending, err := s.store.getPending(id, userPublicKey)
+	if err != nil {
 		return "", err
 	}
-	ok, err := s.agents.CanAddAgent(userPublicKey)
+	ok, err := s.agents.CanAddAgentForClient(userPublicKey, pending.clientID)
 	if err != nil {
 		return "", err
 	}
@@ -228,6 +240,7 @@ func (s *Service) Approve(id, userPublicKey string) (string, error) {
 	code, err := s.store.addCode(&authCode{
 		clientID:      p.clientID,
 		clientName:    p.clientName,
+		clientHost:    p.clientHost,
 		redirectURI:   p.redirectURI,
 		codeChallenge: p.codeChallenge,
 		userPublicKey: userPublicKey,
@@ -300,7 +313,7 @@ func (s *Service) exchangeCode(p tokenParams) (*TokenResponse, error) {
 		return nil, err
 	}
 
-	tokens, err := s.agents.IssueTokens(entry.userPublicKey, entry.clientName)
+	tokens, err := s.agents.IssueTokensForClient(entry.userPublicKey, entry.clientName, entry.clientID, entry.clientHost)
 	if errors.Is(err, user.ErrAgentLimit) {
 		return nil, newError(CodeInvalidGrant, "agent limit reached, revoke an agent in Prappser settings")
 	}
