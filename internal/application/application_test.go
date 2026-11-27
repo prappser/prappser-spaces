@@ -926,3 +926,21 @@ func TestApplicationService_SetAgentRead_ShouldReturnNotFoundForUnknownApp(t *te
 	// then
 	assert.ErrorIs(t, err, ErrNotFound)
 }
+
+func TestMemoryRepository_GetAgentAccess_ShouldReturnOwnerAndPropagateMissingOwner(t *testing.T) {
+	// given
+	repo := NewMemoryRepository()
+	_ = repo.RegisterApplication(&Application{ID: "with-owner", Members: []Member{{ID: "m1", Role: MemberRoleOwner, PublicKey: "owner-key"}}})
+	_ = repo.RegisterApplication(&Application{ID: "no-owner"})
+	_ = repo.SetAgentReadEnabled("with-owner", false)
+
+	// when
+	enabled, owner, err := repo.GetAgentAccess("with-owner")
+	_, _, noOwnerErr := repo.GetAgentAccess("no-owner")
+
+	// then
+	assert.NoError(t, err)
+	assert.False(t, enabled)
+	assert.Equal(t, "owner-key", owner)
+	assert.Error(t, noOwnerErr)
+}

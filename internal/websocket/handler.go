@@ -2,8 +2,10 @@ package websocket
 
 import (
 	"strings"
+	"time"
 
 	"github.com/fasthttp/websocket"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/prappser/prappser-spaces/internal/user"
 	"github.com/rs/zerolog/log"
 	"github.com/valyala/fasthttp"
@@ -16,22 +18,37 @@ var upgrader = websocket.FastHTTPUpgrader{
 	},
 }
 
+// The daemon is moving to the Authorization header; drop the query path with this one-line flip.
+var acceptAgentTokenInQuery = true
+
 type Handler struct {
 	hub         *Hub
 	userService *user.UserService
+	agents      *user.AgentService
+	// beforeRegister is a test seam between token validation and hub registration.
+	beforeRegister func()
 }
 
-func NewHandler(hub *Hub, userService *user.UserService) *Handler {
+func NewHandler(hub *Hub, userService *user.UserService, agents *user.AgentService) *Handler {
 	return &Handler{
 		hub:         hub,
 		userService: userService,
+		agents:      agents,
 	}
+}
+
+func (h *Handler) isAgentToken(token string) bool {
+	hdr, _, err := jwt.NewParser().ParseUnverified(token, jwt.MapClaims{})
+	return err == nil && h.agents != nil && hdr.Header["typ"] == "at+jwt"
 }
 
 // HandleFastHTTP handles WebSocket upgrade requests for FastHTTP
 func (h *Handler) HandleFastHTTP(ctx *fasthttp.RequestCtx) {
 	// Extract JWT token from query param or Authorization header
 	token := string(ctx.QueryArgs().Peek("token"))
+	if token != "" && !acceptAgentTokenInQuery && h.isAgentToken(token) {
+		token = ""
+	}
 	if token == "" {
 		authHeader := string(ctx.Request.Header.Peek("Authorization"))
 		if strings.HasPrefix(authHeader, "Bearer ") {
@@ -45,7 +62,13 @@ func (h *Handler) HandleFastHTTP(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	authenticatedUser, err := h.userService.ValidateJWT(token)
+	var authenticatedUser *user.User
+	var err error
+	if h.isAgentToken(token) {
+		authenticatedUser, err = h.agents.ValidateAccessToken(token)
+	} else {
+		authenticatedUser, err = h.userService.ValidateJWT(token)
+	}
 	if err != nil {
 		log.Debug().Err(err).Msg("[WS] Connection rejected: invalid token")
 		ctx.Error("Unauthorized: invalid token", fasthttp.StatusUnauthorized)
@@ -56,8 +79,24 @@ func (h *Handler) HandleFastHTTP(ctx *fasthttp.RequestCtx) {
 		// with KeepHijackedConns nothing else closes the conn if Unregister never closes send
 		defer conn.Close()
 
+		if authenticatedUser.Agent {
+			t := time.AfterFunc(time.Until(time.Unix(authenticatedUser.TokenExpiresAt, 0)), func() { conn.Close() })
+			defer t.Stop()
+		}
+
 		client := NewClient(h.hub, conn, authenticatedUser)
+		if h.beforeRegister != nil {
+			h.beforeRegister()
+		}
 		h.hub.Register(client)
+
+		// A revoke between validation and registration found no client to disconnect.
+		// Closing the conn here makes ReadPump below fail and unregister the client.
+		if authenticatedUser.Agent {
+			if active, err := h.agents.DeviceActive(authenticatedUser.DevicePublicKey); err != nil || !active {
+				conn.Close()
+			}
+		}
 
 		// Send connected message
 		client.send <- &OutgoingMessage{
@@ -67,6 +106,7 @@ func (h *Handler) HandleFastHTTP(ctx *fasthttp.RequestCtx) {
 
 		log.Debug().
 			Str("userPublicKey", authenticatedUser.PublicKey[:20]+"...").
+			Str("devicePublicKey", authenticatedUser.DevicePublicKey[:min(20, len(authenticatedUser.DevicePublicKey))]).
 			Str("username", authenticatedUser.Username).
 			Msg("[WS] Client connected")
 

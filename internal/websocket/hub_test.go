@@ -256,8 +256,15 @@ type wsFixture struct {
 
 func newWSFixture(t *testing.T) *wsFixture {
 	t.Helper()
+	return newWSFixtureWith(t, true)
+}
+
+func newWSFixtureWith(t *testing.T, run bool) *wsFixture {
+	t.Helper()
 	hub := NewHub(application.NewMemoryRepository())
-	go hub.Run()
+	if run {
+		go hub.Run()
+	}
 	ln := fasthttputil.NewInmemoryListener()
 	srv := &fasthttp.Server{KeepHijackedConns: true, Handler: func(ctx *fasthttp.RequestCtx) {
 		u := &user.User{
@@ -383,4 +390,128 @@ func TestHub_SendPush_ShouldReturnFalseWhenBufferFull(t *testing.T) {
 	// then
 	assert.False(t, ok)
 	assert.Len(t, c.send, cap(c.send))
+}
+
+func TestHub_Disconnect_ShouldNotBlockWhenRunIsNotStarted(t *testing.T) {
+	// given
+	hub := NewHub(application.NewMemoryRepository())
+
+	// when
+	done := make(chan struct{})
+	go func() {
+		for range 3 * cap(hub.disconnect) {
+			hub.Disconnect(ownerKey, "device")
+		}
+		close(done)
+	}()
+
+	// then
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Disconnect blocked without a running hub")
+	}
+}
+
+func TestHub_EvictAgents_ShouldDropOnlyNonOwnerAgentSubscriptions(t *testing.T) {
+	// given
+	hub := NewHub(application.NewMemoryRepository())
+	subscribed := func(u *user.User) *Client {
+		c := NewClient(hub, nil, u)
+		c.subscriptions[appA] = true
+		hub.Subscribe(c, appA)
+		return c
+	}
+	memberAgent := subscribed(&user.User{PublicKey: memberKey, Agent: true})
+	ownerAgent := subscribed(&user.User{PublicKey: ownerKey, Agent: true})
+	memberHuman := subscribed(&user.User{PublicKey: memberKey})
+
+	// when
+	hub.EvictAgents(appA, ownerKey)
+
+	// then
+	assert.False(t, memberAgent.IsSubscribed(appA))
+	assert.True(t, ownerAgent.IsSubscribed(appA))
+	assert.True(t, memberHuman.IsSubscribed(appA))
+	assert.ElementsMatch(t, []*Client{ownerAgent, memberHuman}, hub.byApp[appA])
+	_, memberAgentErrs := drain(memberAgent)
+	assert.Equal(t, []string{"agent access to this application was turned off"}, memberAgentErrs)
+	_, ownerAgentErrs := drain(ownerAgent)
+	_, memberHumanErrs := drain(memberHuman)
+	assert.Empty(t, ownerAgentErrs)
+	assert.Empty(t, memberHumanErrs)
+}
+
+// flipOnFirstCheck turns agent read off and evicts between the subscribe check and the hub insert.
+type flipOnFirstCheck struct {
+	*application.MemoryRepository
+	hub   *Hub
+	calls int
+}
+
+func (r *flipOnFirstCheck) GetAgentAccess(appID string) (bool, string, error) {
+	enabled, owner, err := r.MemoryRepository.GetAgentAccess(appID)
+	r.calls++
+	if r.calls == 1 {
+		_ = r.SetAgentReadEnabled(appID, false)
+		r.hub.EvictAgents(appID, owner)
+	}
+	return enabled, owner, err
+}
+
+func TestSubscribe_ShouldNotLeaveAgentSubscribedWhenAgentReadSwitchedOffAfterCheck(t *testing.T) {
+	// given
+	mem := application.NewMemoryRepository()
+	require.NoError(t, mem.RegisterApplication(&application.Application{ID: appA, Name: appA}))
+	addMember(mem, appA, ownerKey, application.MemberRoleOwner)
+	addMember(mem, appA, memberKey, application.MemberRoleMember)
+	repo := &flipOnFirstCheck{MemoryRepository: mem}
+	hub := NewHub(repo)
+	repo.hub = hub
+	agent := NewClient(hub, nil, &user.User{PublicKey: memberKey, Agent: true})
+	hub.registerClient(agent)
+
+	// when
+	subscribe(agent, appA)
+
+	// then
+	assert.False(t, agent.IsSubscribed(appA))
+	assert.Empty(t, hub.byApp[appA])
+	_, errs := drain(agent)
+	assert.Equal(t, []string{"agent access is disabled for this application"}, errs)
+}
+
+func TestHub_Register_ShouldInsertClientBeforeReturning(t *testing.T) {
+	// given
+	hub := NewHub(application.NewMemoryRepository())
+
+	// when
+	hub.Register(NewClient(hub, nil, &user.User{PublicKey: ownerKey}))
+
+	// then
+	assert.Equal(t, 1, clientCount(hub))
+}
+
+func TestHub_Disconnect_ShouldExecuteEveryRequestWhenQueueIsFull(t *testing.T) {
+	// given
+	f := newWSFixtureWith(t, false)
+	devices := []string{"device-1-000000000000", "device-2-000000000000", "device-3-000000000000"}
+	conns := make([]*gws.Conn, len(devices))
+	for i, d := range devices {
+		conns[i] = f.dial(t, ownerKey, d)
+	}
+	require.Eventually(t, func() bool { return clientCount(f.hub) == len(devices) }, 2*time.Second, 10*time.Millisecond)
+	for range cap(f.hub.disconnect) {
+		f.hub.disconnect <- disconnectReq{account: otherKey}
+	}
+
+	// when
+	for _, d := range devices {
+		f.hub.Disconnect(ownerKey, d)
+	}
+
+	// then
+	for _, c := range conns {
+		assert.False(t, readOutcome(c, 2*time.Second))
+	}
 }

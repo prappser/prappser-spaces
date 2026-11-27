@@ -250,13 +250,15 @@ func TestOAuthToken_ReusedCode_ShouldRevokeDevice_Integration(t *testing.T) {
 	// given
 	f := newFixture(t, nil)
 	verifier, challenge := pkcePair()
-	_, code := f.approvedCode(challenge)
+	pk, code := f.approvedCode(challenge)
 	first := f.token(f.codeForm(code, verifier))
 	require.Equal(t, fasthttp.StatusOK, first.Response.StatusCode())
 	var tok TokenResponse
 	require.NoError(t, json.Unmarshal(first.Response.Body(), &tok))
-	_, err := f.agents.ValidateAccessToken(tok.AccessToken)
+	device, err := f.agents.ValidateAccessToken(tok.AccessToken)
 	require.NoError(t, err)
+	var disconnected [][2]string
+	f.agents.Disconnect = func(account, device string) { disconnected = append(disconnected, [2]string{account, device}) }
 
 	// when
 	second := f.token(f.codeForm(code, verifier))
@@ -266,6 +268,7 @@ func TestOAuthToken_ReusedCode_ShouldRevokeDevice_Integration(t *testing.T) {
 	assert.Equal(t, CodeInvalidGrant, errCode)
 	_, err = f.agents.ValidateAccessToken(tok.AccessToken)
 	assert.Error(t, err)
+	assert.Equal(t, [][2]string{{pk, device.DevicePublicKey}}, disconnected)
 }
 
 func (f *fixture) failFirstIssue() (restore func()) {
@@ -491,6 +494,26 @@ func TestOAuthConsent_AgentLimitAtApprove_ShouldReturn409_Integration(t *testing
 	assert.Contains(t, string(ctx.Response.Body()), "agent_limit")
 }
 
+func TestOAuthConsent_AgentLimitAtApproveWithOwnClientDevice_ShouldSucceed_Integration(t *testing.T) {
+	// given
+	f := newFixture(t, nil)
+	pk, jwt := f.human()
+	for i := 0; i < 4; i++ {
+		_, err := f.agents.IssueTokens(pk, "")
+		require.NoError(t, err)
+	}
+	_, err := f.agents.IssueTokensForClient(pk, "", f.clientID, "")
+	require.NoError(t, err)
+	_, challenge := pkcePair()
+	id := requestID(t, f.authorize(challenge, nil))
+
+	// when
+	ctx := f.consent(f.endpoints.Approve, "POST", id, jwt)
+
+	// then
+	assert.Equal(t, fasthttp.StatusOK, ctx.Response.StatusCode(), string(ctx.Response.Body()))
+}
+
 func TestOAuthToken_AgentLimitAtToken_ShouldReturnInvalidGrant_Integration(t *testing.T) {
 	// given
 	f := newFixture(t, nil)
@@ -562,4 +585,54 @@ func TestAuthorize_ShouldRefuseHTTPSLoopbackClientID_WhenSSRFGuardIsActive_Integ
 	// then
 	assert.Equal(t, fasthttp.StatusBadRequest, ctx.Response.StatusCode(), string(ctx.Response.Body()))
 	assert.Zero(t, hits.Load())
+}
+
+func (f *fixture) builtInCode(challenge string) (pk, code string) {
+	f.t.Helper()
+	pk, jwt := f.human()
+	ctx := f.authorize(challenge, url.Values{"client_id": {BuiltInAgentClientID}})
+	id := requestID(f.t, ctx)
+	return pk, redirectParams(f.t, f.consent(f.endpoints.Approve, "POST", id, jwt)).Get("code")
+}
+
+func TestOAuthFlow_BuiltInClient_ShouldIssueTokensAndRecordClient_Integration(t *testing.T) {
+	// given
+	f := newFixture(t, nil)
+	f.svc.fetcher = &metadataFetcher{client: &http.Client{Transport: failingTransport{t}}}
+	verifier, challenge := pkcePair()
+	pk, code := f.builtInCode(challenge)
+	form := f.codeForm(code, verifier)
+	form.Set("client_id", BuiltInAgentClientID)
+
+	// when
+	ctx := f.token(form)
+
+	// then
+	require.Equal(t, fasthttp.StatusOK, ctx.Response.StatusCode(), string(ctx.Response.Body()))
+	devices, err := f.users.ListDevices(pk, false)
+	require.NoError(t, err)
+	var agents []*user.Device
+	for _, d := range devices {
+		if d.Kind == user.DeviceKindAgent {
+			agents = append(agents, d)
+		}
+	}
+	require.Len(t, agents, 1)
+	assert.Equal(t, "prappser-agent", *agents[0].DeviceName)
+	assert.Equal(t, BuiltInAgentClientID, *agents[0].ClientID)
+	assert.Equal(t, "built-in client", *agents[0].ClientHost)
+}
+
+func TestOAuthToken_BuiltInCodeWithOtherClientID_ShouldBeRejected_Integration(t *testing.T) {
+	// given
+	f := newFixture(t, nil)
+	verifier, challenge := pkcePair()
+	_, code := f.builtInCode(challenge)
+
+	// when
+	ctx := f.token(f.codeForm(code, verifier))
+
+	// then
+	errCode, _ := tokenError(t, ctx)
+	assert.Equal(t, CodeInvalidGrant, errCode)
 }

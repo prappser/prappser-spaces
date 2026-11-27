@@ -161,6 +161,19 @@ func (r *Repository) SetAgentReadEnabled(appID string, enabled bool) error {
 	return nil
 }
 
+func (r *Repository) GetAgentAccess(appID string) (bool, string, error) {
+	var enabled bool
+	var owner sql.NullString
+	err := r.db.QueryRow(
+		`SELECT a.agent_read_enabled, (SELECT m.public_key FROM members m WHERE m.application_id = a.id AND m.role = 'owner' ORDER BY m.id LIMIT 1)
+		 FROM applications a WHERE a.id = $1 AND a.deleted_at IS NULL`, appID,
+	).Scan(&enabled, &owner)
+	if err == sql.ErrNoRows {
+		return false, "", fmt.Errorf("application %w", ErrNotFound)
+	}
+	return enabled, owner.String, err
+}
+
 func (r *Repository) UpdateApplicationTimestamp(id string) error {
 	query := `UPDATE applications SET updated_at = $1 WHERE id = $2`
 

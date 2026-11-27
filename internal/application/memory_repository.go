@@ -163,6 +163,18 @@ func (r *MemoryRepository) SetAgentReadEnabled(appID string, enabled bool) error
 	return nil
 }
 
+func (r *MemoryRepository) GetAgentAccess(appID string) (bool, string, error) {
+	app, err := r.GetApplicationByID(appID)
+	if err != nil {
+		return false, "", err
+	}
+	owner, err := app.GetOwnerPublicKey()
+	if err != nil {
+		return false, "", err
+	}
+	return app.AgentReadEnabled, owner, nil
+}
+
 func (r *MemoryRepository) UpdateApplicationMetadata(id, name string, icon *string) error {
 	app, exists := r.applications[id]
 	if !exists {

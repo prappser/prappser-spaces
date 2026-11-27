@@ -10,6 +10,8 @@ type ApplicationRepository interface {
 	GetApplicationState(id string) (*ApplicationState, error)
 	UpdateApplicationTimestamp(id string) error
 	SetAgentReadEnabled(appID string, enabled bool) error
+	// GetAgentAccess is the lightweight form of Application.AgentAllowed: the flag and the owner key.
+	GetAgentAccess(appID string) (enabled bool, ownerPublicKey string, err error)
 	DeleteApplication(id string) error
 
 	CreateComponentGroup(group *ComponentGroup) error

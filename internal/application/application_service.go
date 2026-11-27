@@ -33,6 +33,8 @@ type ApplicationService struct {
 	appRepo           ApplicationRepository
 	maxAppsPerAccount int
 	spacePublicKey    string
+	// OnAgentReadOff runs after agent access to an app is switched off, to evict its live agent subscriptions.
+	OnAgentReadOff func(appID, ownerPublicKey string)
 }
 
 func NewApplicationService(appRepo ApplicationRepository, maxAppsPerAccount int, spacePublicKey string) *ApplicationService {
@@ -210,7 +212,13 @@ func (s *ApplicationService) SetAgentRead(appID string, caller *user.User, enabl
 	if ownerPublicKey != caller.PublicKey {
 		return ErrNotApplicationOwner
 	}
-	return s.appRepo.SetAgentReadEnabled(appID, enabled)
+	if err := s.appRepo.SetAgentReadEnabled(appID, enabled); err != nil {
+		return err
+	}
+	if !enabled && s.OnAgentReadOff != nil {
+		s.OnAgentReadOff(appID, ownerPublicKey)
+	}
+	return nil
 }
 
 func (s *ApplicationService) DeleteApplication(appID string, requestingUser *user.User) error {

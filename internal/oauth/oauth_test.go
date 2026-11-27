@@ -134,6 +134,19 @@ func TestParseClientID_ShouldRejectBadShapes(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestParseClientID_ShouldNeverYieldBuiltInHost(t *testing.T) {
+	// given
+	raw := "https://" + builtInAgentClient.host + "/x"
+
+	// when
+	u, err := parseClientID(raw)
+
+	// then
+	assert.Error(t, err)
+	assert.Nil(t, u)
+	assert.Equal(t, "built-in client", builtInAgentClient.host)
+}
+
 func TestParseClientDoc_ShouldValidateDocument(t *testing.T) {
 	// given
 	id := "https://c.example/client.json"
@@ -643,4 +656,48 @@ func TestToken_UnknownOrMissingGrantType_ShouldReturnOAuthErrors(t *testing.T) {
 	assert.Equal(t, CodeInvalidRequest, e.Code)
 	require.ErrorAs(t, errNoRefresh, &e)
 	assert.Equal(t, CodeInvalidRequest, e.Code)
+}
+
+type failingTransport struct{ t *testing.T }
+
+func (f failingTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	f.t.Error("built-in client must not fetch metadata")
+	return nil, assert.AnError
+}
+
+func builtInService(t *testing.T) *Service {
+	t.Helper()
+	svc := NewService(nil, nil, testIssuer, "https://app.test/")
+	svc.fetcher = &metadataFetcher{client: &http.Client{Transport: failingTransport{t}}}
+	return svc
+}
+
+func TestAuthorize_BuiltInClient_ShouldNotFetchAndAcceptAnyLoopbackPort(t *testing.T) {
+	// given
+	svc := builtInService(t)
+	p := baseParams(BuiltInAgentClientID)
+	p.RedirectURI = loopbackRedir
+
+	// when
+	got, err := svc.Authorize(context.Background(), p)
+
+	// then
+	require.NoError(t, err)
+	assert.True(t, strings.HasPrefix(got, "https://app.test/#/oauth/consent?"), got)
+}
+
+func TestAuthorize_BuiltInClient_ShouldRejectOtherRedirects(t *testing.T) {
+	// given
+	svc := builtInService(t)
+
+	for _, redirect := range []string{validRedirectTo, "http://127.0.0.1:51234/other", "http://localhost:51234/callback"} {
+		// when
+		p := baseParams(BuiltInAgentClientID)
+		p.RedirectURI = redirect
+		_, err := svc.Authorize(context.Background(), p)
+
+		// then
+		var e *Error
+		assert.ErrorAs(t, err, &e, redirect)
+	}
 }

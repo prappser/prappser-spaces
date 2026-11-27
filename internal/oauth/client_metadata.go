@@ -82,6 +82,8 @@ func parseClientID(raw string) (*url.URL, error) {
 	return u, nil
 }
 
+const BuiltInAgentClientID = "https://prappser.app/oauth/prappser-agent"
+
 type clientInfo struct {
 	id           string
 	host         string
@@ -89,6 +91,13 @@ type clientInfo struct {
 	uri          string
 	logoURI      string
 	redirectURIs []string
+}
+
+var builtInAgentClient = &clientInfo{
+	id:           BuiltInAgentClientID,
+	host:         "built-in client",
+	name:         "prappser-agent",
+	redirectURIs: []string{"http://127.0.0.1/callback"},
 }
 
 func parseClientDoc(clientID string, doc map[string]any) (*clientInfo, error) {

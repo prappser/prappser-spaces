@@ -2,6 +2,7 @@ package user
 
 import (
 	"crypto/ed25519"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
@@ -25,6 +26,7 @@ const (
 	agentAccessTokenTTL     = time.Hour
 	agentRefreshTokenTTL    = 90 * 24 * time.Hour
 	maxLiveAgentsPerAccount = 5
+	refreshGraceWindow      = 30 * time.Second
 )
 
 type AgentTokens struct {
@@ -41,6 +43,7 @@ type AgentService struct {
 	publicKey      ed25519.PublicKey
 	issuer         string
 	audience       string
+	Disconnect     func(account, device string)
 }
 
 func NewAgentService(db *sql.DB, userRepository UserRepository, privateKey ed25519.PrivateKey, publicKey ed25519.PublicKey, externalURL string) *AgentService {
@@ -64,6 +67,17 @@ func newRefreshToken() (token, hash string, err error) {
 	return token, hashRefreshToken(token), nil
 }
 
+// derivedRefreshToken makes the token a rotation issues a pure function of the
+// presented token's hash and the server key, so a retry inside the grace window
+// can be answered with the same token without storing it.
+func (as *AgentService) derivedRefreshToken(oldHash string) string {
+	kdf := hmac.New(sha256.New, as.privateKey.Seed())
+	kdf.Write([]byte("refresh-token-derivation"))
+	mac := hmac.New(sha256.New, kdf.Sum(nil))
+	mac.Write([]byte("prappser-refresh-v1" + oldHash))
+	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+}
+
 func hashRefreshToken(token string) string {
 	sum := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(sum[:])
@@ -77,9 +91,21 @@ func (as *AgentService) CanAddAgent(userPublicKey string) (bool, error) {
 	return n < maxLiveAgentsPerAccount, nil
 }
 
+func (as *AgentService) CanAddAgentForClient(userPublicKey, clientID string) (bool, error) {
+	n, err := as.repo.countLiveAgentsExcludingClient(userPublicKey, clientID, time.Now().Unix())
+	if err != nil {
+		return false, err
+	}
+	return n < maxLiveAgentsPerAccount, nil
+}
+
 func (as *AgentService) IssueTokens(userPublicKey, name string) (*AgentTokens, error) {
+	return as.IssueTokensForClient(userPublicKey, name, "", "")
+}
+
+func (as *AgentService) IssueTokensForClient(userPublicKey, name, clientID, clientHost string) (*AgentTokens, error) {
 	now := time.Now()
-	n, err := as.repo.countLiveAgents(userPublicKey, now.Unix())
+	n, err := as.repo.countLiveAgentsExcludingClient(userPublicKey, clientID, now.Unix())
 	if err != nil {
 		return nil, err
 	}
@@ -102,36 +128,70 @@ func (as *AgentService) IssueTokens(userPublicKey, name string) (*AgentTokens, e
 	if err != nil {
 		return nil, err
 	}
-	if err := as.repo.createAgent(deviceKey, userPublicKey, namePtr, hash, now.Unix(), now.Add(agentRefreshTokenTTL).Unix()); err != nil {
+	if err := as.repo.createAgent(deviceKey, userPublicKey, namePtr, optional(clientID), optional(clientHost), hash, now.Unix(), now.Add(agentRefreshTokenTTL).Unix()); err != nil {
 		return nil, err
 	}
 	log.Info().Msg("[AGENT] Agent device created")
+
+	if clientID != "" {
+		stale, err := as.repo.liveAgentsForClient(userPublicKey, clientID, now.Unix())
+		if err != nil {
+			log.Error().Err(err).Msg("[AGENT] Failed to list stale agents")
+		}
+		// ponytail: two overlapping issues for one client can each revoke the other's new device, leaving no live token, so the user must re-authorize; accepted soft race, advisory lock on (user, client_id) if it ever matters
+		for _, d := range stale {
+			if d == deviceKey {
+				continue
+			}
+			if err := as.userRepository.RevokeDevice(d, now.Unix()); err != nil {
+				log.Error().Err(err).Msg("[AGENT] Failed to revoke stale agent")
+				continue
+			}
+			if as.Disconnect != nil {
+				as.Disconnect(userPublicKey, d)
+			}
+		}
+	}
 	return &AgentTokens{DevicePublicKey: deviceKey, AccessToken: access, AccessTokenExpiresAt: exp, RefreshToken: refresh}, nil
+}
+
+func optional(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }
 
 func (as *AgentService) Refresh(refreshToken string) (*AgentTokens, error) {
 	oldHash := hashRefreshToken(refreshToken)
-	newToken, newHash, err := newRefreshToken()
-	if err != nil {
-		return nil, err
-	}
+	newToken := as.derivedRefreshToken(oldHash)
 	now := time.Now()
-	device, err := as.repo.rotateRefreshToken(oldHash, newHash, now.Unix(), now.Add(agentRefreshTokenTTL).Unix())
+	device, err := as.repo.rotateRefreshToken(oldHash, hashRefreshToken(newToken), now.Unix(), now.Add(agentRefreshTokenTTL).Unix())
 	if err != nil {
 		return nil, err
 	}
 	if device == "" {
-		reused, err := as.repo.deviceForPrevHash(oldHash)
-		if err != nil {
-			return nil, err
-		}
-		if reused != "" {
-			if err := as.userRepository.RevokeDevice(reused, now.Unix()); err != nil {
-				return nil, fmt.Errorf("failed to revoke device after token reuse: %w", err)
+		prev, err := as.repo.deviceForPrevHash(oldHash)
+		inGrace := prev != nil && prev.rotatedAt.Valid && now.Unix()-prev.rotatedAt.Int64 <= int64(refreshGraceWindow/time.Second)
+		switch {
+		case err != nil:
+			log.Error().Err(err).Msg("[AGENT] Refresh token reuse lookup failed")
+		case prev == nil:
+		case inGrace && prev.currentHash == hashRefreshToken(newToken):
+			device = prev.device
+			log.Warn().Str("device", prev.device).Msg("[AGENT] Refresh token retried within grace window")
+		case inGrace:
+			// The derivation key changed since the rotation, so this is a retry we cannot answer, not proof of theft.
+		default:
+			if err := as.RevokeAgent(prev.account, prev.device); err != nil {
+				log.Error().Err(err).Msg("[AGENT] Failed to revoke device after token reuse")
+			} else {
+				log.Warn().Msg("[AGENT] Refresh token reuse, device revoked")
 			}
-			log.Warn().Msg("[AGENT] Refresh token reuse, device revoked")
 		}
-		return nil, ErrInvalidRefreshToken
+		if device == "" {
+			return nil, ErrInvalidRefreshToken
+		}
 	}
 
 	access, exp, err := as.mintAccessToken(device)
@@ -139,6 +199,23 @@ func (as *AgentService) Refresh(refreshToken string) (*AgentTokens, error) {
 		return nil, err
 	}
 	return &AgentTokens{DevicePublicKey: device, AccessToken: access, AccessTokenExpiresAt: exp, RefreshToken: newToken}, nil
+}
+
+// RevokeAgent disconnects even when the revoke fails, so a live socket never outlasts a revoke attempt.
+func (as *AgentService) RevokeAgent(account, device string) error {
+	err := as.userRepository.RevokeDevice(device, time.Now().Unix())
+	if as.Disconnect != nil {
+		as.Disconnect(account, device)
+	}
+	return err
+}
+
+func (as *AgentService) DeviceActive(device string) (bool, error) {
+	d, err := as.userRepository.GetDevice(device)
+	if err != nil {
+		return false, err
+	}
+	return d != nil && d.RevokedAt == nil, nil
 }
 
 func (as *AgentService) mintAccessToken(deviceKey string) (string, int64, error) {
@@ -194,5 +271,6 @@ func (as *AgentService) ValidateAccessToken(tokenString string) (*User, error) {
 	}
 	user.DevicePublicKey = device.DevicePublicKey
 	user.Agent = true
+	user.TokenExpiresAt = claims.ExpiresAt.Unix()
 	return user, nil
 }

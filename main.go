@@ -199,6 +199,8 @@ func main() {
 	spacePublicKeyString := base64.StdEncoding.EncodeToString(publicKey)
 	appService := application.NewApplicationService(appRepository, config.MaxAppsPerAccount, spacePublicKeyString)
 
+	appService.OnAgentReadOff = wsHub.EvictAgents
+
 	appEndpoints := application.NewApplicationEndpoints(appService)
 
 	cleanupScheduler := event.NewCleanupScheduler(eventService, 7)
@@ -256,7 +258,13 @@ func main() {
 	storagePurge := storage.NewStoragePurgeScheduler(appRepository, storageService)
 	storagePurge.Start()
 
-	wsHandler := websocket.NewHandler(wsHub, userService)
+	agentService := user.NewAgentService(db, userRepository, privateKey, publicKey, config.ExternalURL)
+	agentService.Disconnect = wsHub.Disconnect
+	wsAgents := agentService
+	if !config.MCPEnabled {
+		wsAgents = nil
+	}
+	wsHandler := websocket.NewHandler(wsHub, userService, wsAgents)
 
 	spaceEndpoints := space.NewSpaceEndpoints(spaceService, userRepository)
 
@@ -281,7 +289,6 @@ func main() {
 
 	adminEndpoints := admin.NewAdminEndpoints(admin.NewRepository(db), admin.Limits{AccountQuotaBytes: config.Storage.AccountQuota, MaxAppsPerAccount: config.MaxAppsPerAccount})
 
-	agentService := user.NewAgentService(db, userRepository, privateKey, publicKey, config.ExternalURL)
 	oauthEndpoints := oauth.NewEndpoints(oauth.NewService(agentService, userRepository, config.ExternalURL, config.AppURL), config.ClientIP())
 
 	requestHandler := internal.NewRequestHandler(config, userEndpoints, statusEndpoints, healthEndpoints, userService, appEndpoints, invitationEndpoints, eventEndpoints, setupEndpoints, storageEndpoints, wsHandler, spaceEndpoints, pushEndpoints, profileEndpoints, deviceEndpoints, passwordEndpoints, assertionEndpoints, ownerClaimEndpoints, keyEndpoints, accountEndpoints, adminEndpoints, registerEndpoints, spaceprofile.NewSpaceProfileEndpoints(spaceProfileRepository, storageRepo, eventService), moveEndpoints, oauthEndpoints)

@@ -56,16 +56,45 @@ func (c *Client) Subscribe(applicationID string) {
 		return
 	}
 
+	if msg := c.agentDenied(applicationID); msg != "" {
+		c.send <- &OutgoingMessage{Type: MessageTypeError, Error: msg}
+		return
+	}
+
 	c.mu.Lock()
 	c.subscriptions[applicationID] = true
 	c.mu.Unlock()
 
 	c.hub.Subscribe(c, applicationID)
 
+	// EvictAgents may have run between the check above and the insert; the flag is already off by then, so re-check.
+	if msg := c.agentDenied(applicationID); msg != "" {
+		c.Unsubscribe(applicationID)
+		c.send <- &OutgoingMessage{Type: MessageTypeError, Error: msg}
+		return
+	}
+
 	log.Debug().
 		Str("userPublicKey", c.user.PublicKey[:20]+"...").
 		Str("applicationId", applicationID).
 		Msg("[WS] Client subscribed to application")
+}
+
+// agentDenied returns the error to send when an agent may not read the application, or "".
+func (c *Client) agentDenied(applicationID string) string {
+	if !c.user.Agent {
+		return ""
+	}
+	enabled, ownerKey, err := c.hub.appRepo.GetAgentAccess(applicationID)
+	if err != nil {
+		log.Warn().Err(err).Str("applicationId", applicationID).Msg("[WS] Agent application lookup failed")
+		return "failed to check application"
+	}
+	if !enabled && ownerKey != c.user.PublicKey {
+		log.Debug().Str("applicationId", applicationID).Msg("[WS] Subscribe rejected, agent access disabled")
+		return "agent access is disabled for this application"
+	}
+	return ""
 }
 
 func (c *Client) Unsubscribe(applicationID string) {

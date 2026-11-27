@@ -1,0 +1,2 @@
+ALTER TABLE user_devices ADD COLUMN IF NOT EXISTS client_id TEXT;
+ALTER TABLE user_devices ADD COLUMN IF NOT EXISTS client_host TEXT;
